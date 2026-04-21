@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+*.swp
+
+# 若未來加入 npm
+node_modules/
+.DS_Store
