@@ -137,3 +137,14 @@ export async function getMonthlySummary(month = getCurrentMonthKey()) {
     count: transactions.length
   };
 }
+
+export async function getCategoryBreakdown(month = getCurrentMonthKey()): Promise<Record<string, number>> {
+  const transactions = await getTransactionsByMonth(month);
+  const map: Record<string, number> = {};
+  transactions
+    .filter(item => item.type === 'expense')
+    .forEach(item => {
+      map[item.category] = (map[item.category] || 0) + item.amount;
+    });
+  return map;
+}

@@ -29,6 +29,7 @@ export type Goal = {
   targetAmount: number;
   targetDate?: string;
   savedAmount: number;
+  deposits?: GoalDeposit[];
 };
 
 export type OcrResult = {
