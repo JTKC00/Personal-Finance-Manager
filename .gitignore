@@ -5,11 +5,26 @@
 .vscode/
 *.swp
 
-# 若未來加入 npm
-node_modules/
-.DS_Store
+# Environment / secrets
 .env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Expo / React Native local state and build outputs
 .expo/
+.expo-shared/
 dist/
 web-build/
+android/
+ios/
+
+# Logs / caches
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+.cache/

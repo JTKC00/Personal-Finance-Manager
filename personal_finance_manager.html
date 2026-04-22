@@ -185,6 +185,20 @@ input:focus,select:focus{border-color:var(--color-text-primary)}
 <!-- Transactions -->
 <div id="transactions" class="page">
   <div class="card">
+    <h3>AI 識別單據</h3>
+    <div class="form-row">
+      <label style="white-space:nowrap">Gemini Key</label>
+      <input type="password" id="txnApiKeyInput" placeholder="輸入自己的 Gemini API Key；留空則使用 server fallback" style="flex:1">
+      <button class="btn btn-sm" onclick="saveApiKey()">儲存</button>
+      <button class="btn btn-sm" onclick="clearApiKey()">清除</button>
+    </div>
+    <div class="inline-actions">
+      <button class="btn btn-primary btn-sm" onclick="startReceiptUpload('modal')">AI 識別單據</button>
+      <button class="btn btn-sm" onclick="openPage('receipts')">查看掃描記錄</button>
+    </div>
+    <div class="muted" style="margin-top:8px">識別結果會先填入新增交易表單，確認後才會入帳。</div>
+  </div>
+  <div class="card">
     <h3>快速新增</h3>
     <div class="quick-cats" id="quickCatChips"></div>
     <div class="form-row">
@@ -249,7 +263,7 @@ input:focus,select:focus{border-color:var(--color-text-primary)}
 <div id="receipts" class="page">
   <div class="card">
     <h3>上傳發票 / 收據</h3>
-    <div class="upload-area" onclick="document.getElementById('receiptFile').click()">
+    <div class="upload-area" onclick="startReceiptUpload('receipt-list')">
       <div style="font-size:24px;margin-bottom:8px">📷</div>
       <div style="font-size:14px;font-weight:500;margin-bottom:4px">點擊上傳圖片</div>
       <div style="font-size:12px;color:var(--color-text-secondary)">支援 JPG、PNG 格式，AI 自動辨識金額和類別</div>
@@ -342,6 +356,18 @@ input:focus,select:focus{border-color:var(--color-text-primary)}
       <span style="font-weight:500" id="modalTitle">新增交易</span>
       <button style="border:none;background:none;font-size:18px;cursor:pointer;color:var(--color-text-secondary)" onclick="hideModal()">×</button>
     </div>
+    <div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px;margin-bottom:12px">
+      <div class="form-row" style="margin-bottom:8px">
+        <label style="white-space:nowrap">Gemini Key</label>
+        <input type="password" id="modalApiKeyInput" placeholder="自己的 Gemini API Key" style="flex:1;min-width:160px">
+      </div>
+      <div class="inline-actions" style="margin-top:0">
+        <button class="btn btn-sm" onclick="saveApiKey()">儲存 Key</button>
+        <button class="btn btn-sm" onclick="clearApiKey()">清除</button>
+        <button class="btn btn-primary btn-sm" onclick="startReceiptUpload('modal')">AI 識別單據</button>
+      </div>
+      <div class="muted" style="margin-top:8px">OCR 結果會填入下方欄位，仍需按新增確認。</div>
+    </div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <select id="mType" onchange="updateModalCat()" style="flex:1">
         <option value="expense">支出</option>
@@ -377,6 +403,7 @@ let analytics=JSON.parse(localStorage.getItem('fin_events')||'[]');
 let pieChart,barChart,analysisPieChart,trendChart;
 let selectedMonth=getCurrentMonthKey();
 let editingTxnId=null;
+let ocrTargetMode='receipt-list';
 
 function saveData(){
   localStorage.setItem('fin_txns',JSON.stringify(transactions));
@@ -402,22 +429,40 @@ function showToast(message){
 }
 
 function saveApiKey(){
-  const input=document.getElementById('apiKeyInput');
-  const key=input.value.trim();
+  const input=getVisibleApiKeyInput();
+  const key=input ? input.value.trim() : '';
   if(!key)return showToast('請先輸入 Gemini API Key');
   localStorage.setItem('fin_gemini_key',key);
+  syncApiKeyInputs(key);
   showToast('Gemini API Key 已儲存在本機');
 }
 
 function clearApiKey(){
   localStorage.removeItem('fin_gemini_key');
-  const input=document.getElementById('apiKeyInput');
-  if(input)input.value='';
+  syncApiKeyInputs('');
   showToast('已清除本機 Gemini API Key');
 }
 
 function getApiKey(){
   return localStorage.getItem('fin_gemini_key')||'';
+}
+
+function getVisibleApiKeyInput(){
+  return ['modalApiKeyInput','txnApiKeyInput','apiKeyInput']
+    .map(id=>document.getElementById(id))
+    .find(el=>el&&el.value.trim());
+}
+
+function syncApiKeyInputs(value){
+  ['apiKeyInput','txnApiKeyInput','modalApiKeyInput'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.value=value;
+  });
+}
+
+function startReceiptUpload(mode='receipt-list'){
+  ocrTargetMode=mode;
+  document.getElementById('receiptFile').click();
 }
 
 function getCurrentMonthKey(){
@@ -1003,10 +1048,12 @@ async function handleReceiptUpload(e){
       if(!parsed.category||!CAT_EXPENSE.includes(parsed.category))lowFields.push('category');
       if(!parsed.date||!/^\d{4}-\d{2}-\d{2}$/.test(parsed.date))lowFields.push('date');
       if(idx>=0)receipts[idx]={...receipts[idx],...parsed,status:'done',lowFields,needsConfirm:true};
+      if(ocrTargetMode==='modal')fillModalFromOcr(parsed);
       track(lowFields.length?'ocr_scan_fail':'ocr_scan_success',{lowFields});
     }catch(err){
       const idx=receipts.findIndex(r=>r.id===id);
 	      if(idx>=0)receipts[idx]={...receipts[idx],status:'done',category:'其他',amount:0,note:err.message==='Gemini API key is required'?'請輸入 Gemini API Key 後再試，或設定 server fallback':'辨識失敗或 proxy 未啟動，請手動輸入',lowFields:['amount','category','date'],needsConfirm:true};
+      if(ocrTargetMode==='modal')showToast(err.message==='Gemini API key is required'?'請先輸入 Gemini API Key':'AI 識別失敗，請手動輸入');
       track('ocr_scan_fail',{reason:'parse_or_network'});
     }
     saveData();renderReceipts();
@@ -1021,6 +1068,17 @@ function updateReceiptField(id,field,value){
   receipts[idx][field]=field==='amount'?parseFloat(value||'0'):value;
   if(receipts[idx].lowFields)receipts[idx].lowFields=receipts[idx].lowFields.filter(f=>f!==field);
   saveData();
+}
+
+function fillModalFromOcr(parsed){
+  if(document.getElementById('addModal').style.display!=='flex')showAddModal();
+  document.getElementById('mType').value='expense';
+  updateModalCat();
+  document.getElementById('mCat').value=CAT_EXPENSE.includes(parsed.category)?parsed.category:'其他';
+  document.getElementById('mAmount').value=parsed.amount||'';
+  document.getElementById('mNote').value=parsed.note||'';
+  document.getElementById('mDate').value=/^\d{4}-\d{2}-\d{2}$/.test(parsed.date||'')?parsed.date:new Date().toISOString().split('T')[0];
+  showToast('AI 已識別單據，請確認後新增');
 }
 
 function confirmReceipt(id){
@@ -1061,6 +1119,7 @@ function showAddModal(){
   document.getElementById('mAmount').value='';
   document.getElementById('mNote').value='';
   document.getElementById('mDate').value=new Date().toISOString().split('T')[0];
+  syncApiKeyInputs(getApiKey());
   document.getElementById('addModal').style.display='flex';
   updateModalCat();
   setTimeout(()=>document.getElementById('mAmount').focus(),50);
@@ -1080,10 +1139,7 @@ function init(){
   track('open_app');
   initHeader();initDates();updateCatOptions();updateModalCat();initBudgetCat();
   const savedKey=getApiKey();
-  if(savedKey){
-    const input=document.getElementById('apiKeyInput');
-    if(input)input.value=savedKey;
-  }
+  syncApiKeyInputs(savedKey);
   refreshAll();renderReceipts();
 }
 init();
