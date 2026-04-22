@@ -96,17 +96,29 @@ input:focus,select:focus{border-color:var(--color-text-primary)}
 .receipt-item{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
 .receipt-img{width:52px;height:52px;object-fit:cover;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary)}
 .badge-processing{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--color-background-warning);color:var(--color-text-warning)}
+.badge-low{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--color-background-danger);color:var(--color-text-danger)}
 .alert{padding:10px 14px;border-radius:var(--border-radius-md);font-size:13px;margin-bottom:10px}
 .alert-warn{background:var(--color-background-warning);color:var(--color-text-warning)}
 .alert-danger{background:var(--color-background-danger);color:var(--color-text-danger)}
 .del-btn{margin-left:auto;font-size:11px;color:var(--color-text-tertiary);cursor:pointer;padding:2px 6px;border:none;background:none}
 .del-btn:hover{color:var(--color-text-danger)}
 .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;align-items:center;justify-content:center}
+.mobile-shell{padding-bottom:84px}
+.bottom-nav{position:fixed;left:0;right:0;bottom:0;background:var(--color-background-primary);border-top:0.5px solid var(--color-border-tertiary);display:flex;justify-content:space-around;z-index:1000;padding:6px 8px max(8px, env(safe-area-inset-bottom))}
+.nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--color-text-secondary);font-size:11px;border:none;background:none;padding:6px 4px;min-width:58px;cursor:pointer}
+.nav-item .icon{font-size:18px;line-height:1}
+.nav-item.active{color:var(--color-text-primary);font-weight:500}
+.nav-item-primary{margin-top:-18px;background:var(--color-text-primary);color:var(--color-background-primary)!important;border-radius:999px;padding:10px 14px;box-shadow:0 5px 12px rgba(0,0,0,.15)}
+.list-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:13px}
+.list-row:last-child{border-bottom:none}
+.muted{color:var(--color-text-secondary);font-size:12px}
+.input-compact{padding:5px 7px;font-size:12px}
+.field-low{border-color:#E24B4A !important;background:#FCEBEB !important}
 </style>
 </head>
 <body>
 
-<div style="max-width:720px;margin:0 auto">
+<div class="mobile-shell" style="max-width:720px;margin:0 auto">
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
   <div>
     <div style="font-size:20px;font-weight:500" id="monthLabel"></div>
@@ -115,16 +127,11 @@ input:focus,select:focus{border-color:var(--color-text-primary)}
   <button class="btn btn-primary btn-sm" onclick="showAddModal()">+ 新增記錄</button>
 </div>
 
-<div class="tabs">
-  <button class="tab active" onclick="switchTab('dashboard',this)">總覽</button>
-  <button class="tab" onclick="switchTab('transactions',this)">記帳</button>
-  <button class="tab" onclick="switchTab('budget',this)">預算</button>
-  <button class="tab" onclick="switchTab('receipts',this)">掃描收據</button>
-</div>
-
 <!-- Dashboard -->
 <div id="dashboard" class="page active">
   <div class="grid4" style="margin-bottom:14px" id="summaryCards"></div>
+  <button class="btn btn-sm" style="margin-bottom:10px" onclick="generateWeeklyReview()">生成本週回顧</button>
+  <div id="smartAlerts"></div>
   <div class="grid2">
     <div class="card">
       <h3>支出分類</h3>
@@ -218,7 +225,61 @@ input:focus,select:focus{border-color:var(--color-text-primary)}
     <div id="receiptList"><div style="font-size:13px;color:var(--color-text-tertiary);text-align:center;padding:1rem">尚無掃描記錄</div></div>
   </div>
 </div>
+
+<!-- Goals -->
+<div id="goals" class="page">
+  <div class="card">
+    <h3>新增目標</h3>
+    <div class="form-row">
+      <input id="goalName" placeholder="目標名稱（例如 日本旅行）">
+      <input id="goalTarget" type="number" min="1" placeholder="目標金額">
+      <button class="btn btn-primary" onclick="addGoal()">新增</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>儲蓄目標</h3>
+    <div id="goalList"></div>
+  </div>
+  <div class="card">
+    <h3>本月建議</h3>
+    <div id="goalTip" class="muted"></div>
+  </div>
 </div>
+
+<!-- Profile -->
+<div id="profile" class="page">
+  <div class="card">
+    <h3>我的</h3>
+    <div class="list-row"><span>本月交易筆數</span><strong id="profileTxnCount">0</strong></div>
+    <div class="list-row"><span>本月支出分類數</span><strong id="profileCatCount">0</strong></div>
+    <div class="list-row"><span>已設定預算分類</span><strong id="profileBudgetCount">0</strong></div>
+  </div>
+  <div class="card">
+    <h3>提醒設定（MVP）</h3>
+    <div class="list-row"><span>每週回顧</span><span>週日 8:00 PM</span></div>
+    <div class="list-row"><span>超支通知</span><span>已啟用</span></div>
+    <div class="list-row"><span>記帳提醒</span><span>晚上 9:00 PM</span></div>
+  </div>
+</div>
+</div>
+
+<nav class="bottom-nav">
+  <button class="nav-item active" onclick="switchTab('dashboard',this)">
+    <span class="icon">🏠</span><span>首頁</span>
+  </button>
+  <button class="nav-item" onclick="switchTab('budget',this)">
+    <span class="icon">📊</span><span>預算</span>
+  </button>
+  <button class="nav-item nav-item-primary" onclick="switchTab('transactions',this)">
+    <span class="icon">➕</span><span>記帳</span>
+  </button>
+  <button class="nav-item" onclick="switchTab('goals',this)">
+    <span class="icon">🎯</span><span>目標</span>
+  </button>
+  <button class="nav-item" onclick="switchTab('profile',this)">
+    <span class="icon">👤</span><span>我的</span>
+  </button>
+</nav>
 
 <!-- Modal -->
 <div id="addModal" class="modal-backdrop">
@@ -251,12 +312,16 @@ const CAT_TAG={'餐飲':'food','交通':'transport','購物':'shopping','娛樂'
 let transactions=JSON.parse(localStorage.getItem('fin_txns')||'[]');
 let budgets=JSON.parse(localStorage.getItem('fin_budgets')||'{}');
 let receipts=JSON.parse(localStorage.getItem('fin_receipts')||'[]');
+let goals=JSON.parse(localStorage.getItem('fin_goals')||'[{"id":"g1","name":"日本旅行","target":10000,"saved":6200},{"id":"g2","name":"新電腦","target":5000,"saved":2000}]');
+let weeklyReview=localStorage.getItem('fin_weekly_review')||'';
 let pieChart,barChart;
 
 function saveData(){
   localStorage.setItem('fin_txns',JSON.stringify(transactions));
   localStorage.setItem('fin_budgets',JSON.stringify(budgets));
   localStorage.setItem('fin_receipts',JSON.stringify(receipts));
+  localStorage.setItem('fin_goals',JSON.stringify(goals));
+  localStorage.setItem('fin_weekly_review',weeklyReview);
 }
 
 function saveApiKey(){
@@ -326,6 +391,48 @@ function renderSummary(){
     <div class="metric"><div class="metric-label">結餘</div><div class="metric-val" style="color:${balance>=0?'var(--color-text-success)':'var(--color-text-danger)'}">${fmt(balance)}</div></div>
     <div class="metric"><div class="metric-label">交易筆數</div><div class="metric-val">${count}</div></div>
   `;
+}
+
+function isWithinLastDays(dateStr,days){
+  const d=new Date(dateStr+'T00:00:00');
+  const now=new Date();
+  const diff=(now-d)/(1000*60*60*24);
+  return diff>=0&&diff<days;
+}
+
+function isWithinDaysRange(dateStr,start,end){
+  const d=new Date(dateStr+'T00:00:00');
+  const now=new Date();
+  const diff=(now-d)/(1000*60*60*24);
+  return diff>=start&&diff<end;
+}
+
+function renderSmartAlerts(){
+  const txns=getMonthTxns().filter(t=>t.type==='expense');
+  const catMap={};
+  txns.forEach(t=>catMap[t.category]=(catMap[t.category]||0)+t.amount);
+  const top=Object.entries(catMap).sort((a,b)=>b[1]-a[1])[0];
+  const el=document.getElementById('smartAlerts');
+  const alerts=[];
+
+  if(top&&budgets[top[0]]){
+    const pct=(top[1]/budgets[top[0]])*100;
+    if(pct>=90)alerts.push(`<div class="alert alert-danger">⚠️ ${top[0]} 預算已用 ${Math.round(pct)}%，建議本週暫緩此分類消費。</div>`);
+    else if(pct>=70)alerts.push(`<div class="alert alert-warn">⚠️ ${top[0]} 預算已用 ${Math.round(pct)}%，請留意剩餘額度。</div>`);
+  }
+
+  if(weeklyReview)alerts.push(`<div class="alert alert-warn">${weeklyReview}</div>`);
+
+  el.innerHTML=alerts.join('');
+}
+
+function generateWeeklyReview(){
+  const weeklySpend=transactions.filter(t=>t.type==='expense'&&isWithinLastDays(t.date,7)).reduce((s,t)=>s+t.amount,0);
+  const prevWeeklySpend=transactions.filter(t=>t.type==='expense'&&isWithinDaysRange(t.date,8,14)).reduce((s,t)=>s+t.amount,0);
+  const trend=prevWeeklySpend?Math.round(((weeklySpend-prevWeeklySpend)/prevWeeklySpend)*100):0;
+  weeklyReview=`📊 本週回顧：支出 $${Math.round(weeklySpend).toLocaleString()} ${prevWeeklySpend?`（較上週 ${trend>=0?'+':''}${trend}%）`:''}`;
+  saveData();
+  renderSmartAlerts();
 }
 
 function renderPieChart(){
@@ -419,6 +526,65 @@ function renderBudget(){
   prog.innerHTML=rows.length?rows.join(''):`<div style="font-size:13px;color:var(--color-text-tertiary);text-align:center;padding:1rem">尚未設定任何預算</div>`;
 }
 
+function renderGoals(){
+  const el=document.getElementById('goalList');
+  const goalTip=document.getElementById('goalTip');
+  if(!el||!goalTip)return;
+  el.innerHTML=goals.map(g=>{
+    const pct=Math.min((g.saved/g.target)*100,100);
+    const remain=g.target-g.saved;
+    return `<div class="budget-row">
+      <div class="budget-row-top"><span style="font-weight:500">${g.name}</span><span>${Math.round(pct)}%</span></div>
+      <div class="progress-bg"><div class="progress-fill" style="width:${pct}%;background:#639922"></div></div>
+      <div class="muted" style="margin-top:4px">已存 $${g.saved.toLocaleString()} / $${g.target.toLocaleString()} · 還差 $${remain.toLocaleString()}</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-sm" onclick="saveToGoal('${g.id}')">+ 存入 100</button>
+        <button class="btn btn-sm" onclick="editGoal('${g.id}')">編輯</button>
+      </div>
+    </div>`;
+  }).join('');
+  const monthTxns=getMonthTxns();
+  const monthlySaving=monthTxns.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0)-monthTxns.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  goalTip.textContent=monthlySaving>0?`本月結餘約 $${Math.round(monthlySaving).toLocaleString()}，可優先投入「日本旅行」目標。`:'本月結餘不足，建議先降低餐飲/購物支出。';
+}
+
+function addGoal(){
+  const name=document.getElementById('goalName').value.trim();
+  const target=parseFloat(document.getElementById('goalTarget').value);
+  if(!name||!target||target<=0)return alert('請輸入有效的目標名稱與金額');
+  goals.push({id:'g'+Date.now(),name,target,saved:0});
+  document.getElementById('goalName').value='';
+  document.getElementById('goalTarget').value='';
+  saveData();renderGoals();
+}
+
+function saveToGoal(id){
+  const g=goals.find(x=>x.id===id);
+  if(!g)return;
+  g.saved=Math.min(g.target,g.saved+100);
+  saveData();renderGoals();
+}
+
+function editGoal(id){
+  const g=goals.find(x=>x.id===id);
+  if(!g)return;
+  const newName=prompt('目標名稱',g.name);
+  const newTarget=parseFloat(prompt('目標金額',g.target));
+  if(!newName||!newTarget||newTarget<=0)return;
+  g.name=newName.trim();
+  g.target=newTarget;
+  g.saved=Math.min(g.saved,newTarget);
+  saveData();renderGoals();
+}
+
+function renderProfile(){
+  const txns=getMonthTxns();
+  const expenseCats=new Set(txns.filter(t=>t.type==='expense').map(t=>t.category));
+  document.getElementById('profileTxnCount').textContent=txns.length;
+  document.getElementById('profileCatCount').textContent=expenseCats.size;
+  document.getElementById('profileBudgetCount').textContent=Object.keys(budgets).length;
+}
+
 function renderReceipts(){
   const el=document.getElementById('receiptList');
   if(!receipts.length){el.innerHTML=`<div style="font-size:13px;color:var(--color-text-tertiary);text-align:center;padding:1rem">尚無掃描記錄</div>`;return;}
@@ -427,9 +593,17 @@ function renderReceipts(){
       <img src="${r.img}" class="receipt-img" alt="receipt">
       <div style="flex:1">
         <div style="font-size:13px;font-weight:500">${r.note||'收據'}</div>
-        ${r.status==='done'?`<div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">分類：${r.category} · 金額：$${Math.round(r.amount).toLocaleString()}</div><div style="font-size:11px;color:var(--color-text-tertiary)">${r.date}</div>`:'<span class="badge-processing">AI 辨識中…</span>'}
+        ${r.status==='done'?`
+          ${r.needsConfirm?'<span class="badge-low">低信心，請確認欄位</span>':''}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+            <input class="input-compact ${r.lowFields?.includes('category')?'field-low':''}" value="${r.category||''}" placeholder="分類" onchange="updateReceiptField('${r.id}','category',this.value)">
+            <input class="input-compact ${r.lowFields?.includes('amount')?'field-low':''}" type="number" min="0" step="1" value="${r.amount||''}" placeholder="金額" onchange="updateReceiptField('${r.id}','amount',this.value)">
+            <input class="input-compact ${r.lowFields?.includes('date')?'field-low':''}" type="date" value="${r.date||''}" onchange="updateReceiptField('${r.id}','date',this.value)">
+            <input class="input-compact" value="${r.note||''}" placeholder="備註" onchange="updateReceiptField('${r.id}','note',this.value)">
+          </div>
+        `:'<span class="badge-processing">AI 辨識中…</span>'}
       </div>
-      ${r.status==='done'?`<button class="btn btn-sm" onclick="addFromReceipt('${r.id}')" style="font-size:11px;white-space:nowrap">加入記帳</button>`:''}
+      ${r.status==='done'?`<button class="btn btn-sm" onclick="confirmReceipt('${r.id}')" style="font-size:11px;white-space:nowrap">確認入帳</button>`:''}
     </div>
   `).join('');
 }
@@ -488,7 +662,7 @@ async function handleReceiptUpload(e){
     renderReceipts();
     if(!apiKey){
       const idx=receipts.findIndex(r=>r.id===id);
-      if(idx>=0)receipts[idx]={...receipts[idx],status:'done',category:'其他',amount:0,note:'請先設定 API Key 才能使用 AI 辨識'};
+      if(idx>=0)receipts[idx]={...receipts[idx],status:'done',category:'其他',amount:0,note:'請先設定 API Key 才能使用 AI 辨識',lowFields:['amount','category','date'],needsConfirm:true};
       saveData();renderReceipts();return;
     }
     try{
@@ -509,10 +683,14 @@ async function handleReceiptUpload(e){
       const clean=text.replace(/```json|```/g,'').trim();
       const parsed=JSON.parse(clean);
       const idx=receipts.findIndex(r=>r.id===id);
-      if(idx>=0)receipts[idx]={...receipts[idx],...parsed,status:'done'};
+      const lowFields=[];
+      if(!parsed.amount||parsed.amount<=0)lowFields.push('amount');
+      if(!parsed.category||!CAT_EXPENSE.includes(parsed.category))lowFields.push('category');
+      if(!parsed.date||!/^\d{4}-\d{2}-\d{2}$/.test(parsed.date))lowFields.push('date');
+      if(idx>=0)receipts[idx]={...receipts[idx],...parsed,status:'done',lowFields,needsConfirm:true};
     }catch(err){
       const idx=receipts.findIndex(r=>r.id===id);
-      if(idx>=0)receipts[idx]={...receipts[idx],status:'done',category:'其他',amount:0,note:'辨識失敗，請手動輸入'};
+      if(idx>=0)receipts[idx]={...receipts[idx],status:'done',category:'其他',amount:0,note:'辨識失敗，請手動輸入',lowFields:['amount','category','date'],needsConfirm:true};
     }
     saveData();renderReceipts();
   };
@@ -520,26 +698,41 @@ async function handleReceiptUpload(e){
   e.target.value='';
 }
 
-function addFromReceipt(id){
+function updateReceiptField(id,field,value){
+  const idx=receipts.findIndex(x=>x.id===id);
+  if(idx<0)return;
+  receipts[idx][field]=field==='amount'?parseFloat(value||'0'):value;
+  if(receipts[idx].lowFields)receipts[idx].lowFields=receipts[idx].lowFields.filter(f=>f!==field);
+  saveData();
+}
+
+function confirmReceipt(id){
   const r=receipts.find(x=>x.id===id);
   if(!r||r.status!=='done')return;
-  addTransaction({type:'expense',category:r.category,amount:r.amount,note:r.note,date:r.date});
-  alert('已加入記帳！');
+  const amount=parseFloat(r.amount);
+  if(!amount||amount<=0)return alert('請確認金額');
+  if(!r.category||!CAT_EXPENSE.includes(r.category))return alert('請確認分類');
+  if(!r.date)return alert('請確認日期');
+  addTransaction({type:'expense',category:r.category,amount,note:r.note,date:r.date});
+  r.needsConfirm=false;
+  saveData();
+  renderReceipts();
+  alert('已確認並加入記帳！');
 }
 
 function switchTab(name,btn){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(t=>t.classList.remove('active'));
   document.getElementById(name).classList.add('active');
   btn.classList.add('active');
-  if(name==='dashboard')setTimeout(()=>{renderPieChart();renderBarChart();},50);
+  if(name==='dashboard')setTimeout(()=>{renderPieChart();renderBarChart();renderSmartAlerts();},50);
 }
 
 function showAddModal(){document.getElementById('addModal').style.display='flex';updateModalCat();}
 function hideModal(){document.getElementById('addModal').style.display='none';}
 
 function refreshAll(){
-  renderSummary();renderPieChart();renderBarChart();renderTxnList();renderBudget();
+  renderSummary();renderSmartAlerts();renderPieChart();renderBarChart();renderTxnList();renderBudget();renderGoals();renderProfile();
 }
 
 function init(){
