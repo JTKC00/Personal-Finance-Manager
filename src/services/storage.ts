@@ -4,7 +4,9 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   setDoc,
+  where,
 } from 'firebase/firestore';
 import {Account, AnalyticsEvent, Budget, Goal, Receipt, Transaction, Transfer} from '../types/finance';
 import {clean, db, getUid} from './firebase';
@@ -66,6 +68,11 @@ export function getCurrentMonthKey(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function getNextMonthKey(month: string): string {
+  const [year, monthIndex] = month.split('-').map(Number);
+  return getCurrentMonthKey(new Date(year, monthIndex, 1));
+}
+
 export async function loadTransactions(): Promise<Transaction[]> {
   return loadCollection<Transaction>(getUid(), 'transactions');
 }
@@ -78,20 +85,23 @@ export async function saveTransactions(transactions: Transaction[]): Promise<voi
 }
 
 export async function getTransactionsByMonth(month = getCurrentMonthKey()): Promise<Transaction[]> {
-  const txns = await loadTransactions();
-  return txns.filter(item => item.date.startsWith(month));
+  const uid = getUid();
+  const snap = await getDocs(query(
+    col(uid, 'transactions'),
+    where('date', '>=', `${month}-01`),
+    where('date', '<', `${getNextMonthKey(month)}-01`)
+  ));
+  return snap.docs.map(d => d.data() as Transaction);
 }
 
-export async function upsertTransaction(transaction: Transaction): Promise<Transaction[]> {
+export async function upsertTransaction(transaction: Transaction): Promise<void> {
   const uid = getUid();
   await setDoc(docRef(uid, 'transactions', transaction.id), clean(transaction));
-  return loadTransactions();
 }
 
-export async function deleteTransaction(id: string): Promise<Transaction[]> {
+export async function deleteTransaction(id: string): Promise<void> {
   const uid = getUid();
   await deleteDoc(docRef(uid, 'transactions', id));
-  return loadTransactions();
 }
 
 export async function loadBudgets(): Promise<Record<string, number>> {
@@ -123,10 +133,9 @@ export async function loadReceipts(): Promise<Receipt[]> {
   return loadCollection<Receipt>(getUid(), 'receipts');
 }
 
-export async function upsertReceipt(receipt: Receipt): Promise<Receipt[]> {
+export async function upsertReceipt(receipt: Receipt): Promise<void> {
   const uid = getUid();
   await setDoc(docRef(uid, 'receipts', receipt.id), clean(receipt));
-  return loadReceipts();
 }
 
 export async function loadGoals(): Promise<Goal[]> {
@@ -137,7 +146,7 @@ export async function loadGoals(): Promise<Goal[]> {
   }));
 }
 
-export async function upsertGoal(goal: Goal): Promise<Goal[]> {
+export async function upsertGoal(goal: Goal): Promise<void> {
   const uid = getUid();
   const normalizedGoal = normalizeGoal(goal);
   const goalWithSavedAmount = {
@@ -145,13 +154,11 @@ export async function upsertGoal(goal: Goal): Promise<Goal[]> {
     savedAmount: Math.min(normalizedGoal.targetAmount, getGoalSavedAmount(normalizedGoal))
   };
   await setDoc(docRef(uid, 'goals', goal.id), clean(goalWithSavedAmount));
-  return loadGoals();
 }
 
-export async function deleteGoal(id: string): Promise<Goal[]> {
+export async function deleteGoal(id: string): Promise<void> {
   const uid = getUid();
   await deleteDoc(docRef(uid, 'goals', id));
-  return loadGoals();
 }
 
 export async function appendGoalEntry(
@@ -251,16 +258,14 @@ export async function loadAccounts(): Promise<Account[]> {
   return loadCollection<Account>(getUid(), 'accounts');
 }
 
-export async function upsertAccount(account: Account): Promise<Account[]> {
+export async function upsertAccount(account: Account): Promise<void> {
   const uid = getUid();
   await setDoc(docRef(uid, 'accounts', account.id), clean(account));
-  return loadAccounts();
 }
 
-export async function deleteAccount(id: string): Promise<Account[]> {
+export async function deleteAccount(id: string): Promise<void> {
   const uid = getUid();
   await deleteDoc(docRef(uid, 'accounts', id));
-  return loadAccounts();
 }
 
 export async function loadTransfers(): Promise<Transfer[]> {
@@ -274,23 +279,21 @@ export async function saveTransfers(transfers: Transfer[]): Promise<void> {
   );
 }
 
-export async function upsertTransfer(transfer: Transfer): Promise<Transfer[]> {
+export async function upsertTransfer(transfer: Transfer): Promise<void> {
   const uid = getUid();
   await setDoc(docRef(uid, 'transfers', transfer.id), clean(transfer));
-  return loadTransfers();
 }
 
-export async function deleteTransfer(id: string): Promise<Transfer[]> {
+export async function deleteTransfer(id: string): Promise<void> {
   const uid = getUid();
   await deleteDoc(docRef(uid, 'transfers', id));
-  return loadTransfers();
 }
 
 export async function deleteTransfersByGoal(goalId: string): Promise<Transfer[]> {
-  const transfers = await loadTransfers();
   const uid = getUid();
+  const snap = await getDocs(query(col(uid, 'transfers'), where('goalId', '==', goalId)));
   await Promise.all(
-    transfers.filter(t => t.goalId === goalId).map(t => deleteDoc(docRef(uid, 'transfers', t.id)))
+    snap.docs.map(t => deleteDoc(docRef(uid, 'transfers', t.id)))
   );
   return loadTransfers();
 }
