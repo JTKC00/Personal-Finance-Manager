@@ -1,5 +1,6 @@
 import {useCallback, useMemo, useState} from 'react';
-import {ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
+import {ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
+import DateTimePicker, {DateTimePickerEvent} from '@react-native-community/datetimepicker';
 import {useFocusEffect} from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import {Card} from '../components/Card';
@@ -26,8 +27,25 @@ type Draft = {
   paymentMethod: string;
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const formatDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+const today = () => formatDate(new Date());
 const formatMoney = (value: number) => `$${Math.round(value).toLocaleString()}`;
+
+const parseDraftDate = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return new Date();
+
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, month, day);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+};
 
 const emptyDraft = (): Draft => ({
   amount: '',
@@ -43,6 +61,7 @@ export function TransactionScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [ocrPreview, setOcrPreview] = useState<OcrResult | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const month = getCurrentMonthKey();
 
   const canSave = useMemo(() => Number(draft.amount) > 0 && Boolean(draft.date), [draft.amount, draft.date]);
@@ -62,6 +81,12 @@ export function TransactionScreen() {
 
   function updateDraft(patch: Partial<Draft>) {
     setDraft(current => ({...current, ...patch}));
+  }
+
+  function handleDateChange(event: DateTimePickerEvent, selectedDate?: Date) {
+    if (Platform.OS === 'android') setShowDatePicker(false);
+    if (event.type === 'dismissed' || !selectedDate) return;
+    updateDraft({date: formatDate(selectedDate)});
   }
 
   function resetForm() {
@@ -242,12 +267,22 @@ export function TransactionScreen() {
           style={styles.input}
           value={draft.note}
         />
-        <TextInput
-          onChangeText={date => updateDraft({date})}
-          placeholder="YYYY-MM-DD"
-          style={styles.input}
-          value={draft.date}
-        />
+        <Pressable
+          accessibilityLabel="選擇日期"
+          accessibilityRole="button"
+          onPress={() => setShowDatePicker(true)}
+          style={styles.dateButton}
+        >
+          <Text style={styles.dateButtonText}>{draft.date}</Text>
+        </Pressable>
+        {showDatePicker ? (
+          <DateTimePicker
+            display={Platform.OS === 'ios' ? 'inline' : 'calendar'}
+            mode="date"
+            onChange={handleDateChange}
+            value={parseDraftDate(draft.date)}
+          />
+        ) : null}
         <View style={styles.chips}>
           {expenseCategories.map(item => (
             <Pressable key={item} onPress={() => updateDraft({category: item})} style={[styles.chip, item === draft.category && styles.activeChip]}>
@@ -312,6 +347,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     marginBottom: spacing.md,
     padding: spacing.md
+  },
+  dateButton: {
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.md,
+    padding: spacing.md
+  },
+  dateButtonText: {
+    color: colors.text,
+    fontSize: 18
   },
   chips: {
     flexDirection: 'row',
