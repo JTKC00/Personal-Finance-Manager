@@ -1,24 +1,43 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+} from 'firebase/firestore';
 import {Account, AnalyticsEvent, Budget, Goal, Receipt, Transaction, Transfer} from '../types/finance';
+import {clean, db, getUid} from './firebase';
 
-const KEYS = {
-  transactions: 'fin_txns',
-  budgets: 'fin_budgets',
-  receipts: 'fin_receipts',
-  goals: 'fin_goals',
-  events: 'fin_events',
-  accounts: 'fin_accounts',
-  transfers: 'fin_transfers'
-} as const;
+// ── Firestore path helpers ────────────────────────────────────────────────────
 
-async function loadJson<T>(key: string, fallback: T): Promise<T> {
-  const raw = await AsyncStorage.getItem(key);
-  return raw ? JSON.parse(raw) as T : fallback;
+function col(uid: string, name: string) {
+  return collection(db, 'users', uid, name);
 }
 
-async function saveJson<T>(key: string, value: T): Promise<void> {
-  await AsyncStorage.setItem(key, JSON.stringify(value));
+function docRef(uid: string, name: string, id: string) {
+  return doc(db, 'users', uid, name, id);
 }
+
+function metaRef(uid: string, name: string) {
+  return doc(db, 'users', uid, 'meta', name);
+}
+
+async function loadCollection<T>(uid: string, name: string): Promise<T[]> {
+  const snap = await getDocs(col(uid, name));
+  return snap.docs.map(d => d.data() as T);
+}
+
+async function loadMetaDoc<T>(uid: string, name: string, fallback: T): Promise<T> {
+  const snap = await getDoc(metaRef(uid, name));
+  return snap.exists() ? (snap.data() as T) : fallback;
+}
+
+async function saveMetaDoc<T extends object>(uid: string, name: string, value: T): Promise<void> {
+  await setDoc(metaRef(uid, name), clean(value));
+}
+
+// ── Goal helpers ──────────────────────────────────────────────────────────────
 
 function normalizeGoal(goal: Goal): Goal {
   return {
@@ -48,43 +67,42 @@ export function getCurrentMonthKey(date = new Date()): string {
 }
 
 export async function loadTransactions(): Promise<Transaction[]> {
-  return loadJson<Transaction[]>(KEYS.transactions, []);
+  return loadCollection<Transaction>(getUid(), 'transactions');
 }
 
 export async function saveTransactions(transactions: Transaction[]): Promise<void> {
-  await saveJson(KEYS.transactions, transactions);
+  const uid = getUid();
+  await Promise.all(
+    transactions.map(t => setDoc(docRef(uid, 'transactions', t.id), clean(t)))
+  );
 }
 
 export async function getTransactionsByMonth(month = getCurrentMonthKey()): Promise<Transaction[]> {
-  const transactions = await loadTransactions();
-  return transactions.filter(item => item.date.startsWith(month));
+  const txns = await loadTransactions();
+  return txns.filter(item => item.date.startsWith(month));
 }
 
 export async function upsertTransaction(transaction: Transaction): Promise<Transaction[]> {
-  const transactions = await loadTransactions();
-  const exists = transactions.some(item => item.id === transaction.id);
-  const next = exists
-    ? transactions.map(item => (item.id === transaction.id ? transaction : item))
-    : [...transactions, transaction];
-  await saveTransactions(next);
-  return next;
+  const uid = getUid();
+  await setDoc(docRef(uid, 'transactions', transaction.id), clean(transaction));
+  return loadTransactions();
 }
 
 export async function deleteTransaction(id: string): Promise<Transaction[]> {
-  const transactions = await loadTransactions();
-  const next = transactions.filter(item => item.id !== id);
-  await saveTransactions(next);
-  return next;
+  const uid = getUid();
+  await deleteDoc(docRef(uid, 'transactions', id));
+  return loadTransactions();
 }
 
 export async function loadBudgets(): Promise<Record<string, number>> {
-  return loadJson<Record<string, number>>(KEYS.budgets, {});
+  return loadMetaDoc<Record<string, number>>(getUid(), 'budgets', {});
 }
 
 export async function saveBudget(category: string, amount: number): Promise<Record<string, number>> {
+  const uid = getUid();
   const budgets = await loadBudgets();
   const next = {...budgets, [category]: amount};
-  await saveJson(KEYS.budgets, next);
+  await saveMetaDoc(uid, 'budgets', next);
   return next;
 }
 
@@ -102,21 +120,17 @@ export async function loadBudgetRows(): Promise<Budget[]> {
 }
 
 export async function loadReceipts(): Promise<Receipt[]> {
-  return loadJson<Receipt[]>(KEYS.receipts, []);
+  return loadCollection<Receipt>(getUid(), 'receipts');
 }
 
 export async function upsertReceipt(receipt: Receipt): Promise<Receipt[]> {
-  const receipts = await loadReceipts();
-  const exists = receipts.some(item => item.id === receipt.id);
-  const next = exists
-    ? receipts.map(item => (item.id === receipt.id ? receipt : item))
-    : [...receipts, receipt];
-  await saveJson(KEYS.receipts, next);
-  return next;
+  const uid = getUid();
+  await setDoc(docRef(uid, 'receipts', receipt.id), clean(receipt));
+  return loadReceipts();
 }
 
 export async function loadGoals(): Promise<Goal[]> {
-  const goals = await loadJson<Goal[]>(KEYS.goals, []);
+  const goals = await loadCollection<Goal>(getUid(), 'goals');
   return goals.map(normalizeGoal).map(goal => ({
     ...goal,
     savedAmount: getGoalSavedAmount(goal)
@@ -124,25 +138,20 @@ export async function loadGoals(): Promise<Goal[]> {
 }
 
 export async function upsertGoal(goal: Goal): Promise<Goal[]> {
-  const goals = await loadGoals();
+  const uid = getUid();
   const normalizedGoal = normalizeGoal(goal);
   const goalWithSavedAmount = {
     ...normalizedGoal,
     savedAmount: Math.min(normalizedGoal.targetAmount, getGoalSavedAmount(normalizedGoal))
   };
-  const exists = goals.some(item => item.id === goal.id);
-  const next = exists
-    ? goals.map(item => (item.id === goal.id ? goalWithSavedAmount : item))
-    : [...goals, goalWithSavedAmount];
-  await saveJson(KEYS.goals, next);
-  return next;
+  await setDoc(docRef(uid, 'goals', goal.id), clean(goalWithSavedAmount));
+  return loadGoals();
 }
 
 export async function deleteGoal(id: string): Promise<Goal[]> {
-  const goals = await loadGoals();
-  const next = goals.filter(item => item.id !== id);
-  await saveJson(KEYS.goals, next);
-  return next;
+  const uid = getUid();
+  await deleteDoc(docRef(uid, 'goals', id));
+  return loadGoals();
 }
 
 export async function appendGoalEntry(
@@ -239,56 +248,51 @@ export async function removeTransactionGoalLink(transaction: Transaction): Promi
 }
 
 export async function loadAccounts(): Promise<Account[]> {
-  return loadJson<Account[]>(KEYS.accounts, []);
+  return loadCollection<Account>(getUid(), 'accounts');
 }
 
 export async function upsertAccount(account: Account): Promise<Account[]> {
-  const accounts = await loadAccounts();
-  const exists = accounts.some(item => item.id === account.id);
-  const next = exists
-    ? accounts.map(item => (item.id === account.id ? account : item))
-    : [...accounts, account];
-  await saveJson(KEYS.accounts, next);
-  return next;
+  const uid = getUid();
+  await setDoc(docRef(uid, 'accounts', account.id), clean(account));
+  return loadAccounts();
 }
 
 export async function deleteAccount(id: string): Promise<Account[]> {
-  const accounts = await loadAccounts();
-  const next = accounts.filter(item => item.id !== id);
-  await saveJson(KEYS.accounts, next);
-  return next;
+  const uid = getUid();
+  await deleteDoc(docRef(uid, 'accounts', id));
+  return loadAccounts();
 }
 
 export async function loadTransfers(): Promise<Transfer[]> {
-  return loadJson<Transfer[]>(KEYS.transfers, []);
+  return loadCollection<Transfer>(getUid(), 'transfers');
 }
 
 export async function saveTransfers(transfers: Transfer[]): Promise<void> {
-  await saveJson(KEYS.transfers, transfers);
+  const uid = getUid();
+  await Promise.all(
+    transfers.map(t => setDoc(docRef(uid, 'transfers', t.id), clean(t)))
+  );
 }
 
 export async function upsertTransfer(transfer: Transfer): Promise<Transfer[]> {
-  const transfers = await loadTransfers();
-  const exists = transfers.some(item => item.id === transfer.id);
-  const next = exists
-    ? transfers.map(item => (item.id === transfer.id ? transfer : item))
-    : [...transfers, transfer];
-  await saveTransfers(next);
-  return next;
+  const uid = getUid();
+  await setDoc(docRef(uid, 'transfers', transfer.id), clean(transfer));
+  return loadTransfers();
 }
 
 export async function deleteTransfer(id: string): Promise<Transfer[]> {
-  const transfers = await loadTransfers();
-  const next = transfers.filter(item => item.id !== id);
-  await saveTransfers(next);
-  return next;
+  const uid = getUid();
+  await deleteDoc(docRef(uid, 'transfers', id));
+  return loadTransfers();
 }
 
 export async function deleteTransfersByGoal(goalId: string): Promise<Transfer[]> {
   const transfers = await loadTransfers();
-  const next = transfers.filter(item => item.goalId !== goalId);
-  await saveTransfers(next);
-  return next;
+  const uid = getUid();
+  await Promise.all(
+    transfers.filter(t => t.goalId === goalId).map(t => deleteDoc(docRef(uid, 'transfers', t.id)))
+  );
+  return loadTransfers();
 }
 
 export async function getAccountBalance(accountId: string): Promise<number> {
@@ -381,26 +385,23 @@ export async function removeTransactionTransfer(transaction: Transaction): Promi
 }
 
 export async function trackEvent(name: string, props: Record<string, unknown> = {}): Promise<AnalyticsEvent[]> {
-  const events = await loadJson<AnalyticsEvent[]>(KEYS.events, []);
+  const uid = getUid();
+  const events = await loadMetaDoc<AnalyticsEvent[]>(uid, 'events', []);
   const next = [...events, {name, props, at: new Date().toISOString()}].slice(-500);
-  await saveJson(KEYS.events, next);
+  await saveMetaDoc(uid, 'events', {items: next});
   return next;
 }
 
 export async function loadEvents(): Promise<AnalyticsEvent[]> {
-  return loadJson<AnalyticsEvent[]>(KEYS.events, []);
+  const uid = getUid();
+  const data = await loadMetaDoc<{items?: AnalyticsEvent[]}>(uid, 'events', {});
+  return data.items ?? [];
 }
 
 export async function clearSensitiveCache(): Promise<void> {
-  await AsyncStorage.multiRemove([
-    KEYS.transactions,
-    KEYS.budgets,
-    KEYS.receipts,
-    KEYS.goals,
-    KEYS.events,
-    KEYS.accounts,
-    KEYS.transfers
-  ]);
+  // With Firestore as the data store, calling this function is a no-op.
+  // Data lives in the cloud under the user's account.
+  // To wipe all data, sign out or delete the account from Firebase Console.
 }
 
 export async function getMonthlySummary(month = getCurrentMonthKey()) {

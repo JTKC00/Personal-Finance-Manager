@@ -3,6 +3,7 @@ import {Alert, Linking, Pressable, StyleSheet, Text, TextInput, View} from 'reac
 import {useFocusEffect} from '@react-navigation/native';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
+import {useAuth} from '../contexts/AuthContext';
 import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
 import {colors, spacing} from '../theme';
 
@@ -40,9 +41,21 @@ const STEPS = [
 ];
 
 export function ProfileScreen() {
+  const {user, signOut} = useAuth();
   const [keyInput, setKeyInput] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
+
+  async function handleSignOut() {
+    Alert.alert('登出', '確定要登出嗎？', [
+      {text: '取消', style: 'cancel'},
+      {
+        text: '登出',
+        style: 'destructive',
+        onPress: async () => { await signOut(); },
+      },
+    ]);
+  }
 
   const refreshKeyState = useCallback(async () => {
     const key = await loadGeminiApiKey();
@@ -76,7 +89,15 @@ export function ProfileScreen() {
   }
 
   return (
-    <Screen title="我的" subtitle="Gemini Key、資料報表與提醒設定">
+    <Screen title="我的" subtitle="帳號、Gemini Key 與設定">
+      {/* ── Account card ── */}
+      <Card title="帳號">
+        <Text style={styles.body}>目前登入：{user?.email}</Text>
+        <Pressable onPress={handleSignOut} style={styles.dangerButton}>
+          <Text style={styles.dangerButtonText}>登出</Text>
+        </Pressable>
+      </Card>
+
       {/* ── Tutorial card ── */}
       <Card title="如何取得免費 Gemini API Key？">
         <Text style={styles.body}>
@@ -193,6 +214,18 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: colors.text,
     fontWeight: '600'
+  },
+  dangerButton: {
+    alignItems: 'center',
+    borderColor: colors.danger,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  dangerButtonText: {
+    color: colors.danger,
+    fontWeight: '600',
   },
   tutorialToggle: {
     alignSelf: 'flex-start',

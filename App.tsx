@@ -1,12 +1,16 @@
 import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {StatusBar} from 'expo-status-bar';
+import {ActivityIndicator, View} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
 import {DashboardScreen} from './src/screens/DashboardScreen';
 import {AnalysisScreen} from './src/screens/AnalysisScreen';
 import {TransactionScreen} from './src/screens/TransactionScreen';
 import {GoalsScreen} from './src/screens/GoalsScreen';
 import {ProfileScreen} from './src/screens/ProfileScreen';
+import {LoginScreen} from './src/screens/LoginScreen';
+import {AuthProvider, useAuth} from './src/contexts/AuthContext';
+import {colors} from './src/theme';
 
 export type RootTabParamList = {
   Dashboard: undefined;
@@ -26,7 +30,21 @@ const icons: Record<keyof RootTabParamList, keyof typeof Ionicons.glyphMap> = {
   Profile: 'person-outline'
 };
 
-export default function App() {
+function AppNavigator() {
+  const {user, loading} = useAuth();
+
+  if (loading) {
+    return (
+      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background}}>
+        <ActivityIndicator size="large" color={colors.text} />
+      </View>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
+
   return (
     <NavigationContainer>
       <StatusBar style="auto" />
@@ -50,3 +68,12 @@ export default function App() {
     </NavigationContainer>
   );
 }
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppNavigator />
+    </AuthProvider>
+  );
+}
+
