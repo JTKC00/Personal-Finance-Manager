@@ -277,6 +277,25 @@ input:focus,select:focus{border-color:var(--color-text-primary)}
         <button class="btn btn-sm" onclick="clearApiKey()">清除</button>
       </div>
       <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:4px">Key 只儲存在你的瀏覽器 localStorage，OCR 時會送到本機 proxy 使用。</div>
+      <div style="margin-top:8px">
+        <button class="btn btn-sm" onclick="toggleApiKeyTutorial()" id="apiKeyTutorialBtn" style="font-size:12px">▼ 如何免費取得 Gemini API Key？</button>
+      </div>
+      <div id="apiKeyTutorial" style="display:none;margin-top:10px;background:var(--color-bg);border-radius:8px;padding:12px;border:1px solid var(--color-border)">
+        <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:10px">申請只需 2 分鐘，完全免費，有免費使用額度，不需要信用卡。</div>
+        <ol style="margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--color-text)">
+          <li><strong>打開 Google AI Studio</strong><br><span style="color:var(--color-text-secondary)">點下方按鈕，或在瀏覽器輸入 aistudio.google.com</span></li>
+          <li><strong>登入 Google 帳號</strong><br><span style="color:var(--color-text-secondary)">用平時用的 Gmail 帳號登入即可。</span></li>
+          <li><strong>點「Get API key」</strong><br><span style="color:var(--color-text-secondary)">在頁面左側邊欄或首頁找到「Get API key」按鈕。</span></li>
+          <li><strong>建立新 Key</strong><br><span style="color:var(--color-text-secondary)">點「Create API key」，選擇任意 Google Cloud 專案（或讓系統自動建立），再點「Create」。</span></li>
+          <li><strong>複製 Key</strong><br><span style="color:var(--color-text-secondary)">畫面會顯示一串以「AIza」開頭的金鑰，點複製圖示。</span></li>
+          <li><strong>貼到上方輸入欄</strong><br><span style="color:var(--color-text-secondary)">回到這個頁面，把剛才複製的 Key 貼到「Gemini Key」欄位，按「儲存」。</span></li>
+        </ol>
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer"
+           style="display:block;margin-top:12px;padding:8px 12px;background:#1a73e8;color:#fff;border-radius:6px;text-align:center;text-decoration:none;font-size:13px;font-weight:600">
+          🔗 前往 Google AI Studio 申請 Key
+        </a>
+        <div style="margin-top:8px;font-size:12px;color:green">✅ 免費方案每天可使用 1,500 次 Gemini Flash 請求，個人日常記帳完全夠用。</div>
+      </div>
     </div>
   </div>
   <div class="card">
@@ -426,6 +445,15 @@ function showToast(message){
   el.classList.add('show');
   clearTimeout(showToast._timer);
   showToast._timer=setTimeout(()=>el.classList.remove('show'),2600);
+}
+
+function toggleApiKeyTutorial(){
+  const el=document.getElementById('apiKeyTutorial');
+  const btn=document.getElementById('apiKeyTutorialBtn');
+  if(!el||!btn)return;
+  const open=el.style.display==='none';
+  el.style.display=open?'block':'none';
+  btn.textContent=open?'▲ 收起教學':'▼ 如何免費取得 Gemini API Key？';
 }
 
 function saveApiKey(){
