@@ -140,7 +140,7 @@ export function ProfileScreen() {
       {/* ── API Key input card ── */}
       <Card title="Gemini API Key">
         <Text style={styles.body}>
-          取得 Key 後，貼到下方儲存。Key 只存在你的手機本機，不會上傳任何伺服器。
+          取得 Key 後，貼到下方儲存。Key 會存在你的手機本機；掃描收據時，App 會把 Key 傳到你設定的 OCR 代理服務用來呼叫 Gemini。
         </Text>
         <Text style={styles.status}>{hasKey ? '狀態：已設定本機 Key' : '狀態：尚未設定本機 Key'}</Text>
         <TextInput

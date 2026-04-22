@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   query,
+  runTransaction,
   setDoc,
   where,
 } from 'firebase/firestore';
@@ -39,6 +40,11 @@ async function saveMetaDoc<T extends object>(uid: string, name: string, value: T
   await setDoc(metaRef(uid, name), clean(value));
 }
 
+async function loadEventItems(uid: string): Promise<AnalyticsEvent[]> {
+  const data = await loadMetaDoc<{items?: AnalyticsEvent[]} | AnalyticsEvent[]>(uid, 'events', []);
+  return Array.isArray(data) ? data : data.items ?? [];
+}
+
 // ── Goal helpers ──────────────────────────────────────────────────────────────
 
 function normalizeGoal(goal: Goal): Goal {
@@ -62,6 +68,14 @@ function getGoalSavedAmount(goal: Goal): number {
   return deposits.reduce((sum, entry) => (
     entry.type === 'deposit' ? sum + entry.amount : Math.max(0, sum - entry.amount)
   ), 0);
+}
+
+function getGoalWithSavedAmount(goal: Goal): Goal {
+  const normalizedGoal = normalizeGoal(goal);
+  return {
+    ...normalizedGoal,
+    savedAmount: Math.min(normalizedGoal.targetAmount, getGoalSavedAmount(normalizedGoal))
+  };
 }
 
 export function getCurrentMonthKey(date = new Date()): string {
@@ -102,6 +116,98 @@ export async function upsertTransaction(transaction: Transaction): Promise<void>
 export async function deleteTransaction(id: string): Promise<void> {
   const uid = getUid();
   await deleteDoc(docRef(uid, 'transactions', id));
+}
+
+export async function saveTransactionWithGoalLink(
+  transaction: Transaction,
+  previous?: Transaction
+): Promise<Transaction> {
+  const uid = getUid();
+  let savedTransaction: Transaction = {...transaction};
+
+  await runTransaction(db, async firestoreTransaction => {
+    let nextTransaction: Transaction = {...transaction};
+    let goalAfterPreviousRemoval: Goal | undefined;
+    const previousGoalRef = previous?.goalId ? docRef(uid, 'goals', previous.goalId) : null;
+    const nextGoalRef = transaction.goalId && transaction.type === 'expense'
+      ? docRef(uid, 'goals', transaction.goalId)
+      : null;
+
+    const previousGoalSnap = previousGoalRef ? await firestoreTransaction.get(previousGoalRef) : null;
+    const nextGoalSnap = nextGoalRef ? await firestoreTransaction.get(nextGoalRef) : null;
+
+    if (previousGoalRef && previousGoalSnap?.exists() && previous?.linkedGoalEntryId) {
+      const previousGoal = normalizeGoal(previousGoalSnap.data() as Goal);
+      const previousDeposits = (previousGoal.deposits || []).filter(
+        item => item.id !== previous.linkedGoalEntryId
+      );
+      goalAfterPreviousRemoval = getGoalWithSavedAmount({
+        ...previousGoal,
+        deposits: previousDeposits
+      });
+      firestoreTransaction.set(previousGoalRef, clean(goalAfterPreviousRemoval));
+      nextTransaction.linkedGoalEntryId = undefined;
+    }
+
+    if (!nextGoalRef || !nextGoalSnap?.exists()) {
+      nextTransaction.goalId = undefined;
+      nextTransaction.linkedGoalEntryId = undefined;
+      firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
+      savedTransaction = nextTransaction;
+      return;
+    }
+
+    const nextGoal = previous?.goalId === transaction.goalId && goalAfterPreviousRemoval
+      ? goalAfterPreviousRemoval
+      : normalizeGoal(nextGoalSnap.data() as Goal);
+    const room = nextGoal.savedAmount;
+    const appliedAmount = Math.min(Math.abs(transaction.amount), room);
+    if (!appliedAmount) {
+      nextTransaction.goalId = undefined;
+      nextTransaction.linkedGoalEntryId = undefined;
+      firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
+      savedTransaction = nextTransaction;
+      return;
+    }
+
+    const nextEntry = {
+      id: `${nextGoal.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      amount: appliedAmount,
+      date: transaction.date,
+      type: 'withdraw' as const,
+      note: transaction.note || transaction.category,
+      linkedTransactionId: transaction.id
+    };
+    nextTransaction.linkedGoalEntryId = nextEntry.id;
+
+    firestoreTransaction.set(nextGoalRef, clean(getGoalWithSavedAmount({
+      ...nextGoal,
+      deposits: [...(nextGoal.deposits || []), nextEntry],
+      savedAmount: Math.max(0, nextGoal.savedAmount - appliedAmount)
+    })));
+    firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
+    savedTransaction = nextTransaction;
+  });
+
+  return savedTransaction;
+}
+
+export async function deleteTransactionWithGoalLink(transaction: Transaction): Promise<void> {
+  const uid = getUid();
+  await runTransaction(db, async firestoreTransaction => {
+    if (transaction.goalId && transaction.linkedGoalEntryId) {
+      const goalRef = docRef(uid, 'goals', transaction.goalId);
+      const goalSnap = await firestoreTransaction.get(goalRef);
+      if (goalSnap.exists()) {
+        const goal = normalizeGoal(goalSnap.data() as Goal);
+        firestoreTransaction.set(goalRef, clean(getGoalWithSavedAmount({
+          ...goal,
+          deposits: (goal.deposits || []).filter(item => item.id !== transaction.linkedGoalEntryId)
+        })));
+      }
+    }
+    firestoreTransaction.delete(docRef(uid, 'transactions', transaction.id));
+  });
 }
 
 export async function loadBudgets(): Promise<Record<string, number>> {
@@ -148,12 +254,7 @@ export async function loadGoals(): Promise<Goal[]> {
 
 export async function upsertGoal(goal: Goal): Promise<void> {
   const uid = getUid();
-  const normalizedGoal = normalizeGoal(goal);
-  const goalWithSavedAmount = {
-    ...normalizedGoal,
-    savedAmount: Math.min(normalizedGoal.targetAmount, getGoalSavedAmount(normalizedGoal))
-  };
-  await setDoc(docRef(uid, 'goals', goal.id), clean(goalWithSavedAmount));
+  await setDoc(docRef(uid, 'goals', goal.id), clean(getGoalWithSavedAmount(goal)));
 }
 
 export async function deleteGoal(id: string): Promise<void> {
@@ -215,43 +316,6 @@ export async function removeGoalEntry(goalId: string, entryId: string): Promise<
   };
   await upsertGoal(nextGoal);
   return nextGoal;
-}
-
-export async function syncTransactionGoalLink(transaction: Transaction, previous?: Transaction): Promise<Transaction> {
-  let nextTransaction: Transaction = {...transaction};
-
-  if (previous?.goalId && previous.linkedGoalEntryId) {
-    await removeGoalEntry(previous.goalId, previous.linkedGoalEntryId);
-    nextTransaction.linkedGoalEntryId = undefined;
-  }
-
-  if (!transaction.goalId || transaction.type !== 'expense') {
-    nextTransaction.goalId = undefined;
-    nextTransaction.linkedGoalEntryId = undefined;
-    return nextTransaction;
-  }
-
-  const result = await appendGoalEntry(transaction.goalId, {
-    amount: transaction.amount,
-    date: transaction.date,
-    type: 'withdraw',
-    note: transaction.note || transaction.category,
-    linkedTransactionId: transaction.id
-  });
-
-  if (!result.entryId) {
-    nextTransaction.goalId = undefined;
-    nextTransaction.linkedGoalEntryId = undefined;
-    return nextTransaction;
-  }
-
-  nextTransaction.linkedGoalEntryId = result.entryId;
-  return nextTransaction;
-}
-
-export async function removeTransactionGoalLink(transaction: Transaction): Promise<void> {
-  if (!transaction.goalId || !transaction.linkedGoalEntryId) return;
-  await removeGoalEntry(transaction.goalId, transaction.linkedGoalEntryId);
 }
 
 export async function loadAccounts(): Promise<Account[]> {
@@ -389,16 +453,14 @@ export async function removeTransactionTransfer(transaction: Transaction): Promi
 
 export async function trackEvent(name: string, props: Record<string, unknown> = {}): Promise<AnalyticsEvent[]> {
   const uid = getUid();
-  const events = await loadMetaDoc<AnalyticsEvent[]>(uid, 'events', []);
+  const events = await loadEventItems(uid);
   const next = [...events, {name, props, at: new Date().toISOString()}].slice(-500);
   await saveMetaDoc(uid, 'events', {items: next});
   return next;
 }
 
 export async function loadEvents(): Promise<AnalyticsEvent[]> {
-  const uid = getUid();
-  const data = await loadMetaDoc<{items?: AnalyticsEvent[]}>(uid, 'events', {});
-  return data.items ?? [];
+  return loadEventItems(getUid());
 }
 
 export async function clearSensitiveCache(): Promise<void> {

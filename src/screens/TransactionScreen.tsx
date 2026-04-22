@@ -9,15 +9,13 @@ import {expenseCategories, paymentMethods} from '../constants/categories';
 import {scanReceipt} from '../services/ocr';
 import {loadGeminiApiKey} from '../services/secrets';
 import {
-  deleteTransaction,
+  deleteTransactionWithGoalLink,
   getCurrentMonthKey,
   loadGoals,
-  removeTransactionGoalLink,
-  syncTransactionGoalLink,
+  saveTransactionWithGoalLink,
   getTransactionsByMonth,
   trackEvent,
   upsertReceipt,
-  upsertTransaction
 } from '../services/storage';
 import {colors, spacing} from '../theme';
 import {Goal, OcrResult, Transaction} from '../types/finance';
@@ -124,8 +122,7 @@ export function TransactionScreen() {
       createdAt: existing?.createdAt || new Date().toISOString()
     };
 
-    const syncedTransaction = await syncTransactionGoalLink(transaction, existing);
-    await upsertTransaction(syncedTransaction);
+    const syncedTransaction = await saveTransactionWithGoalLink(transaction, existing);
     await trackEvent(editingId ? 'edit_transaction_success' : 'save_transaction_success', {
       source: ocrPreview ? 'ocr' : 'manual',
       category: draft.category,
@@ -156,8 +153,7 @@ export function TransactionScreen() {
         text: '刪除',
         style: 'destructive',
         onPress: async () => {
-          await removeTransactionGoalLink(transaction);
-          await deleteTransaction(transaction.id);
+          await deleteTransactionWithGoalLink(transaction);
           await trackEvent('delete_transaction_success', {category: transaction.category});
           if (editingId === transaction.id) resetForm();
           await refreshScreen();
@@ -196,7 +192,6 @@ export function TransactionScreen() {
     await trackEvent('ocr_scan_start', {mimeType: asset.mimeType || 'image/jpeg'});
     await upsertReceipt({
       id,
-      imageBase64,
       imageUri: asset.uri,
       status: 'processing',
       createdAt: new Date().toISOString()
@@ -221,7 +216,6 @@ export function TransactionScreen() {
       setOcrPreview(result);
       await upsertReceipt({
         id,
-        imageBase64,
         imageUri: asset.uri,
         status: 'done',
         amount: result.amount,
@@ -236,7 +230,6 @@ export function TransactionScreen() {
     } catch (error) {
       await upsertReceipt({
         id,
-        imageBase64,
         imageUri: asset.uri,
         status: 'failed',
         lowFields: ['amount', 'category', 'date'],

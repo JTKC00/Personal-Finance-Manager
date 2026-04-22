@@ -46,7 +46,6 @@ export type OcrResult = {
 
 export type Receipt = {
   id: string;
-  imageBase64?: string;
   imageUri?: string;
   status: 'processing' | 'done' | 'failed';
   amount?: number;
