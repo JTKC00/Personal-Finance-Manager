@@ -28,3 +28,4 @@ yarn-debug.log*
 yarn-error.log*
 .npm/
 .cache/
+node_modules
