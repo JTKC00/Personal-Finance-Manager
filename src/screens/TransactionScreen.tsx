@@ -11,13 +11,16 @@ import {loadGeminiApiKey} from '../services/secrets';
 import {
   deleteTransaction,
   getCurrentMonthKey,
+  loadGoals,
+  removeTransactionGoalLink,
+  syncTransactionGoalLink,
   getTransactionsByMonth,
   trackEvent,
   upsertReceipt,
   upsertTransaction
 } from '../services/storage';
 import {colors, spacing} from '../theme';
-import {OcrResult, Transaction} from '../types/finance';
+import {Goal, OcrResult, Transaction} from '../types/finance';
 
 type Draft = {
   amount: string;
@@ -25,6 +28,7 @@ type Draft = {
   note: string;
   date: string;
   paymentMethod: string;
+  goalId: string;
 };
 
 const formatDate = (date: Date) => {
@@ -52,12 +56,14 @@ const emptyDraft = (): Draft => ({
   category: expenseCategories[0],
   note: '',
   date: today(),
-  paymentMethod: paymentMethods[0]
+  paymentMethod: paymentMethods[0],
+  goalId: ''
 });
 
 export function TransactionScreen() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [ocrPreview, setOcrPreview] = useState<OcrResult | null>(null);
@@ -66,17 +72,18 @@ export function TransactionScreen() {
 
   const canSave = useMemo(() => Number(draft.amount) > 0 && Boolean(draft.date), [draft.amount, draft.date]);
 
-  const refreshTransactions = useCallback(async () => {
-    const next = await getTransactionsByMonth(month);
+  const refreshScreen = useCallback(async () => {
+    const [next, nextGoals] = await Promise.all([getTransactionsByMonth(month), loadGoals()]);
     setTransactions(
       [...next].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
     );
+    setGoals(nextGoals);
   }, [month]);
 
   useFocusEffect(
     useCallback(() => {
-      refreshTransactions();
-    }, [refreshTransactions])
+      refreshScreen();
+    }, [refreshScreen])
   );
 
   function updateDraft(patch: Partial<Draft>) {
@@ -110,17 +117,21 @@ export function TransactionScreen() {
       currency: existing?.currency || 'HKD',
       date: draft.date,
       category: draft.category,
+      goalId: draft.goalId || undefined,
+      linkedGoalEntryId: existing?.linkedGoalEntryId,
       paymentMethod: draft.paymentMethod,
       note: draft.note,
       createdAt: existing?.createdAt || new Date().toISOString()
     };
 
-    await upsertTransaction(transaction);
+    const syncedTransaction = await syncTransactionGoalLink(transaction, existing);
+    await upsertTransaction(syncedTransaction);
     await trackEvent(editingId ? 'edit_transaction_success' : 'save_transaction_success', {
       source: ocrPreview ? 'ocr' : 'manual',
-      category: draft.category
+      category: draft.category,
+      goalId: syncedTransaction.goalId || null
     });
-    await refreshTransactions();
+    await refreshScreen();
     resetForm();
     Alert.alert(editingId ? '已更新' : '已儲存', editingId ? '交易已更新。' : '交易已加入本機資料。');
   }
@@ -132,7 +143,8 @@ export function TransactionScreen() {
       category: transaction.category,
       note: transaction.note || '',
       date: transaction.date,
-      paymentMethod: transaction.paymentMethod || paymentMethods[0]
+      paymentMethod: transaction.paymentMethod || paymentMethods[0],
+      goalId: transaction.goalId || ''
     });
     setOcrPreview(null);
   }
@@ -144,10 +156,11 @@ export function TransactionScreen() {
         text: '刪除',
         style: 'destructive',
         onPress: async () => {
+          await removeTransactionGoalLink(transaction);
           await deleteTransaction(transaction.id);
           await trackEvent('delete_transaction_success', {category: transaction.category});
           if (editingId === transaction.id) resetForm();
-          await refreshTransactions();
+          await refreshScreen();
         }
       }
     ]);
@@ -297,6 +310,22 @@ export function TransactionScreen() {
             </Pressable>
           ))}
         </View>
+        {goals.length ? (
+          <>
+            <Text style={styles.sectionLabel}>由哪個 Goal 支付（選填）</Text>
+            <View style={styles.chips}>
+              <Pressable onPress={() => updateDraft({goalId: ''})} style={[styles.chip, !draft.goalId && styles.activeChip]}>
+                <Text style={styles.chipText}>不指定</Text>
+              </Pressable>
+              {goals.map(goal => (
+                <Pressable key={goal.id} onPress={() => updateDraft({goalId: goal.id})} style={[styles.chip, goal.id === draft.goalId && styles.activeChip]}>
+                  <Text style={styles.chipText}>{goal.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.helperText}>如果指定 Goal，這筆支出會自動從該目標提取相同金額。</Text>
+          </>
+        ) : null}
         <View style={styles.actionRow}>
           <Pressable disabled={!canSave} onPress={save} style={[styles.button, !canSave && styles.disabledButton]}>
             <Text style={styles.buttonText}>{editingId ? '儲存變更' : '新增'}</Text>
@@ -317,6 +346,11 @@ export function TransactionScreen() {
               <Text style={styles.transactionMeta}>
                 {transaction.date} · {transaction.category} · {transaction.paymentMethod || '未填付款方式'}
               </Text>
+              {transaction.goalId ? (
+                <Text style={styles.goalMetaText}>
+                  由 Goal 支付：{goals.find(goal => goal.id === transaction.goalId)?.name || '已刪除目標'}
+                </Text>
+              ) : null}
             </View>
             <View style={styles.transactionActions}>
               <Text style={styles.expenseText}>-{formatMoney(transaction.amount)}</Text>
@@ -379,6 +413,12 @@ const styles = StyleSheet.create({
   chipText: {
     color: colors.text
   },
+  sectionLabel: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: spacing.sm
+  },
   actionRow: {
     flexDirection: 'row',
     gap: spacing.sm
@@ -418,6 +458,12 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: spacing.md
   },
+  helperText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: spacing.md
+  },
   transactionRow: {
     borderBottomColor: colors.border,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -438,6 +484,11 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
     marginTop: 3
+  },
+  goalMetaText: {
+    color: colors.warning,
+    fontSize: 12,
+    marginTop: 4
   },
   transactionActions: {
     alignItems: 'flex-end',

@@ -7,6 +7,10 @@ export type Transaction = {
   currency: string;
   date: string;
   category: string;
+  goalId?: string;
+  linkedGoalEntryId?: string;
+  accountId?: string;
+  linkedTransferId?: string;
   merchant?: string;
   paymentMethod?: string;
   note?: string;
@@ -30,6 +34,7 @@ export type Goal = {
   targetDate?: string;
   savedAmount: number;
   deposits?: GoalDeposit[];
+  accountId?: string;
 };
 
 export type OcrResult = {
@@ -54,8 +59,35 @@ export type Receipt = {
 };
 
 export type GoalDeposit = {
+  id: string;
   amount: number;
   date: string;
+  type: 'deposit' | 'withdraw';
+  note?: string;
+  linkedTransactionId?: string;
+};
+
+export type AccountType = 'cash' | 'bank' | 'wallet' | 'credit';
+
+export type Account = {
+  id: string;
+  name: string;
+  type: AccountType;
+  initialBalance: number;
+  currency: string;
+  createdAt: string;
+};
+
+export type Transfer = {
+  id: string;
+  fromAccountId: string | null;
+  toAccountId: string | null;
+  amount: number;
+  date: string;
+  note?: string;
+  transactionId?: string;
+  goalId?: string;
+  createdAt: string;
 };
 
 export type AnalyticsEvent = {

@@ -1,37 +1,37 @@
-import {useCallback, useState} from 'react';
+import {useCallback, useMemo, useState} from 'react';
 import {Alert, Platform, Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
 import DateTimePicker, {DateTimePickerEvent} from '@react-native-community/datetimepicker';
 import {useFocusEffect} from '@react-navigation/native';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {deleteGoal, getCurrentMonthKey, getMonthlySummary, loadGoals, trackEvent, upsertGoal} from '../services/storage';
+import {appendGoalEntry, deleteGoal, getCurrentMonthKey, getMonthlySummary, loadGoals, trackEvent, upsertGoal} from '../services/storage';
 import {colors, spacing} from '../theme';
 import {Goal} from '../types/finance';
 
-const formatMoney = (v: number) => `$${Math.round(v).toLocaleString()}`;
-const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+const formatMoney = (value: number) => `$${Math.round(value).toLocaleString()}`;
+const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), high);
+const today = () => new Date().toISOString().slice(0, 10);
 
 function formatDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export function GoalsScreen() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [monthlySaving, setMonthlySaving] = useState(0);
 
-  // Add / edit form
   const [name, setName] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Inline deposit form
-  const [depositGoalId, setDepositGoalId] = useState<string | null>(null);
-  const [depositAmount, setDepositAmount] = useState('');
+  const [actionGoalId, setActionGoalId] = useState<string | null>(null);
+  const [actionType, setActionType] = useState<'deposit' | 'withdraw' | null>(null);
+  const [actionAmount, setActionAmount] = useState('');
 
   const refresh = useCallback(async () => {
     const month = getCurrentMonthKey();
@@ -46,11 +46,25 @@ export function GoalsScreen() {
     }, [refresh])
   );
 
+  const canSaveGoal = name.trim().length > 0 && Number(targetAmount) > 0;
+  const focusGoal = useMemo(
+    () => [...goals]
+      .filter(goal => goal.savedAmount < goal.targetAmount)
+      .sort((a, b) => (a.targetAmount - a.savedAmount) - (b.targetAmount - b.savedAmount))[0],
+    [goals]
+  );
+
   function resetForm() {
     setName('');
     setTargetAmount('');
     setTargetDate('');
     setEditingId(null);
+  }
+
+  function resetActionForm() {
+    setActionGoalId(null);
+    setActionType(null);
+    setActionAmount('');
   }
 
   async function saveGoal() {
@@ -61,28 +75,26 @@ export function GoalsScreen() {
     }
 
     if (editingId) {
-      const existing = goals.find(g => g.id === editingId);
+      const existing = goals.find(goal => goal.id === editingId);
       if (!existing) return;
-      const updated: Goal = {
+      await upsertGoal({
         ...existing,
         name: name.trim(),
         targetAmount: amount,
         targetDate: targetDate || undefined,
         savedAmount: Math.min(existing.savedAmount, amount)
-      };
-      await upsertGoal(updated);
-      await trackEvent('goal_edit_success', {id: editingId});
+      });
+      await trackEvent('goal_edit_success', {goalId: editingId});
     } else {
-      const newGoal: Goal = {
+      await upsertGoal({
         id: Date.now().toString(),
         name: name.trim(),
         targetAmount: amount,
         targetDate: targetDate || undefined,
         savedAmount: 0,
         deposits: []
-      };
-      await upsertGoal(newGoal);
-      await trackEvent('goal_create_success', {name: name.trim()});
+      });
+      await trackEvent('goal_create_success', {goalName: name.trim()});
     }
 
     await refresh();
@@ -95,8 +107,7 @@ export function GoalsScreen() {
     setName(goal.name);
     setTargetAmount(String(goal.targetAmount));
     setTargetDate(goal.targetDate || '');
-    setDepositGoalId(null);
-    setDepositAmount('');
+    resetActionForm();
   }
 
   function confirmDelete(goal: Goal) {
@@ -107,32 +118,48 @@ export function GoalsScreen() {
         style: 'destructive',
         onPress: async () => {
           await deleteGoal(goal.id);
-          await trackEvent('goal_delete_success', {id: goal.id});
+          await trackEvent('goal_delete_success', {goalId: goal.id});
           if (editingId === goal.id) resetForm();
+          if (actionGoalId === goal.id) resetActionForm();
           await refresh();
         }
       }
     ]);
   }
 
-  async function confirmDeposit() {
-    const goal = goals.find(g => g.id === depositGoalId);
-    if (!goal) return;
-    const amount = Number(depositAmount);
+  async function submitGoalAction() {
+    if (!actionGoalId || !actionType) return;
+
+    const amount = Number(actionAmount);
     if (!amount || amount <= 0) {
       Alert.alert('請輸入有效金額');
       return;
     }
-    const newSaved = Math.min(goal.savedAmount + amount, goal.targetAmount);
-    const deposits = [
-      ...(goal.deposits || []),
-      {amount, date: new Date().toISOString().split('T')[0]}
-    ];
-    await upsertGoal({...goal, savedAmount: newSaved, deposits});
-    await trackEvent('goal_deposit_success', {goalId: goal.id, amount});
-    setDepositGoalId(null);
-    setDepositAmount('');
+
+    const goal = goals.find(item => item.id === actionGoalId);
+    if (!goal) return;
+
+    const result = await appendGoalEntry(goal.id, {
+      amount,
+      date: today(),
+      type: actionType,
+      note: actionType === 'deposit' ? '手動存入目標' : '手動提取目標'
+    });
+
+    if (!result.entryId) {
+      Alert.alert(
+        '無法更新目標',
+        actionType === 'deposit' ? '此目標已達上限，沒有可再存入的空間。' : '此目標目前沒有足夠金額可提取。'
+      );
+      return;
+    }
+
+    await trackEvent(actionType === 'deposit' ? 'goal_deposit_success' : 'goal_withdraw_success', {
+      goalId: goal.id,
+      amount
+    });
     await refresh();
+    resetActionForm();
   }
 
   function handleDateChange(event: DateTimePickerEvent, date?: Date) {
@@ -141,11 +168,8 @@ export function GoalsScreen() {
     setTargetDate(formatDate(date));
   }
 
-  const canSaveGoal = name.trim().length > 0 && Number(targetAmount) > 0;
-
   return (
-    <Screen title="目標" subtitle="建立儲蓄目標、追蹤進度與手動存入">
-      {/* Add / edit form */}
+    <Screen title="目標" subtitle="只追蹤目標資金流：存入、提取，以及交易扣回">
       <Card title={editingId ? '編輯目標' : '新增目標'}>
         <TextInput
           onChangeText={setName}
@@ -180,11 +204,7 @@ export function GoalsScreen() {
           />
         ) : null}
         <View style={styles.actionRow}>
-          <Pressable
-            disabled={!canSaveGoal}
-            onPress={saveGoal}
-            style={[styles.button, !canSaveGoal && styles.disabledButton]}
-          >
+          <Pressable disabled={!canSaveGoal} onPress={saveGoal} style={[styles.button, !canSaveGoal && styles.disabledButton]}>
             <Text style={styles.buttonText}>{editingId ? '儲存變更' : '新增目標'}</Text>
           </Pressable>
           {editingId ? (
@@ -195,42 +215,28 @@ export function GoalsScreen() {
         </View>
       </Card>
 
-      {/* Inline deposit form */}
-      {depositGoalId ? (
-        <Card title="手動存入">
-          <Text style={styles.depositLabel}>
-            {goals.find(g => g.id === depositGoalId)?.name ?? ''}
-          </Text>
+      {actionGoalId && actionType ? (
+        <Card title={actionType === 'deposit' ? '存入目標' : '從目標提取'}>
+          <Text style={styles.depositLabel}>{goals.find(goal => goal.id === actionGoalId)?.name ?? ''}</Text>
           <TextInput
             autoFocus
             keyboardType="numeric"
-            onChangeText={setDepositAmount}
-            placeholder="存入金額"
+            onChangeText={setActionAmount}
+            placeholder={actionType === 'deposit' ? '存入金額' : '提取金額'}
             style={styles.input}
-            value={depositAmount}
+            value={actionAmount}
           />
           <View style={styles.actionRow}>
-            <Pressable
-              disabled={!Number(depositAmount)}
-              onPress={confirmDeposit}
-              style={[styles.button, !Number(depositAmount) && styles.disabledButton]}
-            >
-              <Text style={styles.buttonText}>確認存入</Text>
+            <Pressable disabled={!Number(actionAmount)} onPress={submitGoalAction} style={[styles.button, !Number(actionAmount) && styles.disabledButton]}>
+              <Text style={styles.buttonText}>{actionType === 'deposit' ? '確認存入' : '確認提取'}</Text>
             </Pressable>
-            <Pressable
-              onPress={() => {
-                setDepositGoalId(null);
-                setDepositAmount('');
-              }}
-              style={styles.secondaryButton}
-            >
+            <Pressable onPress={resetActionForm} style={styles.secondaryButton}>
               <Text style={styles.secondaryButtonText}>取消</Text>
             </Pressable>
           </View>
         </Card>
       ) : null}
 
-      {/* Goals list */}
       <Card title="儲蓄目標">
         {goals.length === 0 ? (
           <Text style={styles.empty}>尚未建立目標，新增第一個目標開始追蹤！</Text>
@@ -239,8 +245,10 @@ export function GoalsScreen() {
             const progress = goal.targetAmount > 0
               ? clamp(goal.savedAmount / goal.targetAmount, 0, 1)
               : 0;
-            const remaining = goal.targetAmount - goal.savedAmount;
+            const remaining = Math.max(0, goal.targetAmount - goal.savedAmount);
             const done = goal.savedAmount >= goal.targetAmount;
+            const recentEntries = (goal.deposits || []).slice(-3).reverse();
+
             return (
               <View key={goal.id} style={styles.goalRow}>
                 <View style={styles.goalHeader}>
@@ -263,10 +271,39 @@ export function GoalsScreen() {
                   {!done ? ` · 還差 ${formatMoney(remaining)}` : ''}
                   {goal.targetDate ? ` · 目標日 ${goal.targetDate}` : ''}
                 </Text>
+                {recentEntries.length ? (
+                  <View style={styles.entryList}>
+                    {recentEntries.map(entry => (
+                      <Text key={entry.id} style={styles.entryText}>
+                        {entry.date} · {entry.type === 'deposit' ? '存入' : '提取'} {formatMoney(entry.amount)}
+                        {entry.linkedTransactionId ? ' · 由交易支付' : ''}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
                 <View style={styles.goalActions}>
                   {!done ? (
-                    <Pressable onPress={() => setDepositGoalId(goal.id)} style={styles.textButton}>
+                    <Pressable
+                      onPress={() => {
+                        setActionGoalId(goal.id);
+                        setActionType('deposit');
+                        setActionAmount('');
+                      }}
+                      style={styles.textButton}
+                    >
                       <Text style={styles.textButtonLabel}>存入</Text>
+                    </Pressable>
+                  ) : null}
+                  {goal.savedAmount > 0 ? (
+                    <Pressable
+                      onPress={() => {
+                        setActionGoalId(goal.id);
+                        setActionType('withdraw');
+                        setActionAmount('');
+                      }}
+                      style={styles.textButton}
+                    >
+                      <Text style={styles.textButtonLabel}>提取</Text>
                     </Pressable>
                   ) : null}
                   <Pressable onPress={() => startEdit(goal)} style={styles.textButton}>
@@ -282,13 +319,12 @@ export function GoalsScreen() {
         )}
       </Card>
 
-      {/* Monthly suggestion */}
       <Card title="本月建議">
         <Text style={styles.tipText}>
           {monthlySaving > 0
-            ? `本月結餘約 ${formatMoney(monthlySaving)}，建議優先存入距完成最近的目標。`
+            ? `本月結餘約 ${formatMoney(monthlySaving)}，${focusGoal ? `可以優先存入「${focusGoal.name}」` : '可以考慮建立新目標'}。`
             : monthlySaving < 0
-            ? `本月支出超過收入 ${formatMoney(Math.abs(monthlySaving))}，建議先降低非必要支出再存入目標。`
+            ? `本月支出超過收入 ${formatMoney(Math.abs(monthlySaving))}。如果某筆消費是由目標支付，請在記帳頁直接指定該目標。`
             : '本月尚無收支資料，新增交易後這裡會顯示建議。'}
         </Text>
       </Card>
@@ -403,6 +439,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     marginBottom: spacing.sm
+  },
+  entryList: {
+    marginBottom: spacing.sm
+  },
+  entryText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16
   },
   goalActions: {
     flexDirection: 'row',
