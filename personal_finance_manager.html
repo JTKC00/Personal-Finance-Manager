@@ -256,7 +256,13 @@ input:focus,select:focus{border-color:var(--color-text-primary)}
     </div>
     <input type="file" id="receiptFile" accept="image/*" style="display:none" onchange="handleReceiptUpload(event)">
     <div id="apiKeySection" style="margin-top:12px">
-      <div class="alert alert-warn" style="margin-bottom:0">OCR 透過本機後端 proxy 呼叫 Gemini，請在伺服器環境設定 GEMINI_API_KEY。</div>
+      <div class="form-row">
+        <label style="white-space:nowrap">Gemini Key</label>
+        <input type="password" id="apiKeyInput" placeholder="輸入自己的 Gemini API Key；留空則使用 server fallback" style="flex:1">
+        <button class="btn btn-sm" onclick="saveApiKey()">儲存</button>
+        <button class="btn btn-sm" onclick="clearApiKey()">清除</button>
+      </div>
+      <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:4px">Key 只儲存在你的瀏覽器 localStorage，OCR 時會送到本機 proxy 使用。</div>
     </div>
   </div>
   <div class="card">
@@ -393,6 +399,25 @@ function showToast(message){
   el.classList.add('show');
   clearTimeout(showToast._timer);
   showToast._timer=setTimeout(()=>el.classList.remove('show'),2600);
+}
+
+function saveApiKey(){
+  const input=document.getElementById('apiKeyInput');
+  const key=input.value.trim();
+  if(!key)return showToast('請先輸入 Gemini API Key');
+  localStorage.setItem('fin_gemini_key',key);
+  showToast('Gemini API Key 已儲存在本機');
+}
+
+function clearApiKey(){
+  localStorage.removeItem('fin_gemini_key');
+  const input=document.getElementById('apiKeyInput');
+  if(input)input.value='';
+  showToast('已清除本機 Gemini API Key');
+}
+
+function getApiKey(){
+  return localStorage.getItem('fin_gemini_key')||'';
 }
 
 function getCurrentMonthKey(){
@@ -954,17 +979,22 @@ async function handleReceiptUpload(e){
     const entry={id,img:imgData,status:'processing',date:new Date().toISOString().split('T')[0]};
     receipts.push(entry);
     renderReceipts();
-    try{
-      const resp=await fetch('/api/ocr',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          imageBase64:base64,
-          mimeType:file.type||'image/jpeg',
-          today:new Date().toISOString().split('T')[0]
-        })
-      });
-      if(!resp.ok)throw new Error(`OCR proxy request failed: ${resp.status}`);
+	    try{
+      const geminiApiKey=getApiKey();
+	      const resp=await fetch('/api/ocr',{
+	        method:'POST',
+	        headers:{'Content-Type':'application/json'},
+	        body:JSON.stringify({
+	          imageBase64:base64,
+	          mimeType:file.type||'image/jpeg',
+	          today:new Date().toISOString().split('T')[0],
+          geminiApiKey
+	        })
+	      });
+	      if(!resp.ok){
+        const err=await resp.json().catch(()=>({error:`OCR proxy request failed: ${resp.status}`}));
+        throw new Error(err.error||`OCR proxy request failed: ${resp.status}`);
+      }
       const data=await resp.json();
       const parsed=data.result||data;
       const idx=receipts.findIndex(r=>r.id===id);
@@ -976,7 +1006,7 @@ async function handleReceiptUpload(e){
       track(lowFields.length?'ocr_scan_fail':'ocr_scan_success',{lowFields});
     }catch(err){
       const idx=receipts.findIndex(r=>r.id===id);
-      if(idx>=0)receipts[idx]={...receipts[idx],status:'done',category:'其他',amount:0,note:'辨識失敗或 proxy 未啟動，請手動輸入',lowFields:['amount','category','date'],needsConfirm:true};
+	      if(idx>=0)receipts[idx]={...receipts[idx],status:'done',category:'其他',amount:0,note:err.message==='Gemini API key is required'?'請輸入 Gemini API Key 後再試，或設定 server fallback':'辨識失敗或 proxy 未啟動，請手動輸入',lowFields:['amount','category','date'],needsConfirm:true};
       track('ocr_scan_fail',{reason:'parse_or_network'});
     }
     saveData();renderReceipts();
@@ -1049,6 +1079,11 @@ function refreshAll(){
 function init(){
   track('open_app');
   initHeader();initDates();updateCatOptions();updateModalCat();initBudgetCat();
+  const savedKey=getApiKey();
+  if(savedKey){
+    const input=document.getElementById('apiKeyInput');
+    if(input)input.value=savedKey;
+  }
   refreshAll();renderReceipts();
 }
 init();

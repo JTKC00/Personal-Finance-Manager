@@ -81,14 +81,17 @@ function parseGeminiJsonResponse(data) {
 }
 
 async function handleOcr(req, res) {
-  if (!GEMINI_API_KEY) {
-    sendJson(res, 500, {error: 'Server missing GEMINI_API_KEY'});
-    return;
-  }
-
   try {
     const body = await readJsonBody(req);
     const {imageBase64, mimeType = 'image/jpeg', today = new Date().toISOString().slice(0, 10)} = body;
+    const userKey = (req.headers['x-gemini-api-key'] || body.geminiApiKey || '').toString().trim();
+    const apiKey = userKey || GEMINI_API_KEY;
+
+    if (!apiKey) {
+      sendJson(res, 400, {error: 'Gemini API key is required'});
+      return;
+    }
+
     if (!imageBase64) {
       sendJson(res, 400, {error: 'imageBase64 is required'});
       return;
@@ -98,7 +101,7 @@ async function handleOcr(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': GEMINI_API_KEY
+        'x-goog-api-key': apiKey
       },
       body: JSON.stringify({
         contents: [{

@@ -1,11 +1,20 @@
-import {useMemo, useState} from 'react';
+import {useCallback, useMemo, useState} from 'react';
 import {ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
+import {useFocusEffect} from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {expenseCategories, paymentMethods} from '../constants/categories';
 import {scanReceipt} from '../services/ocr';
-import {trackEvent, upsertReceipt, upsertTransaction} from '../services/storage';
+import {loadGeminiApiKey} from '../services/secrets';
+import {
+  deleteTransaction,
+  getCurrentMonthKey,
+  getTransactionsByMonth,
+  trackEvent,
+  upsertReceipt,
+  upsertTransaction
+} from '../services/storage';
 import {colors, spacing} from '../theme';
 import {OcrResult, Transaction} from '../types/finance';
 
@@ -18,22 +27,47 @@ type Draft = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const formatMoney = (value: number) => `$${Math.round(value).toLocaleString()}`;
+
+const emptyDraft = (): Draft => ({
+  amount: '',
+  category: expenseCategories[0],
+  note: '',
+  date: today(),
+  paymentMethod: paymentMethods[0]
+});
 
 export function TransactionScreen() {
-  const [draft, setDraft] = useState<Draft>({
-    amount: '',
-    category: expenseCategories[0],
-    note: '',
-    date: today(),
-    paymentMethod: paymentMethods[0]
-  });
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [ocrPreview, setOcrPreview] = useState<OcrResult | null>(null);
+  const month = getCurrentMonthKey();
 
   const canSave = useMemo(() => Number(draft.amount) > 0 && Boolean(draft.date), [draft.amount, draft.date]);
 
+  const refreshTransactions = useCallback(async () => {
+    const next = await getTransactionsByMonth(month);
+    setTransactions(
+      [...next].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
+    );
+  }, [month]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshTransactions();
+    }, [refreshTransactions])
+  );
+
   function updateDraft(patch: Partial<Draft>) {
     setDraft(current => ({...current, ...patch}));
+  }
+
+  function resetForm() {
+    setDraft(emptyDraft());
+    setEditingId(null);
+    setOcrPreview(null);
   }
 
   async function save() {
@@ -43,29 +77,55 @@ export function TransactionScreen() {
       return;
     }
 
+    const existing = editingId ? transactions.find(item => item.id === editingId) : undefined;
     const transaction: Transaction = {
-      id: Date.now().toString(),
+      id: editingId || Date.now().toString(),
       type: 'expense',
       amount: value,
-      currency: 'HKD',
+      currency: existing?.currency || 'HKD',
       date: draft.date,
       category: draft.category,
       paymentMethod: draft.paymentMethod,
       note: draft.note,
-      createdAt: new Date().toISOString()
+      createdAt: existing?.createdAt || new Date().toISOString()
     };
 
     await upsertTransaction(transaction);
-    await trackEvent('save_transaction_success', {source: ocrPreview ? 'ocr' : 'manual', category: draft.category});
+    await trackEvent(editingId ? 'edit_transaction_success' : 'save_transaction_success', {
+      source: ocrPreview ? 'ocr' : 'manual',
+      category: draft.category
+    });
+    await refreshTransactions();
+    resetForm();
+    Alert.alert(editingId ? '已更新' : '已儲存', editingId ? '交易已更新。' : '交易已加入本機資料。');
+  }
+
+  function startEdit(transaction: Transaction) {
+    setEditingId(transaction.id);
     setDraft({
-      amount: '',
-      category: expenseCategories[0],
-      note: '',
-      date: today(),
-      paymentMethod: paymentMethods[0]
+      amount: String(transaction.amount),
+      category: transaction.category,
+      note: transaction.note || '',
+      date: transaction.date,
+      paymentMethod: transaction.paymentMethod || paymentMethods[0]
     });
     setOcrPreview(null);
-    Alert.alert('已儲存', '交易已加入本機資料。');
+  }
+
+  function confirmDelete(transaction: Transaction) {
+    Alert.alert('刪除交易', `確定刪除「${transaction.note || transaction.category}」？`, [
+      {text: '取消', style: 'cancel'},
+      {
+        text: '刪除',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteTransaction(transaction.id);
+          await trackEvent('delete_transaction_success', {category: transaction.category});
+          if (editingId === transaction.id) resetForm();
+          await refreshTransactions();
+        }
+      }
+    ]);
   }
 
   async function requestAndPick(source: 'camera' | 'library') {
@@ -91,6 +151,7 @@ export function TransactionScreen() {
       Alert.alert('圖片讀取失敗', '沒有取得圖片 base64，請重新選取。');
       return;
     }
+
     const imageBase64 = asset.base64;
     const id = Date.now().toString();
     setScanning(true);
@@ -104,7 +165,8 @@ export function TransactionScreen() {
     });
 
     try {
-      const result = await scanReceipt(imageBase64, asset.mimeType || 'image/jpeg');
+      const geminiApiKey = await loadGeminiApiKey();
+      const result = await scanReceipt(imageBase64, asset.mimeType || 'image/jpeg', geminiApiKey);
       const lowFields = [
         !result.amount ? 'amount' : '',
         !expenseCategories.includes(result.category) ? 'category' : '',
@@ -117,6 +179,7 @@ export function TransactionScreen() {
         note: result.note || '',
         date: /^\d{4}-\d{2}-\d{2}$/.test(result.date) ? result.date : today()
       });
+      setEditingId(null);
       setOcrPreview(result);
       await upsertReceipt({
         id,
@@ -143,14 +206,14 @@ export function TransactionScreen() {
         createdAt: new Date().toISOString()
       });
       await trackEvent('ocr_scan_fail', {reason: error instanceof Error ? error.message : 'unknown'});
-      Alert.alert('OCR 失敗', '已保留手動輸入流程，請確認 proxy 與 GEMINI_API_KEY。');
+      Alert.alert('OCR 失敗', '已保留手動輸入流程，請到「我的」輸入 Gemini API Key，或確認 server fallback 已設定。');
     } finally {
       setScanning(false);
     }
   }
 
   return (
-    <Screen title="記帳" subtitle="快速新增、拍照 OCR、相簿 OCR">
+    <Screen title="記帳" subtitle="快速新增、拍照 OCR、交易列表">
       <Card title="收據 OCR">
         <View style={styles.actionRow}>
           <Pressable disabled={scanning} onPress={() => requestAndPick('camera')} style={styles.secondaryButton}>
@@ -164,7 +227,7 @@ export function TransactionScreen() {
         {ocrPreview ? <Text style={styles.hint}>已預填 OCR 結果，請確認後儲存。</Text> : null}
       </Card>
 
-      <Card title="快速新增">
+      <Card title={editingId ? '編輯交易' : '快速新增'}>
         <TextInput
           autoFocus
           keyboardType="numeric"
@@ -199,9 +262,42 @@ export function TransactionScreen() {
             </Pressable>
           ))}
         </View>
-        <Pressable disabled={!canSave} onPress={save} style={[styles.button, !canSave && styles.disabledButton]}>
-          <Text style={styles.buttonText}>新增</Text>
-        </Pressable>
+        <View style={styles.actionRow}>
+          <Pressable disabled={!canSave} onPress={save} style={[styles.button, !canSave && styles.disabledButton]}>
+            <Text style={styles.buttonText}>{editingId ? '儲存變更' : '新增'}</Text>
+          </Pressable>
+          {editingId ? (
+            <Pressable onPress={resetForm} style={styles.secondaryButton}>
+              <Text style={styles.secondaryButtonText}>取消</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </Card>
+
+      <Card title="本月交易">
+        {transactions.length ? transactions.map(transaction => (
+          <View key={transaction.id} style={styles.transactionRow}>
+            <View style={styles.transactionMain}>
+              <Text style={styles.transactionTitle}>{transaction.note || transaction.category}</Text>
+              <Text style={styles.transactionMeta}>
+                {transaction.date} · {transaction.category} · {transaction.paymentMethod || '未填付款方式'}
+              </Text>
+            </View>
+            <View style={styles.transactionActions}>
+              <Text style={styles.expenseText}>-{formatMoney(transaction.amount)}</Text>
+              <View style={styles.actionRow}>
+                <Pressable onPress={() => startEdit(transaction)} style={styles.textButton}>
+                  <Text style={styles.textButtonLabel}>編輯</Text>
+                </Pressable>
+                <Pressable onPress={() => confirmDelete(transaction)} style={styles.textButton}>
+                  <Text style={[styles.textButtonLabel, styles.deleteLabel]}>刪除</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )) : (
+          <Text style={styles.hint}>本月尚無交易。</Text>
+        )}
       </Card>
     </Screen>
   );
@@ -245,6 +341,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.text,
     borderRadius: 8,
+    flex: 1,
     padding: spacing.md
   },
   disabledButton: {
@@ -272,6 +369,47 @@ const styles = StyleSheet.create({
   hint: {
     color: colors.textMuted,
     fontSize: 13,
+    lineHeight: 20,
     marginTop: spacing.md
+  },
+  transactionRow: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md
+  },
+  transactionMain: {
+    flex: 1
+  },
+  transactionTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600'
+  },
+  transactionMeta: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 3
+  },
+  transactionActions: {
+    alignItems: 'flex-end',
+    gap: spacing.sm
+  },
+  expenseText: {
+    color: colors.danger,
+    fontWeight: '600'
+  },
+  textButton: {
+    paddingVertical: 2
+  },
+  textButtonLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  deleteLabel: {
+    color: colors.danger
   }
 });
