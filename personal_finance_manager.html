@@ -809,6 +809,7 @@ function renderGoals(){
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-sm" onclick="saveToGoal('${g.id}')">手動存入</button>
         <button class="btn btn-sm" onclick="editGoal('${g.id}')">編輯</button>
+        <button class="btn btn-sm" onclick="deleteGoal('${g.id}')">刪除</button>
       </div>
     </div>`;
   }).join('');
@@ -850,6 +851,15 @@ function editGoal(id){
   g.targetDate=prompt('目標日期（YYYY-MM-DD，可留空）',g.targetDate||'')||'';
   g.saved=Math.min(g.saved,newTarget);
   saveData();renderGoals();
+}
+
+function deleteGoal(id){
+  const g=goals.find(x=>x.id===id);
+  if(!g)return;
+  if(!confirm(`確定刪除「${g.name}」？`))return;
+  goals=goals.filter(x=>x.id!==id);
+  saveData();renderGoals();
+  showToast('目標已刪除');
 }
 
 function renderProfile(){

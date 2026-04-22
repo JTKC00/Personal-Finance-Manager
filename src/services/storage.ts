@@ -104,6 +104,13 @@ export async function upsertGoal(goal: Goal): Promise<Goal[]> {
   return next;
 }
 
+export async function deleteGoal(id: string): Promise<Goal[]> {
+  const goals = await loadGoals();
+  const next = goals.filter(item => item.id !== id);
+  await saveJson(KEYS.goals, next);
+  return next;
+}
+
 export async function trackEvent(name: string, props: Record<string, unknown> = {}): Promise<AnalyticsEvent[]> {
   const events = await loadJson<AnalyticsEvent[]>(KEYS.events, []);
   const next = [...events, {name, props, at: new Date().toISOString()}].slice(-500);
