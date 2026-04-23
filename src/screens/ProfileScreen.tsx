@@ -2,7 +2,9 @@
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {useAuth} from '../contexts/AuthContext';
+import {expenseCategories} from '../constants/categories';
 import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
+import {loadBudgets, loadTransactions, saveAllBudgets} from '../services/storage';
 import styles from './ProfileScreen.module.css';
 
 const STEPS = [
@@ -19,6 +21,10 @@ export function ProfileScreen() {
   const [keyInput, setKeyInput] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [budgetEdits, setBudgetEdits] = useState<Record<string, string>>(() =>
+    Object.fromEntries(expenseCategories.map(c => [c, '']))
+  );
+  const [budgetSaving, setBudgetSaving] = useState(false);
   const [toast, setToast] = useState('');
 
   function showToast(msg: string) {
@@ -32,7 +38,14 @@ export function ProfileScreen() {
     setKeyInput('');
   }, []);
 
-  useEffect(() => { refreshKeyState(); }, [refreshKeyState]);
+  const refreshBudgets = useCallback(async () => {
+    const data = await loadBudgets();
+    setBudgetEdits(Object.fromEntries(
+      expenseCategories.map(c => [c, data[c] ? String(data[c]) : ''])
+    ));
+  }, []);
+
+  useEffect(() => { refreshKeyState(); refreshBudgets(); }, [refreshKeyState, refreshBudgets]);
 
   async function handleSignOut() {
     if (!window.confirm('確定要登出嗎？')) return;
@@ -56,6 +69,48 @@ export function ProfileScreen() {
     setHasKey(false);
     setKeyInput('');
     showToast('本機 Gemini API Key 已清除。');
+  }
+
+  async function saveBudgets() {
+    setBudgetSaving(true);
+    try {
+      const data: Record<string, number> = {};
+      for (const cat of expenseCategories) {
+        const val = Number(budgetEdits[cat]);
+        if (val > 0) data[cat] = val;
+      }
+      await saveAllBudgets(data);
+      showToast('月預算已儲存。');
+    } finally {
+      setBudgetSaving(false);
+    }
+  }
+
+  async function exportCsv() {
+    const all = await loadTransactions();
+    all.sort((a, b) => a.date.localeCompare(b.date));
+    const header = ['日期', '類型', '金額', '分類', '備註', '付款方式'];
+    const rows = all.map(t => [
+      t.date,
+      t.type === 'income' ? '收入' : '支出',
+      t.amount,
+      t.category,
+      t.note || '',
+      t.paymentMethod || '',
+    ]);
+    const csv = [header, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + csv], {type: 'text/csv;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `finance-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`已匯出 ${all.length} 筆交易。`);
   }
 
   return (
@@ -118,8 +173,33 @@ export function ProfileScreen() {
         </div>
       </Card>
 
+      <Card title="月預算設定">
+        <p className={styles.body}>設定每月各分類的預算，Dashboard 會顯示實際支出與預算的對比進度。</p>
+        <div className={styles.budgetGrid}>
+          {expenseCategories.map(cat => (
+            <div key={cat} className={styles.budgetRow}>
+              <label className={styles.budgetLabel}>{cat}</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="不限制"
+                className={styles.budgetInput}
+                value={budgetEdits[cat] ?? ''}
+                onChange={e => setBudgetEdits(prev => ({...prev, [cat]: e.target.value}))}
+              />
+            </div>
+          ))}
+        </div>
+        <button
+          className={[styles.primaryBtn, budgetSaving ? styles.disabledBtn : ''].join(' ')}
+          disabled={budgetSaving}
+          onClick={saveBudgets}
+        >{budgetSaving ? '儲存中…' : '儲存預算'}</button>
+      </Card>
+
       <Card title="資料與報表">
-        <p className={styles.body}>MVP 會先提供本月 CSV 匯出、每日記帳次數、OCR 成功率與人工修正率。</p>
+        <p className={styles.body}>匯出全部交易成 CSV 檔案，可用 Excel 或 Google Sheets 開啟。</p>
+        <button className={styles.primaryBtn} onClick={exportCsv}>匯出全部交易 CSV</button>
       </Card>
 
       {toast ? <div className={styles.toast}>{toast}</div> : null}

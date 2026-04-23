@@ -1,7 +1,7 @@
 ﻿import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {expenseCategories, paymentMethods} from '../constants/categories';
+import {expenseCategories, incomeCategories, paymentMethods} from '../constants/categories';
 import {scanReceipt} from '../services/ocr';
 import {loadGeminiApiKey} from '../services/secrets';
 import {
@@ -17,6 +17,7 @@ import {Goal, OcrResult, Transaction} from '../types/finance';
 import styles from './TransactionScreen.module.css';
 
 type Draft = {
+  type: 'income' | 'expense';
   amount: string;
   category: string;
   note: string;
@@ -34,6 +35,7 @@ const formatDate = (date: Date) => {
 const today = () => formatDate(new Date());
 const formatMoney = (value: number) => `$${Math.round(value).toLocaleString()}`;
 const emptyDraft = (): Draft => ({
+  type: 'expense',
   amount: '',
   category: expenseCategories[0],
   note: '',
@@ -90,13 +92,13 @@ export function TransactionScreen() {
     const existing = editingId ? transactions.find(item => item.id === editingId) : undefined;
     const transaction: Transaction = {
       id: editingId || Date.now().toString(),
-      type: 'expense',
+      type: draft.type,
       amount: value,
       currency: existing?.currency || 'HKD',
       date: draft.date,
       category: draft.category,
-      goalId: draft.goalId || undefined,
-      linkedGoalEntryId: existing?.linkedGoalEntryId,
+      goalId: draft.type === 'expense' ? (draft.goalId || undefined) : undefined,
+      linkedGoalEntryId: draft.type === 'expense' ? existing?.linkedGoalEntryId : undefined,
       paymentMethod: draft.paymentMethod,
       note: draft.note,
       createdAt: existing?.createdAt || new Date().toISOString()
@@ -116,6 +118,7 @@ export function TransactionScreen() {
   function startEdit(transaction: Transaction) {
     setEditingId(transaction.id);
     setDraft({
+      type: transaction.type,
       amount: String(transaction.amount),
       category: transaction.category,
       note: transaction.note || '',
@@ -165,6 +168,7 @@ export function TransactionScreen() {
       ].filter(Boolean);
 
       updateDraft({
+        type: 'expense',
         amount: result.amount ? String(result.amount) : '',
         category: expenseCategories.includes(result.category) ? result.category : '其他',
         note: result.note || '',
@@ -238,6 +242,19 @@ export function TransactionScreen() {
       </Card>
 
       <Card title={editingId ? '編輯交易' : '快速新增'}>
+        <p className={styles.sectionLabel}>類型</p>
+        <div className={styles.chips}>
+          <button
+            type="button"
+            onClick={() => updateDraft({type: 'expense', category: expenseCategories[0], goalId: ''})}
+            className={[styles.chip, draft.type === 'expense' ? styles.activeChip : ''].join(' ')}
+          >支出</button>
+          <button
+            type="button"
+            onClick={() => updateDraft({type: 'income', category: incomeCategories[0], goalId: ''})}
+            className={[styles.chip, draft.type === 'income' ? styles.activeChip : ''].join(' ')}
+          >收入</button>
+        </div>
         <input
           autoFocus
           type="number"
@@ -263,7 +280,7 @@ export function TransactionScreen() {
 
         <p className={styles.sectionLabel}>分類</p>
         <div className={styles.chips}>
-          {expenseCategories.map(item => (
+          {(draft.type === 'income' ? incomeCategories : expenseCategories).map(item => (
             <button
               key={item}
               type="button"
@@ -289,7 +306,7 @@ export function TransactionScreen() {
           ))}
         </div>
 
-        {goals.length ? (
+        {goals.length && draft.type === 'expense' ? (
           <>
             <p className={styles.sectionLabel}>由哪個 Goal 支付（選填）</p>
             <div className={styles.chips}>
@@ -337,14 +354,16 @@ export function TransactionScreen() {
               <span className={styles.txMeta}>
                 {t.date} · {t.category} · {t.paymentMethod || '未填付款方式'}
               </span>
-              {t.goalId ? (
+              {t.goalId && t.type === 'expense' ? (
                 <span className={styles.goalMeta}>
                   由 Goal 支付：{goals.find(g => g.id === t.goalId)?.name || '已刪除目標'}
                 </span>
               ) : null}
             </div>
             <div className={styles.txActions}>
-              <span className={styles.expenseText}>-{formatMoney(t.amount)}</span>
+              <span className={t.type === 'income' ? styles.incomeText : styles.expenseText}>
+                {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
+              </span>
               <div className={styles.actionRow}>
                 <button className={styles.textBtn} onClick={() => startEdit(t)}>編輯</button>
                 <button className={[styles.textBtn, styles.deleteBtn].join(' ')} onClick={() => confirmDelete(t)}>刪除</button>

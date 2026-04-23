@@ -159,6 +159,12 @@
   font-size: 14px;
 }
 
+.incomeText {
+  color: var(--color-success);
+  font-weight: 600;
+  font-size: 14px;
+}
+
 .textBtn {
   background: transparent;
   border: none;

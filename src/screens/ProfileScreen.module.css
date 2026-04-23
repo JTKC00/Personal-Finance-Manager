@@ -4,6 +4,48 @@
   margin-bottom: var(--spacing-md);
 }
 
+.budgetGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: var(--spacing-md);
+}
+
+.budgetRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.budgetLabel {
+  width: 60px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  flex-shrink: 0;
+}
+
+.budgetInput {
+  flex: 1;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  outline: none;
+}
+
+.budgetInput:focus {
+  border-color: var(--color-text-muted);
+}
+
+.disabledBtn {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .status {
   font-size: 13px;
   color: var(--color-text-muted);

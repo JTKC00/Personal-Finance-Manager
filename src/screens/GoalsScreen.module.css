@@ -136,6 +136,12 @@
   font-size: 13px;
 }
 
+.depositForm {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
 .toast {
   position: fixed;
   bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + 12px);

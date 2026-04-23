@@ -222,6 +222,11 @@ export async function saveBudget(category: string, amount: number): Promise<Reco
   return next;
 }
 
+export async function saveAllBudgets(data: Record<string, number>): Promise<void> {
+  const uid = getUid();
+  await saveMetaDoc(uid, 'budgets', data);
+}
+
 export async function loadBudgetRows(): Promise<Budget[]> {
   const budgets = await loadBudgets();
   const month = getCurrentMonthKey();

@@ -1,7 +1,7 @@
 ﻿import {useCallback, useEffect, useMemo, useState} from 'react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {deleteGoal, loadGoals, upsertGoal, trackEvent} from '../services/storage';
+import {appendGoalEntry, deleteGoal, loadGoals, upsertGoal, trackEvent} from '../services/storage';
 import {Goal} from '../types/finance';
 import styles from './GoalsScreen.module.css';
 
@@ -24,6 +24,9 @@ export function GoalsScreen() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [depositGoalId, setDepositGoalId] = useState<string | null>(null);
+  const [depositAmount, setDepositAmount] = useState('');
+  const [depositNote, setDepositNote] = useState('');
   const [toast, setToast] = useState('');
 
   const canSave = useMemo(
@@ -91,8 +94,29 @@ export function GoalsScreen() {
     await deleteGoal(goal.id);
     await trackEvent('delete_goal_success', {goalName: goal.name});
     if (editingId === goal.id) resetForm();
+    if (depositGoalId === goal.id) setDepositGoalId(null);
     await refresh();
     showToast('目標已刪除。');
+  }
+
+  async function handleDeposit(goalId: string) {
+    const amount = Number(depositAmount);
+    if (!amount || amount <= 0) {
+      showToast('請輸入有效金額。');
+      return;
+    }
+    await appendGoalEntry(goalId, {
+      amount,
+      date: new Date().toISOString().slice(0, 10),
+      type: 'deposit',
+      note: depositNote.trim() || '手動入金',
+    });
+    await trackEvent('goal_deposit_success', {goalId, amount});
+    setDepositGoalId(null);
+    setDepositAmount('');
+    setDepositNote('');
+    await refresh();
+    showToast('入金成功！');
   }
 
   return (
@@ -166,8 +190,41 @@ export function GoalsScreen() {
                 </div>
                 <div className={styles.actionRow}>
                   <button className={styles.textBtn} onClick={() => startEdit(goal)}>編輯</button>
+                  <button
+                    className={styles.textBtn}
+                    onClick={() => {
+                      setDepositGoalId(depositGoalId === goal.id ? null : goal.id);
+                      setDepositAmount('');
+                      setDepositNote('');
+                    }}
+                  >{depositGoalId === goal.id ? '取消入金' : '入金'}</button>
                   <button className={[styles.textBtn, styles.deleteBtn].join(' ')} onClick={() => confirmDelete(goal)}>刪除</button>
                 </div>
+                {depositGoalId === goal.id ? (
+                  <div className={styles.depositForm}>
+                    <input
+                      autoFocus
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="入金金額"
+                      className={styles.input}
+                      value={depositAmount}
+                      onChange={e => setDepositAmount(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="備註（選填）"
+                      className={styles.input}
+                      value={depositNote}
+                      onChange={e => setDepositNote(e.target.value)}
+                    />
+                    <button
+                      className={[styles.primaryBtn, (!depositAmount || Number(depositAmount) <= 0) ? styles.disabledBtn : ''].join(' ')}
+                      disabled={!depositAmount || Number(depositAmount) <= 0}
+                      onClick={() => handleDeposit(goal.id)}
+                    >確認入金</button>
+                  </div>
+                ) : null}
               </Card>
             );
           })}
