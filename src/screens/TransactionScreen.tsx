@@ -183,8 +183,15 @@ export function TransactionScreen() {
         id, imageUri: filename, status: 'failed',
         lowFields: ['amount', 'category', 'date'], needsConfirm: true, createdAt: new Date().toISOString()
       });
-      await trackEvent('ocr_scan_fail', {reason: error instanceof Error ? error.message : 'unknown'});
-      showToast('OCR 失敗。請到「我的帳戶」輸入 Gemini API Key。');
+      const errMsg = error instanceof Error ? error.message : 'unknown';
+      await trackEvent('ocr_scan_fail', {reason: errMsg});
+      // 區分「需要輸入 Key」與其他連線/服務錯誤
+      const needsKey = /key is required|api key/i.test(errMsg);
+      showToast(
+        needsKey
+          ? '請先到「我的帳戶」輸入 Gemini API Key 後再試'
+          : `OCR 服務連線失敗，請手動輸入（${errMsg}）`
+      );
     } finally {
       setScanning(false);
     }
