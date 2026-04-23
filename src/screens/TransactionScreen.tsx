@@ -13,6 +13,17 @@ import {
   trackEvent,
   upsertReceipt,
 } from '../services/storage';
+
+function shiftMonth(monthKey: string, delta: number): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const d = new Date(year, month - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function getMonthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  return `${year} 年 ${month} 月`;
+}
 import {Goal, OcrResult, Transaction} from '../types/finance';
 import styles from './TransactionScreen.module.css';
 
@@ -45,6 +56,8 @@ const emptyDraft = (): Draft => ({
 });
 
 export function TransactionScreen() {
+  const currentMonth = getCurrentMonthKey();
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -53,17 +66,16 @@ export function TransactionScreen() {
   const [ocrPreview, setOcrPreview] = useState<OcrResult | null>(null);
   const [toast, setToast] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const month = getCurrentMonthKey();
 
   const canSave = useMemo(() => Number(draft.amount) > 0 && Boolean(draft.date), [draft.amount, draft.date]);
 
   const refreshScreen = useCallback(async () => {
-    const [next, nextGoals] = await Promise.all([getTransactionsByMonth(month), loadGoals()]);
+    const [next, nextGoals] = await Promise.all([getTransactionsByMonth(selectedMonth), loadGoals()]);
     setTransactions(
       [...next].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
     );
     setGoals(nextGoals);
-  }, [month]);
+  }, [selectedMonth]);
 
   useEffect(() => { refreshScreen(); }, [refreshScreen]);
 
@@ -346,7 +358,19 @@ export function TransactionScreen() {
         </div>
       </Card>
 
-      <Card title="本月交易">
+      <Card title="交易記錄">
+        <div className={styles.monthNav}>
+          <button
+            className={styles.navBtn}
+            onClick={() => setSelectedMonth(m => shiftMonth(m, -1))}
+          >‹ 上月</button>
+          <span className={styles.monthLabel}>{getMonthLabel(selectedMonth)}</span>
+          <button
+            className={styles.navBtn}
+            disabled={selectedMonth >= currentMonth}
+            onClick={() => setSelectedMonth(m => shiftMonth(m, 1))}
+          >下月 ›</button>
+        </div>
         {transactions.length ? transactions.map(t => (
           <div key={t.id} className={styles.txRow}>
             <div className={styles.txMain}>

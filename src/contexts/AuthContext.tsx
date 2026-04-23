@@ -4,8 +4,10 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
+  linkWithPopup,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
 import {auth} from '../services/firebase';
@@ -15,7 +17,9 @@ type AuthContextValue = {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;  // 新增
+  signInWithGoogle: () => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
+  linkGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -47,12 +51,22 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
     await signInWithPopup(auth, provider);
   }, []);
 
+  const sendPasswordReset = useCallback(async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
+  }, []);
+
+  const linkGoogle = useCallback(async () => {
+    if (!auth.currentUser) throw new Error('Not authenticated');
+    const provider = new GoogleAuthProvider();
+    await linkWithPopup(auth.currentUser, provider);
+  }, []);
+
   const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
   }, []);
 
   return (
-    <AuthContext.Provider value={{user, loading, signIn, signUp, signInWithGoogle, signOut}}>
+    <AuthContext.Provider value={{user, loading, signIn, signUp, signInWithGoogle, sendPasswordReset, linkGoogle, signOut}}>
       {children}
     </AuthContext.Provider>
   );

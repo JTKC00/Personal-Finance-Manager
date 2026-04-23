@@ -18,7 +18,7 @@ const STEPS = [
 ];
 
 export function ProfileScreen() {
-  const {user, signOut} = useAuth();
+  const {user, signOut, linkGoogle} = useAuth();
   const [keyInput, setKeyInput] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
@@ -28,6 +28,7 @@ export function ProfileScreen() {
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [receiptsOpen, setReceiptsOpen] = useState(false);
+  const [linkingGoogle, setLinkingGoogle] = useState(false);
   const [toast, setToast] = useState('');
 
   function showToast(msg: string) {
@@ -121,10 +122,44 @@ export function ProfileScreen() {
     showToast(`已匯出 ${all.length} 筆交易。`);
   }
 
+  const hasGoogleLinked = user?.providerData.some(p => p.providerId === 'google.com') ?? false;
+  const isEmailUser = user?.providerData.some(p => p.providerId === 'password') ?? false;
+
+  async function handleLinkGoogle() {
+    setLinkingGoogle(true);
+    try {
+      await linkGoogle();
+      showToast('Google 帳號已成功綁定！');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('credential-already-in-use') || msg.includes('already-in-use')) {
+        showToast('此 Google 帳號已被其他帳戶使用。');
+      } else if (msg.includes('popup-closed-by-user') || msg.includes('cancelled-popup-request')) {
+        // user cancelled, do nothing
+      } else {
+        showToast('綁定失敗：' + msg);
+      }
+    } finally {
+      setLinkingGoogle(false);
+    }
+  }
+
   return (
     <Screen title="我的帳戶" subtitle="帳號、Gemini Key 與設定">
       <Card title="帳號">
         <p className={styles.body}>目前登入：{user?.email}</p>
+        {isEmailUser && !hasGoogleLinked ? (
+          <>
+            <p className={styles.body} style={{marginBottom: 8}}>綁定 Google 帳號後，可以同時用 Google 或電郵密碼登入，不怕忘記密碼。</p>
+            <button
+              className={styles.secondaryBtn}
+              disabled={linkingGoogle}
+              onClick={handleLinkGoogle}
+            >{linkingGoogle ? '綁定中…' : '綁定 Google 帳號'}</button>
+          </>
+        ) : hasGoogleLinked ? (
+          <p className={styles.body} style={{color: 'var(--color-success)', marginBottom: 8}}>✓ 已綁定 Google 帳號</p>
+        ) : null}
         <button className={styles.dangerBtn} onClick={handleSignOut}>登出</button>
       </Card>
 
