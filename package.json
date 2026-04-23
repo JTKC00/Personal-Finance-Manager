@@ -2,41 +2,31 @@
   "name": "personal-finance-manager",
   "version": "0.1.0",
   "private": true,
-  "main": "expo/AppEntry",
+  "type": "module",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "prototype": "node server.js",
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },
   "dependencies": {
-    "@expo/vector-icons": "^14.0.4",
-    "@react-native-async-storage/async-storage": "1.23.1",
-    "@react-native-community/datetimepicker": "^9.1.0",
-    "@react-navigation/bottom-tabs": "^6.6.1",
-    "@react-navigation/native": "^6.1.18",
-    "expo": "~55.0.0",
-    "expo-image-picker": "~55.0.19",
-    "expo-secure-store": "~55.0.13",
-    "expo-status-bar": "~2.0.0",
     "firebase": "^12.12.1",
-    "react": "19.2.0",
-    "react-native": "0.83.0",
-    "react-native-chart-kit": "^6.12.0",
-    "react-native-safe-area-context": "^5.0.0",
-    "react-native-screens": "^4.0.0",
-    "react-native-svg": "15.15.3"
+    "lucide-react": "^0.515.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^6.28.0",
+    "recharts": "^2.15.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.25.2",
-    "@types/react": "~19.2.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@typescript-eslint/eslint-plugin": "^8.18.1",
     "@typescript-eslint/parser": "^8.18.1",
+    "@vitejs/plugin-react": "^4.3.4",
     "eslint": "^9.17.0",
-    "eslint-config-expo": "^8.0.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^6.0.11"
   }
 }

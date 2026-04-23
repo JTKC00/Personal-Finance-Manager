@@ -1,6 +1,5 @@
 import {PropsWithChildren} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
-import {colors, spacing} from '../theme';
+import styles from './Card.module.css';
 
 type Props = PropsWithChildren<{
   title?: string;
@@ -8,27 +7,9 @@ type Props = PropsWithChildren<{
 
 export function Card({title, children}: Props) {
   return (
-    <View style={styles.card}>
-      {title ? <Text style={styles.title}>{title}</Text> : null}
+    <div className={styles.card}>
+      {title ? <p className={styles.title}>{title}</p> : null}
       {children}
-    </View>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: spacing.md,
-    padding: spacing.lg
-  },
-  title: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0,
-    marginBottom: spacing.md
-  }
-});

@@ -1,17 +1,6 @@
 import {useState} from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  Alert,
-} from 'react-native';
 import {useAuth} from '../contexts/AuthContext';
-import {colors, spacing} from '../theme';
+import styles from './LoginScreen.module.css';
 
 export function LoginScreen() {
   const {signIn, signUp} = useAuth();
@@ -19,13 +8,16 @@ export function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  async function submit() {
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
     if (!email.trim() || !password.trim()) {
-      Alert.alert('請填寫電郵和密碼');
+      setError('請填寫電郵和密碼');
       return;
     }
     setLoading(true);
+    setError('');
     try {
       if (tab === 'signIn') {
         await signIn(email.trim(), password);
@@ -34,77 +26,63 @@ export function LoginScreen() {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('登入失敗', translateFirebaseError(msg));
+      setError(translateFirebaseError(msg));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <View style={styles.inner}>
-        <Text style={styles.title}>個人財務管家</Text>
-        <Text style={styles.subtitle}>
-          登入後，記帳數據自動備份至雲端{'\n'}換手機不再怕資料消失
-        </Text>
+    <div className={styles.container}>
+      <div className={styles.inner}>
+        <h1 className={styles.title}>個人財務管家</h1>
+        <p className={styles.subtitle}>安全記錄每一筆收支{'\n'}財務自由從這裡開始</p>
 
-        <View style={styles.tabs}>
-          <Pressable
-            onPress={() => setTab('signIn')}
-            style={[styles.tab, tab === 'signIn' && styles.tabActive]}
+        <div className={styles.tabs}>
+          <button
+            type="button"
+            onClick={() => setTab('signIn')}
+            className={[styles.tab, tab === 'signIn' ? styles.tabActive : ''].join(' ')}
           >
-            <Text style={[styles.tabText, tab === 'signIn' && styles.tabTextActive]}>
-              登入
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setTab('signUp')}
-            style={[styles.tab, tab === 'signUp' && styles.tabActive]}
+            登入
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('signUp')}
+            className={[styles.tab, tab === 'signUp' ? styles.tabActive : ''].join(' ')}
           >
-            <Text style={[styles.tabText, tab === 'signUp' && styles.tabTextActive]}>
-              建立帳號
-            </Text>
-          </Pressable>
-        </View>
+            建立帳號
+          </button>
+        </div>
 
-        <TextInput
-          autoCapitalize="none"
-          autoComplete="email"
-          keyboardType="email-address"
-          onChangeText={setEmail}
-          placeholder="電郵地址"
-          placeholderTextColor={colors.textMuted}
-          style={styles.input}
-          value={email}
-        />
-        <TextInput
-          autoCapitalize="none"
-          onChangeText={setPassword}
-          placeholder="密碼（最少 6 位）"
-          placeholderTextColor={colors.textMuted}
-          secureTextEntry
-          style={styles.input}
-          value={password}
-        />
+        <form onSubmit={submit} className={styles.form}>
+          <input
+            autoCapitalize="none"
+            autoComplete="email"
+            type="email"
+            placeholder="電郵地址"
+            className={styles.input}
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+          />
+          <input
+            autoCapitalize="none"
+            type="password"
+            placeholder="密碼（最少 6 位）"
+            autoComplete={tab === 'signIn' ? 'current-password' : 'new-password'}
+            className={styles.input}
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+          />
+          {error ? <p className={styles.error}>{error}</p> : null}
+          <button type="submit" disabled={loading} className={styles.button}>
+            {loading ? <span className={styles.spinner} /> : (tab === 'signIn' ? '登入' : '建立帳號')}
+          </button>
+        </form>
 
-        <Pressable disabled={loading} onPress={submit} style={styles.button}>
-          {loading ? (
-            <ActivityIndicator color={colors.surface} />
-          ) : (
-            <Text style={styles.buttonText}>
-              {tab === 'signIn' ? '登入' : '建立帳號'}
-            </Text>
-          )}
-        </Pressable>
-
-        <Text style={styles.note}>
-          你的記帳數據屬於你自己，{'\n'}不會與其他人共享。
-        </Text>
-      </View>
-    </KeyboardAvoidingView>
+        <p className={styles.note}>你的記帳數據屬於你自己，{'\n'}不會與其他人共享。</p>
+      </div>
+    </div>
   );
 }
 
@@ -122,66 +100,3 @@ function translateFirebaseError(msg: string): string {
   if (msg.includes('network-request-failed')) return '網絡連線失敗，請檢查網絡。';
   return msg;
 }
-
-const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: colors.background},
-  inner: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl * 2,
-    gap: spacing.md,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: spacing.lg,
-  },
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: spacing.sm,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  tabActive: {backgroundColor: colors.surface},
-  tabText: {fontSize: 14, color: colors.textMuted},
-  tabTextActive: {color: colors.text, fontWeight: '600'},
-  input: {
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: colors.text,
-    padding: spacing.md,
-    backgroundColor: colors.surface,
-  },
-  button: {
-    backgroundColor: colors.text,
-    borderRadius: 8,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  buttonText: {color: colors.surface, fontWeight: '600', fontSize: 16},
-  note: {
-    fontSize: 12,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: spacing.md,
-    lineHeight: 20,
-  },
-});

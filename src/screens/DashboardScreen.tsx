@@ -1,11 +1,9 @@
-import {useCallback, useState} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
-import {useFocusEffect} from '@react-navigation/native';
+﻿import {useEffect, useState} from 'react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {getCurrentMonthKey, getMonthlySummary, getTransactionsByMonth, loadBudgetRows, loadGoals} from '../services/storage';
-import {colors, spacing} from '../theme';
 import {Budget, Goal, Transaction} from '../types/finance';
+import styles from './DashboardScreen.module.css';
 
 type Summary = {
   income: number;
@@ -14,13 +12,7 @@ type Summary = {
   count: number;
 };
 
-const emptySummary: Summary = {
-  income: 0,
-  expense: 0,
-  balance: 0,
-  count: 0
-};
-
+const emptySummary: Summary = {income: 0, expense: 0, balance: 0, count: 0};
 const formatMoney = (value: number) => `$${Math.round(value).toLocaleString()}`;
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
 const clampPercent = (value: number) => Math.min(Math.max(value, 0), 1);
@@ -33,38 +25,31 @@ export function DashboardScreen() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const month = getCurrentMonthKey();
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      const [nextSummary, nextTransactions, nextBudgets, nextGoals] = await Promise.all([
+        getMonthlySummary(month),
+        getTransactionsByMonth(month),
+        loadBudgetRows(),
+        loadGoals()
+      ]);
+      if (!active) return;
+      setSummary(nextSummary);
+      setTransactions(nextTransactions);
+      setBudgets(nextBudgets);
+      setGoals(nextGoals);
+      setRecentTransactions(
+        [...nextTransactions]
+          .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
+          .slice(0, 3)
+      );
+    }
+    load();
+    return () => { active = false; };
+  }, [month]);
 
-      async function load() {
-        const [nextSummary, nextTransactions, nextBudgets, nextGoals] = await Promise.all([
-          getMonthlySummary(month),
-          getTransactionsByMonth(month),
-          loadBudgetRows(),
-          loadGoals()
-        ]);
-
-        if (!active) return;
-        setSummary(nextSummary);
-        setTransactions(nextTransactions);
-        setBudgets(nextBudgets);
-        setGoals(nextGoals);
-        setRecentTransactions(
-          [...nextTransactions]
-            .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
-            .slice(0, 3)
-        );
-      }
-
-      load();
-      return () => {
-        active = false;
-      };
-    }, [month])
-  );
-
-  const metrics = [
+  const metrics: [string, string][] = [
     ['本月收入', formatMoney(summary.income)],
     ['本月支出', formatMoney(summary.expense)],
     ['結餘', formatMoney(summary.balance)],
@@ -87,226 +72,103 @@ export function DashboardScreen() {
     .filter(item => item.targetAmount > 0)
     .sort((a, b) => (b.savedAmount / b.targetAmount) - (a.savedAmount / a.targetAmount))[0];
 
+  const pillClass = (p: number) =>
+    p >= 0.9 ? styles.dangerPill : p >= 0.7 ? styles.warningPill : styles.safePill;
+  const fillClass = (p: number) =>
+    p >= 0.9 ? styles.dangerFill : p >= 0.7 ? styles.warningFill : styles.safeFill;
+
   return (
     <Screen title="首頁" subtitle={`${month} 月現金流與重點提醒`}>
-      <View style={styles.grid}>
+      <div className={styles.grid}>
         {metrics.map(([label, value]) => (
-          <View key={label} style={styles.metric}>
-            <Text style={styles.label}>{label}</Text>
-            <Text style={styles.value}>{value}</Text>
-          </View>
+          <div key={label} className={styles.metric}>
+            <span className={styles.label}>{label}</span>
+            <span className={styles.value}>{value}</span>
+          </div>
         ))}
-      </View>
+      </div>
 
       <Card title="月預算進度">
         {monthlyBudget > 0 ? (
           <>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardHeadline}>{formatMoney(summary.expense)}</Text>
-              <Text style={[styles.statusPill, budgetProgress >= 0.9 ? styles.dangerPill : budgetProgress >= 0.7 ? styles.warningPill : styles.safePill]}>
+            <div className={styles.cardHeaderRow}>
+              <span className={styles.cardHeadline}>{formatMoney(summary.expense)}</span>
+              <span className={[styles.statusPill, pillClass(budgetProgress)].join(' ')}>
                 {formatPercent(budgetProgress)}
-              </Text>
-            </View>
-            <View style={styles.progressTrack}>
-              <View
-                style={[
-                  styles.progressFill,
-                  budgetProgress >= 0.9 ? styles.dangerFill : budgetProgress >= 0.7 ? styles.warningFill : styles.safeFill,
-                  {width: `${clampPercent(budgetProgress) * 100}%`}
-                ]}
-              />
-            </View>
-            <Text style={styles.helperText}>
-              本月預算 {formatMoney(monthlyBudget)}，{budgetRemaining >= 0 ? `剩餘 ${formatMoney(budgetRemaining)}` : `已超支 ${formatMoney(Math.abs(budgetRemaining))}`}
-            </Text>
+              </span>
+            </div>
+            <div className={styles.progressTrack}>
+              <div className={[styles.progressFill, fillClass(budgetProgress)].join(' ')}
+                style={{width: `${clampPercent(budgetProgress) * 100}%`}} />
+            </div>
+            <p className={styles.helperText}>
+              本月預算 {formatMoney(monthlyBudget)}，
+              {budgetRemaining >= 0 ? `剩餘 ${formatMoney(budgetRemaining)}` : `已超支 ${formatMoney(Math.abs(budgetRemaining))}`}
+            </p>
           </>
         ) : (
-          <Text style={styles.empty}>尚未設定月預算。設定後，這裡會顯示本月支出進度。</Text>
+          <p className={styles.empty}>尚未設定月預算。設定後，這裡會顯示本月支出進度。</p>
         )}
       </Card>
 
       <Card title="異常消費提醒">
-        {unusualTransactions.length ? unusualTransactions.map(transaction => (
-          <View key={transaction.id} style={styles.alertRow}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{transaction.note || transaction.category}</Text>
-              <Text style={styles.rowMeta}>{transaction.date} · 高於平均單筆支出</Text>
-            </View>
-            <Text style={[styles.amount, styles.expense]}>-{formatMoney(transaction.amount)}</Text>
-          </View>
+        {unusualTransactions.length ? unusualTransactions.map(t => (
+          <div key={t.id} className={styles.row}>
+            <div className={styles.rowText}>
+              <span className={styles.rowTitle}>{t.note || t.category}</span>
+              <span className={styles.rowMeta}>{t.date} · 高於平均單筆支出</span>
+            </div>
+            <span className={[styles.amount, styles.expense].join(' ')}>-{formatMoney(t.amount)}</span>
+          </div>
         )) : largestExpense ? (
-          <View style={styles.alertRow}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>暫無明顯異常</Text>
-              <Text style={styles.rowMeta}>本月最高單筆：{largestExpense.note || largestExpense.category}</Text>
-            </View>
-            <Text style={[styles.amount, styles.expense]}>-{formatMoney(largestExpense.amount)}</Text>
-          </View>
+          <div className={styles.row}>
+            <div className={styles.rowText}>
+              <span className={styles.rowTitle}>暫無明顯異常</span>
+              <span className={styles.rowMeta}>本月最高單筆：{largestExpense.note || largestExpense.category}</span>
+            </div>
+            <span className={[styles.amount, styles.expense].join(' ')}>-{formatMoney(largestExpense.amount)}</span>
+          </div>
         ) : (
-          <Text style={styles.empty}>本月還沒有支出資料，新增交易後會自動提示大額消費。</Text>
+          <p className={styles.empty}>本月還沒有支出資料，新增交易後會自動提示大額消費。</p>
         )}
       </Card>
 
       <Card title="儲蓄目標進度">
         {totalGoalTarget > 0 ? (
           <>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardHeadline}>{formatMoney(totalGoalSaved)}</Text>
-              <Text style={[styles.statusPill, styles.safePill]}>{formatPercent(goalProgress)}</Text>
-            </View>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, styles.safeFill, {width: `${clampPercent(goalProgress) * 100}%`}]} />
-            </View>
-            <Text style={styles.helperText}>
+            <div className={styles.cardHeaderRow}>
+              <span className={styles.cardHeadline}>{formatMoney(totalGoalSaved)}</span>
+              <span className={[styles.statusPill, styles.safePill].join(' ')}>{formatPercent(goalProgress)}</span>
+            </div>
+            <div className={styles.progressTrack}>
+              <div className={[styles.progressFill, styles.safeFill].join(' ')}
+                style={{width: `${clampPercent(goalProgress) * 100}%`}} />
+            </div>
+            <p className={styles.helperText}>
               目標總額 {formatMoney(totalGoalTarget)}
               {focusGoal ? ` · 最接近完成：${focusGoal.name}` : ''}
-            </Text>
+            </p>
           </>
         ) : (
-          <Text style={styles.empty}>尚未建立儲蓄目標。新增目標後，首頁會追蹤完成進度。</Text>
+          <p className={styles.empty}>尚未建立儲蓄目標。新增目標後，首頁會追蹤完成進度。</p>
         )}
       </Card>
 
       <Card title="最近 3 筆交易">
-        {recentTransactions.length ? recentTransactions.map(transaction => (
-          <View key={transaction.id} style={styles.row}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{transaction.note || transaction.category}</Text>
-              <Text style={styles.rowMeta}>{transaction.date} · {transaction.paymentMethod || '未指定付款方式'}</Text>
-            </View>
-            <Text style={[styles.amount, transaction.type === 'income' ? styles.income : styles.expense]}>
-              {transaction.type === 'income' ? '+' : '-'}{formatMoney(transaction.amount)}
-            </Text>
-          </View>
+        {recentTransactions.length ? recentTransactions.map(t => (
+          <div key={t.id} className={styles.row}>
+            <div className={styles.rowText}>
+              <span className={styles.rowTitle}>{t.note || t.category}</span>
+              <span className={styles.rowMeta}>{t.date} · {t.paymentMethod || '未指定付款方式'}</span>
+            </div>
+            <span className={[styles.amount, t.type === 'income' ? styles.income : styles.expense].join(' ')}>
+              {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
+            </span>
+          </div>
         )) : (
-          <Text style={styles.empty}>尚未新增交易。新增第一筆後，這裡會顯示最近紀錄。</Text>
+          <p className={styles.empty}>尚未新增交易。新增第一筆後，這裡會顯示最近紀錄。</p>
         )}
       </Card>
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.md
-  },
-  metric: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 8,
-    padding: spacing.md,
-    width: '48%'
-  },
-  label: {
-    color: colors.textMuted,
-    fontSize: 12
-  },
-  value: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: '600',
-    marginTop: 4
-  },
-  cardHeaderRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md
-  },
-  cardHeadline: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: '700'
-  },
-  statusPill: {
-    borderRadius: 8,
-    fontSize: 13,
-    fontWeight: '700',
-    overflow: 'hidden',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4
-  },
-  safePill: {
-    backgroundColor: 'rgba(59,109,17,0.12)',
-    color: colors.success
-  },
-  warningPill: {
-    backgroundColor: 'rgba(133,79,11,0.14)',
-    color: colors.warning
-  },
-  dangerPill: {
-    backgroundColor: 'rgba(163,45,45,0.12)',
-    color: colors.danger
-  },
-  progressTrack: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 8,
-    height: 12,
-    overflow: 'hidden'
-  },
-  progressFill: {
-    borderRadius: 8,
-    height: '100%'
-  },
-  safeFill: {
-    backgroundColor: colors.success
-  },
-  warningFill: {
-    backgroundColor: colors.warning
-  },
-  dangerFill: {
-    backgroundColor: colors.danger
-  },
-  helperText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    lineHeight: 20,
-    marginTop: spacing.sm
-  },
-  alertRow: {
-    alignItems: 'center',
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm
-  },
-  row: {
-    alignItems: 'center',
-    borderBottomColor: colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm
-  },
-  rowText: {
-    flex: 1,
-    paddingRight: spacing.md
-  },
-  rowTitle: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '600'
-  },
-  rowMeta: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 2
-  },
-  amount: {
-    fontSize: 14,
-    fontWeight: '600'
-  },
-  income: {
-    color: colors.success
-  },
-  expense: {
-    color: colors.danger
-  },
-  empty: {
-    color: colors.textMuted,
-    lineHeight: 20
-  }
-});

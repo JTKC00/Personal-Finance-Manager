@@ -1,0 +1,119 @@
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.metric {
+  background: var(--color-surface-muted);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.value {
+  color: var(--color-text);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.cardHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+}
+
+.cardHeadline {
+  color: var(--color-text);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.statusPill {
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
+.safePill { background: rgba(59,109,17,0.12); color: var(--color-success); }
+.warningPill { background: rgba(133,79,11,0.14); color: var(--color-warning); }
+.dangerPill { background: rgba(163,45,45,0.12); color: var(--color-danger); }
+
+.progressTrack {
+  background: var(--color-surface-muted);
+  border-radius: 8px;
+  height: 12px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.3s ease;
+}
+
+.safeFill { background: var(--color-success); }
+.warningFill { background: var(--color-warning); }
+.dangerFill { background: var(--color-danger); }
+
+.helperText {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: var(--spacing-sm);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.rowText {
+  flex: 1;
+  padding-right: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rowTitle {
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.rowMeta {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.amount {
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.income { color: var(--color-success); }
+.expense { color: var(--color-danger); }
+
+.empty {
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}

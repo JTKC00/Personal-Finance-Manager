@@ -1,15 +1,12 @@
-import {useCallback, useMemo, useState} from 'react';
-import {Dimensions, Pressable, StyleSheet, Text, View} from 'react-native';
-import {useFocusEffect} from '@react-navigation/native';
-import {BarChart, PieChart} from 'react-native-chart-kit';
+﻿import {useEffect, useMemo, useState} from 'react';
+import {
+  Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis
+} from 'recharts';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {getCurrentMonthKey, getTransactionsByMonth} from '../services/storage';
-import {colors, spacing} from '../theme';
 import {Transaction} from '../types/finance';
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const CHART_WIDTH = SCREEN_WIDTH - spacing.lg * 4;
+import styles from './AnalysisScreen.module.css';
 
 const CATEGORY_COLORS = [
   '#3b6d11', '#a32d2d', '#854f0b', '#1a6d6d',
@@ -35,33 +32,18 @@ function getDaysInMonth(monthKey: string): number {
   return new Date(year, month, 0).getDate();
 }
 
-const chartConfig = {
-  backgroundColor: colors.surface,
-  backgroundGradientFrom: colors.surface,
-  backgroundGradientTo: colors.surface,
-  decimalPlaces: 0,
-  color: (opacity = 1) => `rgba(163, 45, 45, ${opacity})`,
-  labelColor: () => colors.textMuted,
-  barPercentage: 0.55,
-  propsForLabels: {fontSize: 10}
-};
-
 export function AnalysisScreen() {
   const currentMonth = getCurrentMonthKey();
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      getTransactionsByMonth(selectedMonth).then(data => {
-        if (active) setTransactions(data);
-      });
-      return () => {
-        active = false;
-      };
-    }, [selectedMonth])
-  );
+  useEffect(() => {
+    let active = true;
+    getTransactionsByMonth(selectedMonth).then(data => {
+      if (active) setTransactions(data);
+    });
+    return () => { active = false; };
+  }, [selectedMonth]);
 
   const income = useMemo(
     () => transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0),
@@ -78,205 +60,110 @@ export function AnalysisScreen() {
 
   const categoryMap = useMemo(() => {
     const map: Record<string, number> = {};
-    transactions
-      .filter(t => t.type === 'expense')
-      .forEach(t => {
-        map[t.category] = (map[t.category] || 0) + t.amount;
-      });
+    transactions.filter(t => t.type === 'expense').forEach(t => {
+      map[t.category] = (map[t.category] || 0) + t.amount;
+    });
     return map;
   }, [transactions]);
 
   const pieData = useMemo(
-    () =>
-      Object.entries(categoryMap)
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, amount], i) => ({
-          name,
-          population: amount,
-          color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
-          legendFontColor: colors.textMuted,
-          legendFontSize: 12
-        })),
+    () => Object.entries(categoryMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value], i) => ({name, value, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length]})),
     [categoryMap]
   );
 
   const barDays = selectedMonth === currentMonth ? new Date().getDate() : daysInMonth;
-  const dailyExpense = useMemo(() => {
+  const barData = useMemo(() => {
     const arr = Array(barDays).fill(0);
-    transactions
-      .filter(t => t.type === 'expense')
-      .forEach(t => {
-        const day = parseInt(t.date.split('-')[2], 10) - 1;
-        if (day >= 0 && day < barDays) arr[day] += t.amount;
-      });
-    return arr as number[];
+    transactions.filter(t => t.type === 'expense').forEach(t => {
+      const day = parseInt(t.date.split('-')[2], 10) - 1;
+      if (day >= 0 && day < barDays) arr[day] += t.amount;
+    });
+    return arr.map((amount, i) => ({day: String(i + 1), amount: Math.round(amount)}));
   }, [transactions, barDays]);
 
-  const barLabels = Array.from({length: barDays}, (_, i) =>
-    (i + 1) % 5 === 1 ? String(i + 1) : ''
-  );
-  const hasBarData = dailyExpense.some(v => v > 0);
+  const hasBarData = barData.some(d => d.amount > 0);
 
   return (
     <Screen title="分析" subtitle={getMonthLabel(selectedMonth)}>
-      <View style={styles.monthNav}>
-        <Pressable onPress={() => setSelectedMonth(m => shiftMonth(m, -1))} style={styles.navButton}>
-          <Text style={styles.navButtonText}>‹ 上月</Text>
-        </Pressable>
-        <Text style={styles.monthLabel}>{getMonthLabel(selectedMonth)}</Text>
-        <Pressable
+      <div className={styles.monthNav}>
+        <button className={styles.navBtn} onClick={() => setSelectedMonth(m => shiftMonth(m, -1))}>
+          ‹ 上月
+        </button>
+        <span className={styles.monthLabel}>{getMonthLabel(selectedMonth)}</span>
+        <button
+          className={styles.navBtn}
           disabled={selectedMonth >= currentMonth}
-          onPress={() => setSelectedMonth(m => shiftMonth(m, 1))}
-          style={[styles.navButton, selectedMonth >= currentMonth && styles.navButtonDisabled]}
+          onClick={() => setSelectedMonth(m => shiftMonth(m, 1))}
         >
-          <Text style={styles.navButtonText}>下月 ›</Text>
-        </Pressable>
-      </View>
+          下月 ›
+        </button>
+      </div>
 
-      <View style={styles.grid}>
+      <div className={styles.grid}>
         {([
-          ['總收入', formatMoney(income), colors.success],
-          ['總支出', formatMoney(expense), colors.danger],
-          ['儲蓄率', formatPercent(savingsRate), colors.text],
-          ['日均支出', formatMoney(avgDailyExpense), colors.text]
+          ['總收入', formatMoney(income), 'var(--color-success)'],
+          ['總支出', formatMoney(expense), 'var(--color-danger)'],
+          ['儲蓄率', formatPercent(savingsRate), 'var(--color-text)'],
+          ['日均支出', formatMoney(avgDailyExpense), 'var(--color-text)']
         ] as [string, string, string][]).map(([label, value, color]) => (
-          <View key={label} style={styles.metric}>
-            <Text style={styles.metricLabel}>{label}</Text>
-            <Text style={[styles.metricValue, {color}]}>{value}</Text>
-          </View>
+          <div key={label} className={styles.metric}>
+            <span className={styles.metricLabel}>{label}</span>
+            <span className={styles.metricValue} style={{color}}>{value}</span>
+          </div>
         ))}
-      </View>
+      </div>
 
       <Card title="支出分類分佈">
         {pieData.length > 0 ? (
           <>
-            <PieChart
-              data={pieData}
-              width={CHART_WIDTH}
-              height={180}
-              chartConfig={chartConfig}
-              accessor="population"
-              backgroundColor="transparent"
-              paddingLeft="8"
-              hasLegend={false}
-              absolute
-            />
-            <View style={styles.legend}>
+            <div className={styles.chartWrap}>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}>
+                    {pieData.map(entry => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => formatMoney(v)} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className={styles.legend}>
               {pieData.map(item => (
-                <View key={item.name} style={styles.legendRow}>
-                  <View style={[styles.legendDot, {backgroundColor: item.color}]} />
-                  <Text style={styles.legendLabel}>{item.name}</Text>
-                  <Text style={styles.legendValue}>{formatMoney(item.population)}</Text>
-                  <Text style={styles.legendPct}>
-                    {expense > 0 ? `${Math.round((item.population / expense) * 100)}%` : ''}
-                  </Text>
-                </View>
+                <div key={item.name} className={styles.legendRow}>
+                  <span className={styles.legendDot} style={{background: item.color}} />
+                  <span className={styles.legendLabel}>{item.name}</span>
+                  <span className={styles.legendValue}>{formatMoney(item.value)}</span>
+                  <span className={styles.legendPct}>
+                    {expense > 0 ? `${Math.round((item.value / expense) * 100)}%` : ''}
+                  </span>
+                </div>
               ))}
-            </View>
+            </div>
           </>
         ) : (
-          <Text style={styles.empty}>本月尚無支出資料。</Text>
+          <p className={styles.empty}>本月尚無支出資料。</p>
         )}
       </Card>
 
       <Card title="每日支出趨勢">
         {hasBarData ? (
-          <BarChart
-            data={{labels: barLabels, datasets: [{data: dailyExpense}]}}
-            width={CHART_WIDTH}
-            height={160}
-            chartConfig={chartConfig}
-            showValuesOnTopOfBars={false}
-            withInnerLines={false}
-            fromZero
-            yAxisLabel=""
-            yAxisSuffix=""
-          />
+          <div className={styles.chartWrap}>
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={barData} margin={{top: 4, right: 0, left: -20, bottom: 0}}>
+                <XAxis dataKey="day" tick={{fontSize: 10}} interval={4} />
+                <YAxis tick={{fontSize: 10}} />
+                <Tooltip formatter={(v: number) => formatMoney(v)} />
+                <Bar dataKey="amount" fill="var(--color-danger)" radius={[2,2,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         ) : (
-          <Text style={styles.empty}>本月尚無支出資料。</Text>
+          <p className={styles.empty}>本月尚無支出資料。</p>
         )}
       </Card>
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  monthNav: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md
-  },
-  navButton: {
-    padding: spacing.sm
-  },
-  navButtonDisabled: {
-    opacity: 0.3
-  },
-  navButtonText: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '600'
-  },
-  monthLabel: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '600'
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.md
-  },
-  metric: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 8,
-    padding: spacing.md,
-    width: '48%'
-  },
-  metricLabel: {
-    color: colors.textMuted,
-    fontSize: 12
-  },
-  metricValue: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginTop: 4
-  },
-  legend: {
-    marginTop: spacing.md
-  },
-  legendRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    paddingVertical: 4
-  },
-  legendDot: {
-    borderRadius: 3,
-    height: 10,
-    marginRight: spacing.sm,
-    width: 10
-  },
-  legendLabel: {
-    color: colors.text,
-    flex: 1,
-    fontSize: 13
-  },
-  legendValue: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: '600',
-    marginRight: spacing.sm
-  },
-  legendPct: {
-    color: colors.textMuted,
-    fontSize: 12,
-    width: 38,
-    textAlign: 'right'
-  },
-  empty: {
-    color: colors.textMuted,
-    lineHeight: 20
-  }
-});

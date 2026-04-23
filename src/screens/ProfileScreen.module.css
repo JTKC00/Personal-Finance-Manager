@@ -1,0 +1,167 @@
+.body {
+  color: var(--color-text);
+  line-height: 1.6;
+  margin-bottom: var(--spacing-md);
+}
+
+.status {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-md);
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 16px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--color-text-muted);
+}
+
+.actionRow {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.primaryBtn {
+  flex: 1;
+  padding: 12px;
+  background: var(--color-text);
+  color: var(--color-surface);
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.secondaryBtn {
+  flex: 1;
+  padding: 12px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.dangerBtn {
+  width: 100%;
+  padding: 12px;
+  background: transparent;
+  color: var(--color-danger);
+  font-size: 15px;
+  font-weight: 600;
+  border: 1px solid var(--color-danger);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tutorialToggle {
+  display: block;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: var(--spacing-sm);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.stepRow {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: flex-start;
+}
+
+.stepBadge {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border-radius: 50%;
+  background: var(--color-text);
+  color: var(--color-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stepContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stepTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.stepDesc {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.linkBtn {
+  display: block;
+  text-align: center;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  margin-top: var(--spacing-sm);
+}
+
+.linkBtn:hover {
+  background: var(--color-surface-muted);
+}
+
+.freeNote {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.toast {
+  position: fixed;
+  bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-text);
+  color: var(--color-surface);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 100;
+  white-space: nowrap;
+  pointer-events: none;
+}

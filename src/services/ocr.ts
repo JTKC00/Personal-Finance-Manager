@@ -1,8 +1,6 @@
 import {OcrResult} from '../types/finance';
 
-declare const process: {env?: Record<string, string | undefined>} | undefined;
-
-const OCR_ENDPOINT = process?.env?.EXPO_PUBLIC_OCR_PROXY_URL || 'http://localhost:5173/api/ocr';
+const OCR_ENDPOINT = import.meta.env.VITE_OCR_PROXY_URL || 'http://localhost:5173/api/ocr';
 
 export async function scanReceipt(imageBase64: string, mimeType = 'image/jpeg', geminiApiKey = ''): Promise<OcrResult> {
   const response = await fetch(OCR_ENDPOINT, {

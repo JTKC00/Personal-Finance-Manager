@@ -1,0 +1,152 @@
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 16px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--color-text-muted);
+}
+
+.fieldLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.actionRow {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.primaryBtn {
+  flex: 1;
+  padding: 12px;
+  background: var(--color-text);
+  color: var(--color-surface);
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.disabledBtn {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.secondaryBtn {
+  flex: 1;
+  padding: 12px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.goalList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.goalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--spacing-sm);
+}
+
+.goalPct {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.goalAmt {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.progressTrack {
+  height: 8px;
+  background: var(--color-surface-muted);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: var(--spacing-sm);
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-warning);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.fillGood { background: var(--color-success); }
+.fillDone { background: var(--color-success); }
+
+.goalMeta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-sm);
+}
+
+.remaining {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.deadline {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.textBtn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.deleteBtn {
+  color: var(--color-danger);
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.toast {
+  position: fixed;
+  bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-text);
+  color: var(--color-surface);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 100;
+  white-space: nowrap;
+  pointer-events: none;
+}

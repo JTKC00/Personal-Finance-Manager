@@ -1,8 +1,4 @@
-import {NavigationContainer} from '@react-navigation/native';
-import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
-import {StatusBar} from 'expo-status-bar';
-import {ActivityIndicator, View} from 'react-native';
-import {Ionicons} from '@expo/vector-icons';
+import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
 import {DashboardScreen} from './src/screens/DashboardScreen';
 import {AnalysisScreen} from './src/screens/AnalysisScreen';
 import {TransactionScreen} from './src/screens/TransactionScreen';
@@ -10,34 +6,16 @@ import {GoalsScreen} from './src/screens/GoalsScreen';
 import {ProfileScreen} from './src/screens/ProfileScreen';
 import {LoginScreen} from './src/screens/LoginScreen';
 import {AuthProvider, useAuth} from './src/contexts/AuthContext';
-import {colors} from './src/theme';
+import {BottomNav} from './src/components/BottomNav';
 
-export type RootTabParamList = {
-  Dashboard: undefined;
-  Analysis: undefined;
-  Transaction: undefined;
-  Goals: undefined;
-  Profile: undefined;
-};
-
-const Tab = createBottomTabNavigator<RootTabParamList>();
-
-const icons: Record<keyof RootTabParamList, keyof typeof Ionicons.glyphMap> = {
-  Dashboard: 'home-outline',
-  Analysis: 'bar-chart-outline',
-  Transaction: 'add-circle-outline',
-  Goals: 'flag-outline',
-  Profile: 'person-outline'
-};
-
-function AppNavigator() {
+function AppShell() {
   const {user, loading} = useAuth();
 
   if (loading) {
     return (
-      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background}}>
-        <ActivityIndicator size="large" color={colors.text} />
-      </View>
+      <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--color-bg)'}}>
+        <div style={{width: 32, height: 32, border: '3px solid var(--color-border)', borderTopColor: 'var(--color-text)', borderRadius: '50%', animation: 'spin 0.8s linear infinite'}} />
+      </div>
     );
   }
 
@@ -46,34 +24,30 @@ function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
-      <StatusBar style="auto" />
-      <Tab.Navigator
-        screenOptions={({route}) => ({
-          headerShown: false,
-          tabBarActiveTintColor: '#1a1a18',
-          tabBarInactiveTintColor: '#888780',
-          tabBarStyle: {height: 64, paddingBottom: 8, paddingTop: 6},
-          tabBarIcon: ({color, size}) => (
-            <Ionicons name={icons[route.name]} size={size} color={color} />
-          )
-        })}
-      >
-        <Tab.Screen name="Dashboard" component={DashboardScreen} options={{title: '首頁'}} />
-        <Tab.Screen name="Analysis" component={AnalysisScreen} options={{title: '分析'}} />
-        <Tab.Screen name="Transaction" component={TransactionScreen} options={{title: '記帳'}} />
-        <Tab.Screen name="Goals" component={GoalsScreen} options={{title: '目標'}} />
-        <Tab.Screen name="Profile" component={ProfileScreen} options={{title: '我的'}} />
-      </Tab.Navigator>
-    </NavigationContainer>
+    <div style={{minHeight: '100vh', overflowY: 'auto', background: 'var(--color-bg)'}}>
+      <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<DashboardScreen />} />
+        <Route path="/analysis" element={<AnalysisScreen />} />
+        <Route path="/transaction" element={<TransactionScreen />} />
+        <Route path="/goals" element={<GoalsScreen />} />
+        <Route path="/profile" element={<ProfileScreen />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+      <BottomNav />
+    </div>
   );
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppNavigator />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <AppShell />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
+
 
