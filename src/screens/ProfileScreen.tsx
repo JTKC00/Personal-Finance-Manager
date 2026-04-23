@@ -190,7 +190,7 @@ export function ProfileScreen() {
               🔗 前往 Google AI Studio 申請 Key
             </a>
             <p className={styles.freeNote}>
-              ✅ 免費方案每天可使用 1,500 次 Gemini Flash 請求，個人日常記帳完全夠用。
+              ✅ 免費方案每天可使用 500 次 Gemini Flash 請求，個人日常記帳完全夠用。
             </p>
           </div>
         ) : null}
