@@ -21,6 +21,7 @@ function parseGeminiJsonResponse(data: Record<string, unknown>): unknown {
 export const ocr = onRequest(
   {
     secrets: [geminiApiKey],
+    invoker: 'public',    // 允許 Firebase Hosting rewrite 呼叫（v2 函式預設需要 IAM 驗證）
     cors: true,           // 允許瀏覽器跨域呼叫
     maxInstances: 10,     // 控制最大並發，避免超出免費額度
     memory: '256MiB',

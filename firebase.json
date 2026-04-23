@@ -15,7 +15,7 @@
     "rewrites": [
       {
         "source": "/api/ocr",
-        "function": "ocr"
+        "run": { "serviceId": "ocr", "region": "us-central1" }
       },
       {
         "source": "**",
