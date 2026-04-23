@@ -129,8 +129,22 @@ async function handleOcr(req, res) {
   }
 }
 
+// 你的 Firebase Hosting 網址，改成你自己的
+const ALLOWED_ORIGIN = 'https://personal-finance-manager-8e8b4.web.app';
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+// 處理瀏覽器的 CORS preflight 請求 (OPTIONS)
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);       
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS'); 
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-gemini-api-key'); 
+
+    if (req.method === 'OPTIONS') {   
+    res.writeHead(204);             
+    res.end();                     
+    return;                         
+  }                                 
 
   if (req.method === 'POST' && url.pathname === '/api/ocr') {
     handleOcr(req, res);
