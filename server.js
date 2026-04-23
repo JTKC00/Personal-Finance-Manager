@@ -130,7 +130,7 @@ async function handleOcr(req, res) {
 }
 
 // 你的 Firebase Hosting 網址，改成你自己的
-const ALLOWED_ORIGIN = 'https://personal-finance-manager-8e8b4.web.app';
+const ALLOWED_ORIGIN = 'https://personal.finance.manager.snugzap.com';
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
