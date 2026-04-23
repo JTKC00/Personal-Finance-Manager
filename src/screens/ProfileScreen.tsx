@@ -1,8 +1,9 @@
-﻿import {useCallback, useEffect, useState} from 'react';
+﻿import {useCallback, useEffect, useRef, useState} from 'react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {useAuth} from '../contexts/AuthContext';
 import {expenseCategories} from '../constants/categories';
+import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authErrors';
 import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
 import {loadBudgets, loadReceipts, loadTransactions, saveAllBudgets} from '../services/storage';
 import {Receipt} from '../types/finance';
@@ -18,7 +19,7 @@ const STEPS = [
 ];
 
 export function ProfileScreen() {
-  const {user, signOut, linkGoogle} = useAuth();
+  const {user, signOut, linkGoogle, authError, clearAuthError} = useAuth();
   const [keyInput, setKeyInput] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
@@ -30,6 +31,7 @@ export function ProfileScreen() {
   const [receiptsOpen, setReceiptsOpen] = useState(false);
   const [linkingGoogle, setLinkingGoogle] = useState(false);
   const [toast, setToast] = useState('');
+  const handledAuthErrorRef = useRef('');
 
   function showToast(msg: string) {
     setToast(msg);
@@ -50,6 +52,18 @@ export function ProfileScreen() {
   }, []);
 
   useEffect(() => { refreshKeyState(); refreshBudgets(); }, [refreshKeyState, refreshBudgets]);
+
+  useEffect(() => {
+    if (!authError || authError === handledAuthErrorRef.current) return;
+
+    handledAuthErrorRef.current = authError;
+
+    if (!isAuthFlowCancelled(authError)) {
+      showToast(translateFirebaseAuthError(authError));
+    }
+
+    clearAuthError();
+  }, [authError, clearAuthError]);
 
   async function loadReceiptHistory() {
     const data = await loadReceipts();
@@ -127,17 +141,18 @@ export function ProfileScreen() {
 
   async function handleLinkGoogle() {
     setLinkingGoogle(true);
+    clearAuthError();
     try {
-      await linkGoogle();
-      showToast('Google 帳號已成功綁定！');
+      const method = await linkGoogle();
+      if (method === 'popup') {
+        showToast('Google 帳號已成功綁定。');
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('credential-already-in-use') || msg.includes('already-in-use')) {
-        showToast('此 Google 帳號已被其他帳戶使用。');
-      } else if (msg.includes('popup-closed-by-user') || msg.includes('cancelled-popup-request')) {
+      if (isAuthFlowCancelled(msg)) {
         // user cancelled, do nothing
       } else {
-        showToast('綁定失敗：' + msg);
+        showToast(translateFirebaseAuthError(msg));
       }
     } finally {
       setLinkingGoogle(false);

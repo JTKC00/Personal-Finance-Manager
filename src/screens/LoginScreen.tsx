@@ -1,5 +1,6 @@
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useAuth} from '../contexts/AuthContext';
+import {translateFirebaseAuthError} from '../services/authErrors';
 import styles from './LoginScreen.module.css';
 
 function validatePasswordStrength(pw: string): string {
@@ -11,7 +12,14 @@ function validatePasswordStrength(pw: string): string {
 }
 
 export function LoginScreen() {
-  const {signIn, signUp, signInWithGoogle, sendPasswordReset} = useAuth();
+  const {
+    signIn,
+    signUp,
+    signInWithGoogle,
+    sendPasswordReset,
+    authError,
+    clearAuthError,
+  } = useAuth();
   const [tab, setTab] = useState<'signIn' | 'signUp'>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,6 +28,11 @@ export function LoginScreen() {
   const [resetMode, setResetMode] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetSent, setResetSent] = useState(false);
+
+  useEffect(() => {
+    if (!authError) return;
+    setError(translateFirebaseAuthError(authError));
+  }, [authError]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,6 +46,7 @@ export function LoginScreen() {
     }
     setLoading(true);
     setError('');
+    clearAuthError();
     try {
       if (tab === 'signIn') {
         await signIn(email.trim(), password);
@@ -41,7 +55,7 @@ export function LoginScreen() {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(translateFirebaseError(msg));
+      setError(translateFirebaseAuthError(msg));
     } finally {
       setLoading(false);
     }
@@ -52,12 +66,13 @@ export function LoginScreen() {
     if (!resetEmail.trim()) { setError('請輸入電郵地址'); return; }
     setLoading(true);
     setError('');
+    clearAuthError();
     try {
       await sendPasswordReset(resetEmail.trim());
       setResetSent(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(translateFirebaseError(msg));
+      setError(translateFirebaseAuthError(msg));
     } finally {
       setLoading(false);
     }
@@ -74,8 +89,8 @@ export function LoginScreen() {
           <div className={styles.form}>
             {resetSent ? (
               <>
-                <p className={styles.resetSuccess}>✅ 重設連結已發送至 {resetEmail}，請檢查收件箱（包括垃圾郵件）。</p>
-                <button type="button" className={styles.button} onClick={() => { setResetMode(false); setResetSent(false); setResetEmail(''); setError(''); }}>返回登入</button>
+                <p className={styles.resetSuccess}>重設連結已發送至 {resetEmail}，請檢查收件箱，包括垃圾郵件。</p>
+                <button type="button" className={styles.button} onClick={() => { setResetMode(false); setResetSent(false); setResetEmail(''); setError(''); clearAuthError(); }}>返回登入</button>
               </>
             ) : (
               <form onSubmit={handleReset} className={styles.form}>
@@ -93,7 +108,7 @@ export function LoginScreen() {
                 <button type="submit" disabled={loading} className={styles.button}>
                   {loading ? <span className={styles.spinner} /> : '發送重設連結'}
                 </button>
-                <button type="button" className={styles.linkBtn} onClick={() => { setResetMode(false); setError(''); }}>返回登入</button>
+                <button type="button" className={styles.linkBtn} onClick={() => { setResetMode(false); setError(''); clearAuthError(); }}>返回登入</button>
               </form>
             )}
           </div>
@@ -101,8 +116,8 @@ export function LoginScreen() {
           /* ── 正常登入 / 註冊 ── */
           <>
             <div className={styles.tabs}>
-              <button type="button" onClick={() => { setTab('signIn'); setError(''); }} className={[styles.tab, tab === 'signIn' ? styles.tabActive : ''].join(' ')}>登入</button>
-              <button type="button" onClick={() => { setTab('signUp'); setError(''); }} className={[styles.tab, tab === 'signUp' ? styles.tabActive : ''].join(' ')}>建立帳號</button>
+              <button type="button" onClick={() => { setTab('signIn'); setError(''); clearAuthError(); }} className={[styles.tab, tab === 'signIn' ? styles.tabActive : ''].join(' ')}>登入</button>
+              <button type="button" onClick={() => { setTab('signUp'); setError(''); clearAuthError(); }} className={[styles.tab, tab === 'signUp' ? styles.tabActive : ''].join(' ')}>建立帳號</button>
             </div>
 
             <form onSubmit={submit} className={styles.form}>
@@ -126,7 +141,7 @@ export function LoginScreen() {
                   onChange={e => setPassword(e.target.value)}
                 />
                 {tab === 'signIn' ? (
-                  <button type="button" className={styles.forgotBtn} onClick={() => { setResetMode(true); setResetEmail(email.trim()); setError(''); }}>忘記密碼？</button>
+                  <button type="button" className={styles.forgotBtn} onClick={() => { setResetMode(true); setResetEmail(email.trim()); setError(''); clearAuthError(); }}>忘記密碼？</button>
                 ) : (
                   <p className={styles.pwHint}>需包含大寫、小寫英文字母及數字，最少 8 位。</p>
                 )}
@@ -150,11 +165,12 @@ export function LoginScreen() {
               onClick={async () => {
                 setLoading(true);
                 setError('');
+                clearAuthError();
                 try {
                   await signInWithGoogle();
                 } catch (err: unknown) {
                   const msg = err instanceof Error ? err.message : String(err);
-                  setError(translateFirebaseError(msg));
+                  setError(translateFirebaseAuthError(msg));
                 } finally {
                   setLoading(false);
                 }
@@ -170,6 +186,7 @@ export function LoginScreen() {
               </svg>
               以 Google 帳號繼續
             </button>
+            <p className={styles.googleHint}>手機、PWA 或彈窗被阻擋時，系統會自動改用 Google 頁面跳轉登入。</p>
           </>
         )}
 
@@ -177,19 +194,4 @@ export function LoginScreen() {
       </div>
     </div>
   );
-}
-
-function translateFirebaseError(msg: string): string {
-  if (
-    msg.includes('user-not-found') ||
-    msg.includes('wrong-password') ||
-    msg.includes('invalid-credential')
-  ) {
-    return '電郵或密碼不正確，請再試。';
-  }
-  if (msg.includes('email-already-in-use')) return '此電郵已被使用，請直接登入。';
-  if (msg.includes('weak-password')) return '密碼太弱，請使用至少 6 個字元。';
-  if (msg.includes('invalid-email')) return '電郵格式不正確。';
-  if (msg.includes('network-request-failed')) return '網絡連線失敗，請檢查網絡。';
-  return msg;
 }
