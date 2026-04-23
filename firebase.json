@@ -15,10 +15,7 @@
     "rewrites": [
       {
         "source": "/api/ocr",
-        "run": {
-          "serviceId": "ocr",
-          "region": "asia-east2"
-        }
+        "function": "ocr"
       },
       {
         "source": "**",
