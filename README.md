@@ -2,7 +2,7 @@
 
 一個為個人設計的記帳 Web App，支援收支記錄、財務分析、儲蓄目標追蹤，並可用 AI 掃描收據自動入帳。
 
-🌐 **正式網址**：https://personal-finance-manager-8e8b4.web.app
+🌐 **正式網址**：https://personal.finance.manager.snugzap.com/
 
 ---
 
