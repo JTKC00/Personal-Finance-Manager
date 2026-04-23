@@ -7,7 +7,7 @@ const tabs = [
   {to: '/analysis', label: '分析', Icon: BarChart2},
   {to: '/transaction', label: '記帳', Icon: PlusCircle},
   {to: '/goals', label: '目標', Icon: Flag},
-  {to: '/profile', label: '我的', Icon: User},
+  {to: '/profile', label: '我的帳戶', Icon: User},
 ];
 
 export function BottomNav() {

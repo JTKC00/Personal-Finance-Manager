@@ -59,7 +59,7 @@ export function ProfileScreen() {
   }
 
   return (
-    <Screen title="我的" subtitle="帳號、Gemini Key 與設定">
+    <Screen title="我的帳戶" subtitle="帳號、Gemini Key 與設定">
       <Card title="帳號">
         <p className={styles.body}>目前登入：{user?.email}</p>
         <button className={styles.dangerBtn} onClick={handleSignOut}>登出</button>

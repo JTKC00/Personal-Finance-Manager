@@ -1,9 +1,11 @@
 import {createContext, useCallback, useContext, useEffect, useState} from 'react';
 import {
   User,
+  GoogleAuthProvider,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
 import {auth} from '../services/firebase';
@@ -13,6 +15,7 @@ type AuthContextValue = {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;  // 新增
   signOut: () => Promise<void>;
 };
 
@@ -38,12 +41,18 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
     await createUserWithEmailAndPassword(auth, email, password);
   }, []);
 
+  // 新增 Google 登入
+  const signInWithGoogle = useCallback(async () => {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+  }, []);
+
   const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
   }, []);
 
   return (
-    <AuthContext.Provider value={{user, loading, signIn, signUp, signOut}}>
+    <AuthContext.Provider value={{user, loading, signIn, signUp, signInWithGoogle, signOut}}>
       {children}
     </AuthContext.Provider>
   );

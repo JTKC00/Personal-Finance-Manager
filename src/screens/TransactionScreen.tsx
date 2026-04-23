@@ -184,7 +184,7 @@ export function TransactionScreen() {
         lowFields: ['amount', 'category', 'date'], needsConfirm: true, createdAt: new Date().toISOString()
       });
       await trackEvent('ocr_scan_fail', {reason: error instanceof Error ? error.message : 'unknown'});
-      showToast('OCR 失敗。請到「我的」輸入 Gemini API Key。');
+      showToast('OCR 失敗。請到「我的帳戶」輸入 Gemini API Key。');
     } finally {
       setScanning(false);
     }
