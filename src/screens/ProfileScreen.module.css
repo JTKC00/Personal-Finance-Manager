@@ -4,6 +4,88 @@
   margin-bottom: var(--spacing-md);
 }
 
+.receiptList {
+  margin-top: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.receiptEmpty {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-sm);
+}
+
+.receiptRow {
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.receiptRow:last-child {
+  border-bottom: none;
+}
+
+.receiptInfo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.receiptStatus {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.statusDone {
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
+  color: var(--color-success);
+}
+
+.statusFailed {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
+}
+
+.statusProcessing {
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  color: var(--color-warning);
+}
+
+.receiptName {
+  font-size: 13px;
+  color: var(--color-text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.receiptAmt {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.receiptDate {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.lowFieldsBadge {
+  font-size: 11px;
+  color: var(--color-warning);
+}
+
 .budgetGrid {
   display: flex;
   flex-direction: column;

@@ -4,7 +4,8 @@ import {Screen} from '../components/Screen';
 import {useAuth} from '../contexts/AuthContext';
 import {expenseCategories} from '../constants/categories';
 import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
-import {loadBudgets, loadTransactions, saveAllBudgets} from '../services/storage';
+import {loadBudgets, loadReceipts, loadTransactions, saveAllBudgets} from '../services/storage';
+import {Receipt} from '../types/finance';
 import styles from './ProfileScreen.module.css';
 
 const STEPS = [
@@ -25,6 +26,8 @@ export function ProfileScreen() {
     Object.fromEntries(expenseCategories.map(c => [c, '']))
   );
   const [budgetSaving, setBudgetSaving] = useState(false);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [receiptsOpen, setReceiptsOpen] = useState(false);
   const [toast, setToast] = useState('');
 
   function showToast(msg: string) {
@@ -46,6 +49,11 @@ export function ProfileScreen() {
   }, []);
 
   useEffect(() => { refreshKeyState(); refreshBudgets(); }, [refreshKeyState, refreshBudgets]);
+
+  async function loadReceiptHistory() {
+    const data = await loadReceipts();
+    setReceipts(data.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }
 
   async function handleSignOut() {
     if (!window.confirm('確定要登出嗎？')) return;
@@ -195,6 +203,43 @@ export function ProfileScreen() {
           disabled={budgetSaving}
           onClick={saveBudgets}
         >{budgetSaving ? '儲存中…' : '儲存預算'}</button>
+      </Card>
+
+      <Card title="掃描收據記錄">
+        <p className={styles.body}>所有 OCR 掃描收據的記錄，包含成功與失敗。</p>
+        <button
+          className={styles.secondaryBtn}
+          onClick={async () => {
+            if (!receiptsOpen) await loadReceiptHistory();
+            setReceiptsOpen(v => !v);
+          }}
+        >{receiptsOpen ? '收起記錄' : '查看記錄'}</button>
+        {receiptsOpen ? (
+          <div className={styles.receiptList}>
+            {receipts.length === 0 ? (
+              <p className={styles.receiptEmpty}>尚無扫描記錄。</p>
+            ) : receipts.map(r => (
+              <div key={r.id} className={styles.receiptRow}>
+                <div className={styles.receiptInfo}>
+                  <span className={[
+                    styles.receiptStatus,
+                    r.status === 'done' ? styles.statusDone
+                    : r.status === 'failed' ? styles.statusFailed
+                    : styles.statusProcessing
+                  ].join(' ')}>
+                    {r.status === 'done' ? '成功' : r.status === 'failed' ? '失敗' : '處理中'}
+                  </span>
+                  <span className={styles.receiptName}>{r.imageUri || '未知檔案'}</span>
+                  {r.amount ? <span className={styles.receiptAmt}>${r.amount.toLocaleString()} · {r.category}</span> : null}
+                  <span className={styles.receiptDate}>{r.createdAt.slice(0, 10)}</span>
+                </div>
+                {(r.lowFields || []).length > 0 ? (
+                  <span className={styles.lowFieldsBadge}>低信心：{(r.lowFields || []).join('、')}</span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </Card>
 
       <Card title="資料與報表">

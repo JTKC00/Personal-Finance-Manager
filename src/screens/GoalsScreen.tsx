@@ -1,8 +1,8 @@
 ﻿import {useCallback, useEffect, useMemo, useState} from 'react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {appendGoalEntry, deleteGoal, loadGoals, upsertGoal, trackEvent} from '../services/storage';
-import {Goal} from '../types/finance';
+import {appendGoalEntry, deleteGoal, loadGoals, removeGoalEntry, upsertGoal, trackEvent} from '../services/storage';
+import {Goal, GoalDeposit} from '../types/finance';
 import styles from './GoalsScreen.module.css';
 
 type Draft = {
@@ -27,6 +27,7 @@ export function GoalsScreen() {
   const [depositGoalId, setDepositGoalId] = useState<string | null>(null);
   const [depositAmount, setDepositAmount] = useState('');
   const [depositNote, setDepositNote] = useState('');
+  const [historyGoalId, setHistoryGoalId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
 
   const canSave = useMemo(
@@ -119,6 +120,15 @@ export function GoalsScreen() {
     showToast('入金成功！');
   }
 
+  async function handleRemoveEntry(goalId: string, entry: GoalDeposit) {
+    const label = entry.note || (entry.type === 'deposit' ? '入金' : '提取');
+    if (!window.confirm(`確定移除這筆記錄「${label} $${entry.amount.toLocaleString()}」？`)) return;
+    await removeGoalEntry(goalId, entry.id);
+    await trackEvent('goal_entry_remove', {goalId, entryId: entry.id});
+    await refresh();
+    showToast('記錄已移除。');
+  }
+
   return (
     <Screen title="目標" subtitle="設定儲蓄與消費目標">
       <Card title={editingId ? '編輯目標' : '新增目標'}>
@@ -198,6 +208,10 @@ export function GoalsScreen() {
                       setDepositNote('');
                     }}
                   >{depositGoalId === goal.id ? '取消入金' : '入金'}</button>
+                  <button
+                    className={styles.textBtn}
+                    onClick={() => setHistoryGoalId(historyGoalId === goal.id ? null : goal.id)}
+                  >{historyGoalId === goal.id ? '收起記錄' : `記錄 (${(goal.deposits || []).length})`}</button>
                   <button className={[styles.textBtn, styles.deleteBtn].join(' ')} onClick={() => confirmDelete(goal)}>刪除</button>
                 </div>
                 {depositGoalId === goal.id ? (
@@ -223,6 +237,36 @@ export function GoalsScreen() {
                       disabled={!depositAmount || Number(depositAmount) <= 0}
                       onClick={() => handleDeposit(goal.id)}
                     >確認入金</button>
+                  </div>
+                ) : null}
+                {historyGoalId === goal.id ? (
+                  <div className={styles.historyList}>
+                    {(goal.deposits || []).length === 0 ? (
+                      <p className={styles.hint}>尚無存款記錄。</p>
+                    ) : (
+                      [...(goal.deposits || [])]
+                        .sort((a, b) => b.date.localeCompare(a.date))
+                        .map(entry => (
+                          <div key={entry.id} className={styles.entryRow}>
+                            <div className={styles.entryInfo}>
+                              <span className={entry.type === 'deposit' ? styles.entryDeposit : styles.entryWithdraw}>
+                                {entry.type === 'deposit' ? '+' : '-'}${entry.amount.toLocaleString()}
+                              </span>
+                              <span className={styles.entryMeta}>
+                                {entry.date} · {entry.note || (entry.type === 'deposit' ? '入金' : '提取')}
+                              </span>
+                            </div>
+                            {!entry.linkedTransactionId ? (
+                              <button
+                                className={[styles.textBtn, styles.deleteBtn].join(' ')}
+                                onClick={() => handleRemoveEntry(goal.id, entry)}
+                              >移除</button>
+                            ) : (
+                              <span className={styles.linkedBadge}>交易</span>
+                            )}
+                          </div>
+                        ))
+                    )}
                   </div>
                 ) : null}
               </Card>
