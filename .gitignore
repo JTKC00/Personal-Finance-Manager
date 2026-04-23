@@ -13,14 +13,6 @@
 # Dependencies
 node_modules/
 
-# Expo / React Native local state and build outputs
-.expo/
-.expo-shared/
-dist/
-web-build/
-android/
-ios/
-
 # Logs / caches
 *.log
 npm-debug.log*
@@ -29,3 +21,6 @@ yarn-error.log*
 .npm/
 .cache/
 node_modules
+
+#  Vite 標準
+dist/
