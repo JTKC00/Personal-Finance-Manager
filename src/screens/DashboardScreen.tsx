@@ -62,8 +62,7 @@ export function DashboardScreen() {
   const averageExpense = expenseTransactions.length ? summary.expense / expenseTransactions.length : 0;
   const unusualTransactions = expenseTransactions
     .filter(item => averageExpense > 0 && item.amount >= averageExpense * 1.8)
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 2);
+    .sort((a, b) => b.amount - a.amount);
   const largestExpense = [...expenseTransactions].sort((a, b) => b.amount - a.amount)[0];
   const totalGoalTarget = goals.reduce((sum, item) => sum + item.targetAmount, 0);
   const totalGoalSaved = goals.reduce((sum, item) => sum + item.savedAmount, 0);
@@ -71,6 +70,23 @@ export function DashboardScreen() {
   const focusGoal = [...goals]
     .filter(item => item.targetAmount > 0)
     .sort((a, b) => (b.savedAmount / b.targetAmount) - (a.savedAmount / a.targetAmount))[0];
+
+  const categorySpending = expenseTransactions.reduce<Record<string, number>>((map, t) => {
+    map[t.category] = (map[t.category] || 0) + t.amount;
+    return map;
+  }, {});
+
+  const categoryAlerts = budgets
+    .filter(b => b.amount > 0 && (categorySpending[b.category] || 0) / b.amount >= 0.75)
+    .map(b => ({
+      ...b,
+      spent: categorySpending[b.category] || 0,
+      ratio: (categorySpending[b.category] || 0) / b.amount
+    }))
+    .sort((a, b) => b.ratio - a.ratio);
+
+  const alertLabel = (ratio: number) =>
+    ratio >= 1 ? '⚠️ 已超出預算' : ratio >= 0.9 ? '⚠️ 已達 90%' : '⚠️ 已達 75%';
 
   const pillClass = (p: number) =>
     p >= 0.9 ? styles.dangerPill : p >= 0.7 ? styles.warningPill : styles.safePill;
@@ -105,9 +121,52 @@ export function DashboardScreen() {
               本月預算 {formatMoney(monthlyBudget)}，
               {budgetRemaining >= 0 ? `剩餘 ${formatMoney(budgetRemaining)}` : `已超支 ${formatMoney(Math.abs(budgetRemaining))}`}
             </p>
+            {budgets.length > 0 && (
+              <div className={styles.categoryBudgetList}>
+                {budgets.map(b => {
+                  const spent = categorySpending[b.category] || 0;
+                  const ratio = b.amount > 0 ? spent / b.amount : 0;
+                  return (
+                    <div key={b.category} className={styles.categoryBudgetRow}>
+                      <div className={styles.categoryBudgetHeader}>
+                        <span className={styles.categoryBudgetName}>{b.category}</span>
+                        <span className={styles.categoryBudgetMeta}>
+                          {formatMoney(spent)} / {formatMoney(b.amount)}
+                        </span>
+                        <span className={[styles.statusPill, pillClass(ratio)].join(' ')}>
+                          {formatPercent(clampPercent(ratio))}
+                        </span>
+                      </div>
+                      <div className={styles.progressTrackThin}>
+                        <div className={[styles.progressFill, fillClass(ratio)].join(' ')}
+                          style={{width: `${clampPercent(ratio) * 100}%`}} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </>
         ) : (
           <p className={styles.empty}>尚未設定月預算。設定後，這裡會顯示本月支出進度。</p>
+        )}
+      </Card>
+
+      <Card title="分類預算提醒">
+        {categoryAlerts.length > 0 ? categoryAlerts.map(alert => (
+          <div key={alert.category} className={styles.row}>
+            <div className={styles.rowText}>
+              <span className={styles.rowTitle}>{alert.category}</span>
+              <span className={styles.rowMeta}>
+                {alertLabel(alert.ratio)}&ensp;{formatMoney(alert.spent)} / {formatMoney(alert.amount)}
+              </span>
+            </div>
+            <span className={[styles.statusPill, pillClass(alert.ratio)].join(' ')}>
+              {formatPercent(clampPercent(alert.ratio))}
+            </span>
+          </div>
+        )) : (
+          <p className={styles.empty}>所有分類支出均在安全範圍內。</p>
         )}
       </Card>
 

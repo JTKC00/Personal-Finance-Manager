@@ -73,6 +73,53 @@
   margin-top: var(--spacing-sm);
 }
 
+.categoryBudgetList {
+  margin-top: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-md);
+}
+
+.categoryBudgetRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.categoryBudgetHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.categoryBudgetName {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.categoryBudgetMeta {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.progressTrackThin {
+  background: var(--color-surface-muted);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.progressTrackThin .progressFill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
 .row {
   display: flex;
   align-items: center;
