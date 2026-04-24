@@ -1,29 +1,15 @@
-﻿import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {expenseCategories, incomeCategories, paymentMethods} from '../constants/categories';
 import {scanReceipt} from '../services/ocr';
 import {loadGeminiApiKey} from '../services/secrets';
 import {
-  deleteTransactionWithGoalLink,
-  getCurrentMonthKey,
   loadGoals,
   saveTransactionWithGoalLink,
-  getTransactionsByMonth,
   trackEvent,
   upsertReceipt,
 } from '../services/storage';
-
-function shiftMonth(monthKey: string, delta: number): string {
-  const [year, month] = monthKey.split('-').map(Number);
-  const d = new Date(year, month - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function getMonthLabel(monthKey: string): string {
-  const [year, month] = monthKey.split('-').map(Number);
-  return `${year} 年 ${month} 月`;
-}
 import {Goal, OcrResult, Transaction} from '../types/finance';
 import styles from './TransactionScreen.module.css';
 
@@ -43,8 +29,9 @@ const formatDate = (date: Date) => {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 };
+
 const today = () => formatDate(new Date());
-const formatMoney = (value: number) => `$${Math.round(value).toLocaleString()}`;
+
 const emptyDraft = (): Draft => ({
   type: 'expense',
   amount: '',
@@ -56,12 +43,8 @@ const emptyDraft = (): Draft => ({
 });
 
 export function TransactionScreen() {
-  const currentMonth = getCurrentMonthKey();
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [ocrPreview, setOcrPreview] = useState<OcrResult | null>(null);
   const [toast, setToast] = useState('');
@@ -69,15 +52,11 @@ export function TransactionScreen() {
 
   const canSave = useMemo(() => Number(draft.amount) > 0 && Boolean(draft.date), [draft.amount, draft.date]);
 
-  const refreshScreen = useCallback(async () => {
-    const [next, nextGoals] = await Promise.all([getTransactionsByMonth(selectedMonth), loadGoals()]);
-    setTransactions(
-      [...next].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
-    );
-    setGoals(nextGoals);
-  }, [selectedMonth]);
+  const refreshGoals = useCallback(async () => {
+    setGoals(await loadGoals());
+  }, []);
 
-  useEffect(() => { refreshScreen(); }, [refreshScreen]);
+  useEffect(() => { refreshGoals(); }, [refreshGoals]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -90,7 +69,6 @@ export function TransactionScreen() {
 
   function resetForm() {
     setDraft(emptyDraft());
-    setEditingId(null);
     setOcrPreview(null);
   }
 
@@ -101,59 +79,33 @@ export function TransactionScreen() {
       return;
     }
 
-    const existing = editingId ? transactions.find(item => item.id === editingId) : undefined;
     const transaction: Transaction = {
-      id: editingId || Date.now().toString(),
+      id: Date.now().toString(),
       type: draft.type,
       amount: value,
-      currency: existing?.currency || 'HKD',
+      currency: 'HKD',
       date: draft.date,
       category: draft.category,
       goalId: draft.type === 'expense' ? (draft.goalId || undefined) : undefined,
-      linkedGoalEntryId: draft.type === 'expense' ? existing?.linkedGoalEntryId : undefined,
       paymentMethod: draft.paymentMethod,
       note: draft.note,
-      createdAt: existing?.createdAt || new Date().toISOString()
+      createdAt: new Date().toISOString()
     };
 
-    const syncedTransaction = await saveTransactionWithGoalLink(transaction, existing);
-    await trackEvent(editingId ? 'edit_transaction_success' : 'save_transaction_success', {
+    const syncedTransaction = await saveTransactionWithGoalLink(transaction);
+    await trackEvent('save_transaction_success', {
       source: ocrPreview ? 'ocr' : 'manual',
       category: draft.category,
       goalId: syncedTransaction.goalId || null
     });
-    await refreshScreen();
+    await refreshGoals();
     resetForm();
-    showToast(editingId ? '交易已更新。' : '交易已儲存。');
-  }
-
-  function startEdit(transaction: Transaction) {
-    setEditingId(transaction.id);
-    setDraft({
-      type: transaction.type,
-      amount: String(transaction.amount),
-      category: transaction.category,
-      note: transaction.note || '',
-      date: transaction.date,
-      paymentMethod: transaction.paymentMethod || paymentMethods[0],
-      goalId: transaction.goalId || ''
-    });
-    setOcrPreview(null);
-  }
-
-  async function confirmDelete(transaction: Transaction) {
-    if (!window.confirm(`確定刪除「${transaction.note || transaction.category}」？`)) return;
-    await deleteTransactionWithGoalLink(transaction);
-    await trackEvent('delete_transaction_success', {category: transaction.category});
-    if (editingId === transaction.id) resetForm();
-    await refreshScreen();
-    showToast('已刪除。');
+    showToast('交易已儲存。');
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    // reset input so same file can be re-selected
     e.target.value = '';
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -186,7 +138,6 @@ export function TransactionScreen() {
         note: result.note || '',
         date: /^\d{4}-\d{2}-\d{2}$/.test(result.date) ? result.date : today()
       });
-      setEditingId(null);
       setOcrPreview(result);
       await upsertReceipt({
         id, imageUri: filename, status: 'done', amount: result.amount,
@@ -201,7 +152,6 @@ export function TransactionScreen() {
       });
       const errMsg = error instanceof Error ? error.message : 'unknown';
       await trackEvent('ocr_scan_fail', {reason: errMsg});
-      // 區分「需要輸入 Key」與其他連線/服務錯誤
       const needsKey = /key is required|api key/i.test(errMsg);
       showToast(
         needsKey
@@ -214,7 +164,7 @@ export function TransactionScreen() {
   }
 
   return (
-    <Screen title="記帳" subtitle="快速新增、拍照 OCR、交易列表">
+    <Screen title="記帳" subtitle="拍照 OCR 或快速新增一筆交易">
       <Card title="收據 OCR">
         <input
           ref={fileInputRef}
@@ -253,7 +203,7 @@ export function TransactionScreen() {
         {ocrPreview ? <p className={styles.hint}>已預填 OCR 結果，請確認後儲存。</p> : null}
       </Card>
 
-      <Card title={editingId ? '編輯交易' : '快速新增'}>
+      <Card title="快速新增">
         <p className={styles.sectionLabel}>類型</p>
         <div className={styles.chips}>
           <button
@@ -318,7 +268,7 @@ export function TransactionScreen() {
           ))}
         </div>
 
-        {goals.length && draft.type === 'expense' ? (
+        {goals.length > 0 && draft.type === 'expense' ? (
           <>
             <p className={styles.sectionLabel}>由哪個 Goal 支付（選填）</p>
             <div className={styles.chips}>
@@ -350,53 +300,9 @@ export function TransactionScreen() {
             className={[styles.primaryBtn, !canSave ? styles.disabledBtn : ''].join(' ')}
             onClick={save}
           >
-            {editingId ? '儲存變更' : '新增'}
+            新增
           </button>
-          {editingId ? (
-            <button className={styles.secondaryBtn} onClick={resetForm}>取消</button>
-          ) : null}
         </div>
-      </Card>
-
-      <Card title="交易記錄">
-        <div className={styles.monthNav}>
-          <button
-            className={styles.navBtn}
-            onClick={() => setSelectedMonth(m => shiftMonth(m, -1))}
-          >‹ 上月</button>
-          <span className={styles.monthLabel}>{getMonthLabel(selectedMonth)}</span>
-          <button
-            className={styles.navBtn}
-            disabled={selectedMonth >= currentMonth}
-            onClick={() => setSelectedMonth(m => shiftMonth(m, 1))}
-          >下月 ›</button>
-        </div>
-        {transactions.length ? transactions.map(t => (
-          <div key={t.id} className={styles.txRow}>
-            <div className={styles.txMain}>
-              <span className={styles.txTitle}>{t.note || t.category}</span>
-              <span className={styles.txMeta}>
-                {t.date} · {t.category} · {t.paymentMethod || '未填付款方式'}
-              </span>
-              {t.goalId && t.type === 'expense' ? (
-                <span className={styles.goalMeta}>
-                  由 Goal 支付：{goals.find(g => g.id === t.goalId)?.name || '已刪除目標'}
-                </span>
-              ) : null}
-            </div>
-            <div className={styles.txActions}>
-              <span className={t.type === 'income' ? styles.incomeText : styles.expenseText}>
-                {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
-              </span>
-              <div className={styles.actionRow}>
-                <button className={styles.textBtn} onClick={() => startEdit(t)}>編輯</button>
-                <button className={[styles.textBtn, styles.deleteBtn].join(' ')} onClick={() => confirmDelete(t)}>刪除</button>
-              </div>
-            </div>
-          </div>
-        )) : (
-          <p className={styles.hint}>本月尚無交易。</p>
-        )}
       </Card>
 
       {toast ? <div className={styles.toast}>{toast}</div> : null}

@@ -3,6 +3,7 @@ import {useRegisterSW} from 'virtual:pwa-register/react';
 import {DashboardScreen} from './src/screens/DashboardScreen';
 import {AnalysisScreen} from './src/screens/AnalysisScreen';
 import {TransactionScreen} from './src/screens/TransactionScreen';
+import {TransactionListScreen} from './src/screens/TransactionListScreen';
 import {GoalsScreen} from './src/screens/GoalsScreen';
 import {ProfileScreen} from './src/screens/ProfileScreen';
 import {LoginScreen} from './src/screens/LoginScreen';
@@ -57,6 +58,7 @@ function AppShell() {
         <Route path="/dashboard" element={<DashboardScreen />} />
         <Route path="/analysis" element={<AnalysisScreen />} />
         <Route path="/transaction" element={<TransactionScreen />} />
+        <Route path="/transactions" element={<TransactionListScreen />} />
         <Route path="/goals" element={<GoalsScreen />} />
         <Route path="/profile" element={<ProfileScreen />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -77,5 +79,4 @@ export default function App() {
     </BrowserRouter>
   );
 }
-
 
