@@ -348,3 +348,10 @@ Cloud Functions 需要 Blaze（Pay-as-you-go）方案。前往 Firebase Console 
 ## License
 
 MIT
+
+## 聯絡資訊
+
+如有問題或建議，請聯絡：
+
+James Tong
+Email: kachuntong01@gmail.com
