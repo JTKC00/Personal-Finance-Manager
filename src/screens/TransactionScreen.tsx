@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {expenseCategories, incomeCategories, paymentMethods} from '../constants/categories';
@@ -23,6 +24,12 @@ type Draft = {
   goalId: string;
 };
 
+type PrefillTransaction = Pick<Transaction, 'type' | 'amount' | 'category' | 'note' | 'paymentMethod' | 'goalId'>;
+
+type TransactionLocationState = {
+  prefillTransaction?: PrefillTransaction;
+};
+
 const formatDate = (date: Date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -43,6 +50,8 @@ const emptyDraft = (): Draft => ({
 });
 
 export function TransactionScreen() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -57,6 +66,24 @@ export function TransactionScreen() {
   }, []);
 
   useEffect(() => { refreshGoals(); }, [refreshGoals]);
+
+  useEffect(() => {
+    const state = location.state as TransactionLocationState | null;
+    const prefillTransaction = state?.prefillTransaction;
+    if (!prefillTransaction) return;
+
+    setDraft({
+      type: prefillTransaction.type,
+      amount: String(prefillTransaction.amount),
+      category: prefillTransaction.category,
+      note: prefillTransaction.note || '',
+      date: today(),
+      paymentMethod: prefillTransaction.paymentMethod || paymentMethods[0],
+      goalId: prefillTransaction.type === 'expense' ? (prefillTransaction.goalId || '') : ''
+    });
+    setOcrPreview(null);
+    navigate(location.pathname, {replace: true, state: null});
+  }, [location.pathname, location.state, navigate]);
 
   function showToast(msg: string) {
     setToast(msg);

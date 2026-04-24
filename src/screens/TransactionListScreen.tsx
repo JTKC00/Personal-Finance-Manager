@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {expenseCategories, incomeCategories, paymentMethods} from '../constants/categories';
@@ -23,6 +24,8 @@ type Draft = {
   goalId: string;
 };
 
+type TransactionTypeFilter = 'all' | 'expense' | 'income';
+
 function shiftMonth(monthKey: string, delta: number): string {
   const [year, month] = monthKey.split('-').map(Number);
   const d = new Date(year, month - 1 + delta, 1);
@@ -37,12 +40,16 @@ function getMonthLabel(monthKey: string): string {
 const formatMoney = (value: number) => `$${Math.round(value).toLocaleString()}`;
 
 export function TransactionListScreen() {
+  const navigate = useNavigate();
   const currentMonth = getCurrentMonthKey();
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [typeFilter, setTypeFilter] = useState<TransactionTypeFilter>('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [toast, setToast] = useState('');
 
   const canSave = useMemo(() => {
@@ -58,6 +65,40 @@ export function TransactionListScreen() {
   }, [selectedMonth]);
 
   useEffect(() => { refreshScreen(); }, [refreshScreen]);
+
+  const categoryOptions = useMemo(() => {
+    const categorySet = new Set(transactions.map(item => item.category));
+    const knownCategories = [...expenseCategories, ...incomeCategories];
+    const orderedKnown = knownCategories.filter(item => categorySet.has(item));
+    const customCategories = [...categorySet]
+      .filter(item => !knownCategories.includes(item))
+      .sort((a, b) => a.localeCompare(b));
+    return [...orderedKnown, ...customCategories];
+  }, [transactions]);
+
+  useEffect(() => {
+    if (categoryFilter !== 'all' && !categoryOptions.includes(categoryFilter)) {
+      setCategoryFilter('all');
+    }
+  }, [categoryFilter, categoryOptions]);
+
+  const filteredTransactions = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    return transactions.filter(item => {
+      if (typeFilter !== 'all' && item.type !== typeFilter) return false;
+      if (categoryFilter !== 'all' && item.category !== categoryFilter) return false;
+      if (!query) return true;
+
+      const searchableText = [
+        item.note || '',
+        item.category,
+        item.paymentMethod || '',
+        String(item.amount),
+        formatMoney(item.amount)
+      ].join(' ').toLowerCase();
+      return searchableText.includes(query);
+    });
+  }, [categoryFilter, searchText, transactions, typeFilter]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -83,6 +124,21 @@ export function TransactionListScreen() {
       date: transaction.date,
       paymentMethod: transaction.paymentMethod || paymentMethods[0],
       goalId: transaction.goalId || ''
+    });
+  }
+
+  function copyTransaction(transaction: Transaction) {
+    navigate('/transaction', {
+      state: {
+        prefillTransaction: {
+          type: transaction.type,
+          amount: transaction.amount,
+          category: transaction.category,
+          note: transaction.note || '',
+          paymentMethod: transaction.paymentMethod || paymentMethods[0],
+          goalId: transaction.goalId || ''
+        }
+      }
     });
   }
 
@@ -248,7 +304,55 @@ export function TransactionListScreen() {
             onClick={() => setSelectedMonth(m => shiftMonth(m, 1))}
           >下月 ›</button>
         </div>
-        {transactions.length ? transactions.map(t => (
+        <input
+          type="search"
+          placeholder="搜尋備註、分類、付款方式或金額"
+          className={styles.input}
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+        />
+        <p className={styles.sectionLabel}>類型</p>
+        <div className={styles.chips}>
+          {([
+            ['all', '全部'],
+            ['expense', '支出'],
+            ['income', '收入']
+          ] as [TransactionTypeFilter, string][]).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setTypeFilter(value)}
+              className={[styles.chip, typeFilter === value ? styles.activeChip : ''].join(' ')}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {categoryOptions.length > 0 ? (
+          <>
+            <p className={styles.sectionLabel}>分類</p>
+            <div className={styles.chips}>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('all')}
+                className={[styles.chip, categoryFilter === 'all' ? styles.activeChip : ''].join(' ')}
+              >
+                全部分類
+              </button>
+              {categoryOptions.map(category => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setCategoryFilter(category)}
+                  className={[styles.chip, categoryFilter === category ? styles.activeChip : ''].join(' ')}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
+        {transactions.length ? filteredTransactions.length ? filteredTransactions.map(t => (
           <div key={t.id} className={styles.txRow}>
             <div className={styles.txMain}>
               <span className={styles.txTitle}>{t.note || t.category}</span>
@@ -266,12 +370,15 @@ export function TransactionListScreen() {
                 {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
               </span>
               <div className={styles.actionRow}>
+                <button className={styles.textBtn} onClick={() => copyTransaction(t)}>複製</button>
                 <button className={styles.textBtn} onClick={() => startEdit(t)}>編輯</button>
                 <button className={[styles.textBtn, styles.deleteBtn].join(' ')} onClick={() => confirmDelete(t)}>刪除</button>
               </div>
             </div>
           </div>
         )) : (
+          <p className={styles.hint}>找不到符合條件的交易。</p>
+        ) : (
           <p className={styles.hint}>本月尚無交易。</p>
         )}
       </Card>
