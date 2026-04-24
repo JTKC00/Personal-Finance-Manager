@@ -23,6 +23,7 @@ export function LoginScreen() {
   const [tab, setTab] = useState<'signIn' | 'signUp'>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resetMode, setResetMode] = useState(false);
@@ -43,6 +44,10 @@ export function LoginScreen() {
     if (tab === 'signUp') {
       const pwErr = validatePasswordStrength(password);
       if (pwErr) { setError(pwErr); return; }
+      if (password !== confirmPassword) {
+        setError('兩次輸入的密碼不一致。');
+        return;
+      }
     }
     setLoading(true);
     setError('');
@@ -89,7 +94,9 @@ export function LoginScreen() {
           <div className={styles.form}>
             {resetSent ? (
               <>
-                <p className={styles.resetSuccess}>重設連結已發送至 {resetEmail}，請檢查收件箱，包括垃圾郵件。</p>
+                <p className={styles.resetSuccess}>
+                  重設連結已發送至 {resetEmail}。請查看收件箱；如果你的專案已設定自家認證網域，郵件會顯示由該網域發出。若數分鐘內仍未收到，請檢查垃圾郵件或返回後重新發送。
+                </p>
                 <button type="button" className={styles.button} onClick={() => { setResetMode(false); setResetSent(false); setResetEmail(''); setError(''); clearAuthError(); }}>返回登入</button>
               </>
             ) : (
@@ -146,6 +153,17 @@ export function LoginScreen() {
                   <p className={styles.pwHint}>需包含大寫、小寫英文字母及數字，最少 8 位。</p>
                 )}
               </div>
+              {tab === 'signUp' ? (
+                <input
+                  autoCapitalize="none"
+                  type="password"
+                  placeholder="確認密碼"
+                  autoComplete="new-password"
+                  className={styles.input}
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                />
+              ) : null}
               {error ? <p className={styles.error}>{error}</p> : null}
               <button type="submit" disabled={loading} className={styles.button}>
                 {loading ? <span className={styles.spinner} /> : (tab === 'signIn' ? '登入' : '建立帳號')}

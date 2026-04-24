@@ -1,5 +1,9 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
+import { initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+
+initializeApp();
 
 // 把 Gemini API Key 存在 Cloud Secret Manager（安全，不會寫死在 code 裡）
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
@@ -18,6 +22,11 @@ function parseGeminiJsonResponse(data: Record<string, unknown>): unknown {
   return JSON.parse(text.replace(/```json|```/g, '').trim());
 }
 
+function getBearerToken(authorizationHeader: string | undefined): string {
+  const match = authorizationHeader?.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || '';
+}
+
 export const ocr = onRequest(
   {
     secrets: [geminiApiKey],
@@ -27,8 +36,26 @@ export const ocr = onRequest(
     memory: '256MiB',
   },
   async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
+    const idToken = getBearerToken(req.get('authorization'));
+    if (!idToken) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    try {
+      await getAuth().verifyIdToken(idToken);
+    } catch {
+      res.status(401).json({ error: 'Invalid authentication token' });
       return;
     }
 

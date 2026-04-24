@@ -1,10 +1,12 @@
 import {createContext, useCallback, useContext, useEffect, useState} from 'react';
 import {
   User,
+  EmailAuthProvider,
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   getRedirectResult,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -12,6 +14,7 @@ import {
   linkWithPopup,
   linkWithRedirect,
   signOut as firebaseSignOut,
+  updatePassword,
 } from 'firebase/auth';
 import {auth} from '../services/firebase';
 
@@ -23,6 +26,7 @@ type AuthContextValue = {
   signUp: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   linkGoogle: () => Promise<'popup' | 'redirect'>;
   signOut: () => Promise<void>;
   clearAuthError: () => void;
@@ -124,6 +128,16 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
     await sendPasswordResetEmail(auth, email);
   }, []);
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser?.email) throw new Error('Not authenticated');
+
+    setAuthError('');
+    const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
+    await reauthenticateWithCredential(currentUser, credential);
+    await updatePassword(currentUser, newPassword);
+  }, []);
+
   const linkGoogle = useCallback(async () => {
     if (!auth.currentUser) throw new Error('Not authenticated');
     setAuthError('');
@@ -155,7 +169,7 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{user, loading, authError, signIn, signUp, signInWithGoogle, sendPasswordReset, linkGoogle, signOut, clearAuthError}}>
+    <AuthContext.Provider value={{user, loading, authError, signIn, signUp, signInWithGoogle, sendPasswordReset, changePassword, linkGoogle, signOut, clearAuthError}}>
       {children}
     </AuthContext.Provider>
   );

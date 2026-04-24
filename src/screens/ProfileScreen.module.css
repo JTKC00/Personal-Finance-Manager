@@ -151,6 +151,20 @@
   border-color: var(--color-text-muted);
 }
 
+.fieldLabel {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: 13px;
+  margin-bottom: var(--spacing-sm);
+}
+
 .actionRow {
   display: flex;
   gap: var(--spacing-sm);

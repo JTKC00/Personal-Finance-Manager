@@ -5,7 +5,7 @@ import {useAuth} from '../contexts/AuthContext';
 import {expenseCategories} from '../constants/categories';
 import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authErrors';
 import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
-import {loadBudgets, loadReceipts, loadTransactions, saveAllBudgets} from '../services/storage';
+import {loadBudgets, loadGoals, loadReceipts, loadTransactions, saveAllBudgets} from '../services/storage';
 import {Receipt} from '../types/finance';
 import styles from './ProfileScreen.module.css';
 
@@ -18,8 +18,16 @@ const STEPS = [
   {num: '6', title: '貼到下方輸入欄', desc: '回到這個 App，把剛才複製的 Key 貼到「Gemini API Key」欄位，按「儲存 Key」。'},
 ];
 
+function validatePasswordStrength(pw: string): string {
+  if (pw.length < 8) return '密碼最少 8 個字元';
+  if (!/[A-Z]/.test(pw)) return '密碼須包含至少一個大寫英文字母';
+  if (!/[a-z]/.test(pw)) return '密碼須包含至少一個小寫英文字母';
+  if (!/[0-9]/.test(pw)) return '密碼須包含至少一個數字';
+  return '';
+}
+
 export function ProfileScreen() {
-  const {user, signOut, linkGoogle, authError, clearAuthError} = useAuth();
+  const {user, signOut, linkGoogle, changePassword, authError, clearAuthError} = useAuth();
   const [keyInput, setKeyInput] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
@@ -30,6 +38,11 @@ export function ProfileScreen() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [receiptsOpen, setReceiptsOpen] = useState(false);
   const [linkingGoogle, setLinkingGoogle] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
   const [toast, setToast] = useState('');
   const handledAuthErrorRef = useRef('');
 
@@ -136,8 +149,75 @@ export function ProfileScreen() {
     showToast(`已匯出 ${all.length} 筆交易。`);
   }
 
+  async function exportJsonBackup() {
+    const [transactions, goals, budgets, receiptHistory] = await Promise.all([
+      loadTransactions(),
+      loadGoals(),
+      loadBudgets(),
+      loadReceipts()
+    ]);
+    const exportedAt = new Date().toISOString();
+    const backup = {
+      version: 1,
+      exportedAt,
+      userEmail: user?.email || '',
+      transactions: [...transactions].sort((a, b) => a.date.localeCompare(b.date)),
+      goals: [...goals].sort((a, b) => a.name.localeCompare(b.name)),
+      budgets,
+      receipts: [...receiptHistory].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `finance-backup-${exportedAt.slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('完整 JSON 備份已匯出。');
+  }
+
   const hasGoogleLinked = user?.providerData.some(p => p.providerId === 'google.com') ?? false;
   const isEmailUser = user?.providerData.some(p => p.providerId === 'password') ?? false;
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('請填寫目前密碼、新密碼和確認密碼。');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('兩次輸入的新密碼不一致。');
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setPasswordError('新密碼不能與目前密碼相同。');
+      return;
+    }
+
+    const pwErr = validatePasswordStrength(newPassword);
+    if (pwErr) {
+      setPasswordError(pwErr);
+      return;
+    }
+
+    setPasswordSaving(true);
+    setPasswordError('');
+    clearAuthError();
+    try {
+      await changePassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      showToast('密碼已更新。');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPasswordError(translateFirebaseAuthError(msg));
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
 
   async function handleLinkGoogle() {
     setLinkingGoogle(true);
@@ -160,7 +240,7 @@ export function ProfileScreen() {
   }
 
   return (
-    <Screen title="我的帳戶" subtitle="帳號、Gemini Key 與設定">
+    <Screen title="我的帳戶" subtitle="帳號、密碼、Gemini Key 與設定">
       <Card title="帳號">
         <p className={styles.body}>目前登入：{user?.email}</p>
         {isEmailUser && !hasGoogleLinked ? (
@@ -177,6 +257,53 @@ export function ProfileScreen() {
         ) : null}
         <button className={styles.dangerBtn} onClick={handleSignOut}>登出</button>
       </Card>
+
+      {isEmailUser ? (
+        <Card title="更改密碼">
+          <form onSubmit={handleChangePassword}>
+            <label className={styles.fieldLabel} htmlFor="current-password">目前密碼</label>
+            <input
+              id="current-password"
+              autoComplete="current-password"
+              type="password"
+              className={styles.input}
+              value={currentPassword}
+              onChange={e => setCurrentPassword(e.target.value)}
+            />
+            <label className={styles.fieldLabel} htmlFor="new-password">新密碼</label>
+            <input
+              id="new-password"
+              autoComplete="new-password"
+              type="password"
+              placeholder="最少 8 位，含大小寫及數字"
+              className={styles.input}
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+            />
+            <label className={styles.fieldLabel} htmlFor="confirm-password">確認新密碼</label>
+            <input
+              id="confirm-password"
+              autoComplete="new-password"
+              type="password"
+              className={styles.input}
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+            />
+            {passwordError ? <p className={styles.error}>{passwordError}</p> : null}
+            <button
+              type="submit"
+              className={[styles.primaryBtn, passwordSaving ? styles.disabledBtn : ''].join(' ')}
+              disabled={passwordSaving}
+            >
+              {passwordSaving ? '更新中…' : '更新密碼'}
+            </button>
+          </form>
+        </Card>
+      ) : (
+        <Card title="密碼">
+          <p className={styles.body}>此帳戶目前使用 Google 登入，密碼需在 Google 帳戶中管理。</p>
+        </Card>
+      )}
 
       <Card title="如何取得免費 Gemini API Key？">
         <p className={styles.body}>
@@ -290,6 +417,11 @@ export function ProfileScreen() {
             ))}
           </div>
         ) : null}
+      </Card>
+
+      <Card title="資料備份">
+        <p className={styles.body}>匯出完整 JSON 備份，包含交易、目標、預算和 OCR 收據記錄。此功能只負責備份，不會匯入或覆蓋資料。</p>
+        <button className={styles.primaryBtn} onClick={exportJsonBackup}>匯出完整 JSON 備份</button>
       </Card>
 
       <Card title="資料與報表">

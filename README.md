@@ -32,6 +32,7 @@
 | **儲蓄目標** | 設定目標金額、手動入金/提款、查看入金歷史、連結相關交易 |
 | **月預算設定** | 在「我的帳戶」為各支出分類設定月預算；Dashboard 顯示實際進度 |
 | **CSV 匯出** | 一鍵匯出全部交易為 UTF-8 CSV，可用 Excel / Google Sheets 開啟 |
+| **JSON 完整備份** | 在「我的帳戶」匯出交易、目標、預算和 OCR 記錄的完整備份 |
 | **Google / Email 登入** | 支援 Google 帳號及電郵密碼兩種登入方式 |
 | **忘記密碼** | 登入頁提供「忘記密碼？」流程，發送 Firebase 重設郵件 |
 | **密碼強度要求** | 註冊時要求最少 8 位、含大寫、小寫英文字母及數字 |
@@ -263,6 +264,14 @@ Vite 開發伺服器會自動將 `/api/ocr` 請求代理到此 URL。
 
 ## 部署到正式環境
 
+**部署前檢查**
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
+
 **一次部署全部（Hosting + Functions + Firestore Rules）**
 
 ```bash
@@ -281,6 +290,26 @@ firebase deploy --only functions
 # 只部署 Firestore 安全規則
 firebase deploy --only firestore:rules
 ```
+
+### 提升忘記密碼郵件送達率
+
+Firebase Authentication 預設會代發忘記密碼郵件。正式環境建議使用自己的網域作為 Auth email domain，讓用戶看到的寄件者和重設連結都更一致。
+
+**設定步驟**
+
+1. 前往 Firebase Console → Authentication → Templates。
+2. 編輯 Password reset template。
+3. 點擊「customize domain」，輸入正式網域，例如 `personal.finance.manager.snugzap.com` 或專用子網域。
+4. 按 Firebase 顯示的 DNS records 到你的網域供應商新增紀錄。
+5. 等待 DNS 驗證通過後，再發送測試重設郵件。
+
+**DNS 與信任檢查清單**
+
+- Firebase 要求的網域驗證 DNS records 已全部加入並通過驗證。
+- 若同一網域也由 Google Workspace、SendGrid、Mailgun、Postmark 等服務寄信，確認 SPF 不互相衝突。
+- 為主要寄信網域設定 DKIM。
+- 設定 DMARC，初期可使用 `p=none` 觀察，再逐步收緊政策。
+- 忘記密碼郵件主旨和內容保持簡短，避免大量連結或促銷字眼。
 
 ---
 
@@ -312,7 +341,7 @@ firebase deploy --only firestore:rules
 **Q：忘記密碼後無法登入**
 
 在登入頁輸入電郵後，點擊密碼欄下方的「忘記密碼？」連結，系統會發送重設郵件。
-收不到郵件時請檢查垃圾郵件信箱。
+收不到郵件時請檢查垃圾郵件信箱；正式環境建議完成上方的 Auth email custom domain 和 DNS 設定。
 
 **Q：以電郵註冊後想改用 Google 登入**
 

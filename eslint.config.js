@@ -1,34 +1,69 @@
-const {FlatCompat} = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-const path = require('node:path');
+import js from '@eslint/js';
+import tsParser from '@typescript-eslint/parser';
 
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-  allConfig: js.configs.all
-});
+const browserGlobals = {
+  Blob: 'readonly',
+  FileReader: 'readonly',
+  URL: 'readonly',
+  document: 'readonly',
+  fetch: 'readonly',
+  localStorage: 'readonly',
+  navigator: 'readonly',
+  window: 'readonly',
+};
 
-module.exports = [
+const nodeGlobals = {
+  Buffer: 'readonly',
+  URL: 'readonly',
+  console: 'readonly',
+  fetch: 'readonly',
+  module: 'readonly',
+  process: 'readonly',
+  require: 'readonly',
+  __dirname: 'readonly',
+};
+
+export default [
   {
     ignores: [
       'dist/',
+      'functions/lib/',
       'node_modules/',
       'personal_finance_manager.html'
     ]
   },
-  ...compat.extends('eslint:recommended'),
+  js.configs.recommended,
   {
-    files: ['eslint.config.js', 'server.js'],
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaFeatures: {jsx: true},
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+      globals: browserGlobals,
+    },
+    rules: {
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
+    },
+  },
+  {
+    files: ['functions/src/**/*.ts'],
     languageOptions: {
       globals: {
-        __dirname: 'readonly',
+        ...browserGlobals,
         Buffer: 'readonly',
-        console: 'readonly',
-        module: 'readonly',
-        process: 'readonly',
-        require: 'readonly',
-        URL: 'readonly'
-      }
-    }
-  }
+      },
+    },
+  },
+  {
+    files: ['server.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'commonjs',
+      globals: nodeGlobals,
+    },
+  },
 ];
