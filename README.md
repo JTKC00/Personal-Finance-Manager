@@ -299,7 +299,7 @@ Firebase Authentication 預設會代發忘記密碼郵件。正式環境建議�
 
 1. 前往 Firebase Console → Authentication → Templates。
 2. 編輯 Password reset template。
-3. 點擊「customize domain」，輸入正式網域，例如 `personal.finance.manager.snugzap.com` 或專用子網域。
+3. 點擊「customize domain」，輸入正式網域，或專用子網域。
 4. 按 Firebase 顯示的 DNS records 到你的網域供應商新增紀錄。
 5. 等待 DNS 驗證通過後，再發送測試重設郵件。
 
