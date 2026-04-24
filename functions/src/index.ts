@@ -13,7 +13,7 @@ const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
 const MAX_BODY_BYTES = 24 * 1024 * 1024;
 const OCR_DAILY_LIMIT_PER_USER = readPositiveInt('OCR_DAILY_LIMIT_PER_USER', 20);
-const OCR_DAILY_LIMIT_GLOBAL = readPositiveInt('OCR_DAILY_LIMIT_GLOBAL', 300);
+const OCR_DAILY_LIMIT_GLOBAL = readPositiveInt('OCR_DAILY_LIMIT_GLOBAL', 50);
 
 class QuotaError extends Error {
   constructor(message: string) {

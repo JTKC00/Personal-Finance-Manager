@@ -248,7 +248,7 @@ OCR Cloud Function 會驗證 Firebase ID token，未登入用戶不能呼叫；�
 | 限額 | 預設值 |
 |---|---:|
 | 每位用戶每日 OCR 次數 | 20 |
-| 全站每日 OCR 次數 | 300 |
+| 全站每日 OCR 次數 | 50 |
 | Cloud Function 最大併發 instances | 3 |
 | 單次請求 body 大小 | 24 MB |
 
@@ -256,7 +256,7 @@ OCR Cloud Function 會驗證 Firebase ID token，未登入用戶不能呼叫；�
 
 ```env
 OCR_DAILY_LIMIT_PER_USER=20
-OCR_DAILY_LIMIT_GLOBAL=300
+OCR_DAILY_LIMIT_GLOBAL=50
 ```
 
 > Budget alerts 只會提醒，不會自動停止用量。正式環境仍建議在 Google Cloud Billing 設定預算提醒，例如 HK$50 / HK$100 / HK$200 階梯。
@@ -388,7 +388,7 @@ Hosting 的 rewrite 規則負責將 `/api/ocr` 轉發到 Cloud Function；若 Ho
 
 **Q：掃描收據出現「今日 OCR 掃描次數已用完」**
 
-代表已達每日個人或全站 OCR 限額。預設每位用戶每日 20 次、全站每日 300 次；可在 Cloud Functions 環境變數調整。
+代表已達每日個人或全站 OCR 限額。預設每位用戶每日 20 次、全站每日 50 次；可在 Cloud Functions 環境變數調整。
 
 **Q：我曾經把正式網址 commit 到 Git history，刪除 README 還有用嗎？**
 
