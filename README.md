@@ -2,7 +2,7 @@
 
 一個為個人設計的記帳 Web App，支援收支記錄、財務分析、儲蓄目標追蹤，並可用 AI 掃描收據自動入帳。
 
-🌐 **正式網址**：https://personal.finance.manager.snugzap.com/
+> 建議不要在公開 README 放私人部署網址。部署後可自行記錄在私有文件或環境說明中。
 
 ---
 
@@ -27,6 +27,7 @@
 | **Dashboard** | 一覽本月收支概況、餘額、預算進度、儲蓄目標進度及最近交易記錄 |
 | **收支記錄** | 新增、編輯、刪除收入與支出；可按月份切換瀏覽歷史記錄 |
 | **AI 掃描收據** | 拍照或上傳收據圖片，Gemini AI 自動辨識金額、類別與日期 |
+| **OCR 成本保護** | 後端限制每日個人與全站 OCR 次數，避免過量使用造成帳單風險 |
 | **收據記錄** | 「我的帳戶」可瀏覽所有 OCR 掃描記錄，含成功/失敗狀態 |
 | **財務分析** | 以圓餅圖和長條圖呈現每月支出分佈及每日趨勢，可切換月份 |
 | **儲蓄目標** | 設定目標金額、手動入金/提款、查看入金歷史、連結相關交易 |
@@ -240,6 +241,26 @@ firebase deploy --only hosting
 
 部署完成後，App 內的「掃描收據」功能即可使用。
 
+### OCR 成本與濫用防護
+
+OCR Cloud Function 會驗證 Firebase ID token，未登入用戶不能呼叫；同時會用 Firestore 記錄每日 OCR 使用量，預設限制如下：
+
+| 限額 | 預設值 |
+|---|---:|
+| 每位用戶每日 OCR 次數 | 20 |
+| 全站每日 OCR 次數 | 300 |
+| Cloud Function 最大併發 instances | 3 |
+| 單次請求 body 大小 | 24 MB |
+
+如需調整每日限額，可在 Cloud Functions 環境變數設定：
+
+```env
+OCR_DAILY_LIMIT_PER_USER=20
+OCR_DAILY_LIMIT_GLOBAL=300
+```
+
+> Budget alerts 只會提醒，不會自動停止用量。正式環境仍建議在 Google Cloud Billing 設定預算提醒，例如 HK$50 / HK$100 / HK$200 階梯。
+
 ### 方式 B：用戶自帶 Key
 
 只需完成上方的 Function 和 Hosting 部署步驟，然後：
@@ -329,6 +350,8 @@ Firebase Authentication 預設會代發忘記密碼郵件。正式環境建議�
 
 > ⚠️ `.env` 已加入 `.gitignore`，絕對不會上傳到 GitHub。**切勿將真實 Key 直接寫死在程式碼中。**
 
+Cloud Functions 的 OCR 限額變數可放在 `functions/.env` 或部署環境設定中，請不要提交真實部署設定。
+
 ---
 
 ## 常見問題排解
@@ -362,6 +385,14 @@ App 有新版本時會自動在頂部顯示「🎉 App 有新版本！」橫幅�
 
 確認 Firebase Hosting 已部署最新版本（`firebase deploy --only hosting`）。
 Hosting 的 rewrite 規則負責將 `/api/ocr` 轉發到 Cloud Function；若 Hosting 未部署，路由不會生效。
+
+**Q：掃描收據出現「今日 OCR 掃描次數已用完」**
+
+代表已達每日個人或全站 OCR 限額。預設每位用戶每日 20 次、全站每日 300 次；可在 Cloud Functions 環境變數調整。
+
+**Q：我曾經把正式網址 commit 到 Git history，刪除 README 還有用嗎？**
+
+有用，但不能視為完全保密。公開 repo 的 Git history 可能已被搜尋器、fork 或 cache 留存；如果網址已出現過，應視為公開資訊。真正的防護應靠 Firebase Auth、OCR 每日限額、Billing alerts、App Check，而不是靠隱藏網址。
 
 **Q：`firebase deploy` 失敗，提示需要 Blaze Plan**
 

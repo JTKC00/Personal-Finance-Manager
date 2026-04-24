@@ -3,7 +3,7 @@ import {useLocation, useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {expenseCategories, incomeCategories, paymentMethods} from '../constants/categories';
-import {scanReceipt} from '../services/ocr';
+import {OcrUsageStatus, loadOcrUsageStatus, scanReceipt} from '../services/ocr';
 import {loadGeminiApiKey} from '../services/secrets';
 import {
   loadGoals,
@@ -56,6 +56,7 @@ export function TransactionScreen() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [scanning, setScanning] = useState(false);
   const [ocrPreview, setOcrPreview] = useState<OcrResult | null>(null);
+  const [ocrUsage, setOcrUsage] = useState<OcrUsageStatus | null>(null);
   const [toast, setToast] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -66,6 +67,16 @@ export function TransactionScreen() {
   }, []);
 
   useEffect(() => { refreshGoals(); }, [refreshGoals]);
+
+  const refreshOcrUsage = useCallback(async () => {
+    try {
+      setOcrUsage(await loadOcrUsageStatus());
+    } catch {
+      setOcrUsage(null);
+    }
+  }, []);
+
+  useEffect(() => { refreshOcrUsage(); }, [refreshOcrUsage]);
 
   useEffect(() => {
     const state = location.state as TransactionLocationState | null;
@@ -171,6 +182,7 @@ export function TransactionScreen() {
         category: result.category, note: result.note, date: result.date,
         lowFields, needsConfirm: true, createdAt: new Date().toISOString()
       });
+      await refreshOcrUsage();
       await trackEvent(lowFields.length ? 'ocr_scan_fail' : 'ocr_scan_success', {lowFields});
     } catch (error) {
       await upsertReceipt({
@@ -180,6 +192,7 @@ export function TransactionScreen() {
       const errMsg = error instanceof Error ? error.message : 'unknown';
       await trackEvent('ocr_scan_fail', {reason: errMsg});
       const needsKey = /key is required|api key/i.test(errMsg);
+      await refreshOcrUsage();
       showToast(
         needsKey
           ? '請先到「我的帳戶」輸入 Gemini API Key 後再試'
@@ -202,7 +215,7 @@ export function TransactionScreen() {
         />
         <div className={styles.actionRow}>
           <button
-            disabled={scanning}
+            disabled={scanning || ocrUsage?.remaining === 0}
             className={styles.secondaryBtn}
             onClick={() => {
               if (fileInputRef.current) {
@@ -214,7 +227,7 @@ export function TransactionScreen() {
             拍照掃描
           </button>
           <button
-            disabled={scanning}
+            disabled={scanning || ocrUsage?.remaining === 0}
             className={styles.secondaryBtn}
             onClick={() => {
               if (fileInputRef.current) {
@@ -227,6 +240,11 @@ export function TransactionScreen() {
           </button>
         </div>
         {scanning ? <div className={styles.spinner} /> : null}
+        {ocrUsage ? (
+          <p className={styles.hint}>
+            今日 OCR 剩餘 {ocrUsage.remaining} 次（個人 {ocrUsage.userRemaining}/{ocrUsage.userLimit}，全站 {ocrUsage.globalRemaining}/{ocrUsage.globalLimit}）。
+          </p>
+        ) : null}
         {ocrPreview ? <p className={styles.hint}>已預填 OCR 結果，請確認後儲存。</p> : null}
       </Card>
 

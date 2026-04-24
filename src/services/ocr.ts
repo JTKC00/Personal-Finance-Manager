@@ -5,16 +5,45 @@ import {auth} from './firebase';
 // 開發環境：vite.config.ts 的 server.proxy 負責轉發，或可用 VITE_OCR_PROXY_URL 覆寫
 const OCR_ENDPOINT = import.meta.env.VITE_OCR_PROXY_URL || '/api/ocr';
 
-export async function scanReceipt(imageBase64: string, mimeType = 'image/jpeg', geminiApiKey = ''): Promise<OcrResult> {
+export type OcrUsageStatus = {
+  date: string;
+  userCount: number;
+  globalCount: number;
+  userLimit: number;
+  globalLimit: number;
+  userRemaining: number;
+  globalRemaining: number;
+  remaining: number;
+};
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) {
     throw new Error('請先登入後再使用 OCR 掃描。');
   }
 
+  return {Authorization: `Bearer ${idToken}`};
+}
+
+export async function loadOcrUsageStatus(): Promise<OcrUsageStatus> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(OCR_ENDPOINT, {headers});
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => null);
+    const backendMsg = errData?.error || errData?.message || null;
+    throw new Error(backendMsg || `OCR 用量查詢失敗（HTTP ${response.status}）`);
+  }
+
+  return response.json();
+}
+
+export async function scanReceipt(imageBase64: string, mimeType = 'image/jpeg', geminiApiKey = ''): Promise<OcrResult> {
+  const headers = await getAuthHeaders();
   const response = await fetch(OCR_ENDPOINT, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${idToken}`,
+      ...headers,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({

@@ -23,6 +23,7 @@ function loadLocalEnv() {
 loadLocalEnv();
 
 const PORT = Number(process.env.PORT || 5173);
+const HOST = process.env.HOST || '127.0.0.1';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite-preview';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
@@ -129,22 +130,22 @@ async function handleOcr(req, res) {
   }
 }
 
-// 你的 Firebase Hosting 網址，改成你自己的
-const ALLOWED_ORIGIN = 'https://personal.finance.manager.snugzap.com';
+// 如需使用這個本地 OCR proxy，請用環境變數指定正式站來源，避免把私人網址提交到 repo。
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'http://localhost:5173';
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
-// 處理瀏覽器的 CORS preflight 請求 (OPTIONS)
-  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);       
-  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS'); 
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-gemini-api-key'); 
+  // 處理瀏覽器的 CORS preflight 請求 (OPTIONS)
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, x-gemini-api-key');
 
-    if (req.method === 'OPTIONS') {   
-    res.writeHead(204);             
-    res.end();                     
-    return;                         
-  }                                 
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
 
   if (req.method === 'POST' && url.pathname === '/api/ocr') {
     handleOcr(req, res);
@@ -164,7 +165,7 @@ const server = http.createServer((req, res) => {
   sendJson(res, 404, {error: 'Not found'});
 });
 
-server.listen(PORT, () => {
-  console.log(`Personal Finance Manager prototype: http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`Personal Finance Manager prototype: http://${HOST}:${PORT}`);
   console.log(`Gemini OCR model: ${GEMINI_MODEL}`);
 });
