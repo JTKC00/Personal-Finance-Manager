@@ -13,14 +13,36 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  animation: slideUp 0.3s ease both;
+}
+
+/* ── Brand area ── */
+.brandMark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.brandIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(79,70,229,0.35);
+  font-size: 26px;
 }
 
 .title {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   color: var(--color-text);
   text-align: center;
-  margin-bottom: var(--spacing-sm);
+  letter-spacing: -0.02em;
 }
 
 .subtitle {
@@ -28,36 +50,39 @@
   color: var(--color-text-muted);
   text-align: center;
   line-height: 1.6;
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: var(--spacing-sm);
   white-space: pre-line;
 }
 
+/* ── Tabs ── */
 .tabs {
   display: flex;
   background: var(--color-surface-muted);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 4px;
   margin-bottom: var(--spacing-sm);
 }
 
 .tab {
   flex: 1;
-  padding: var(--spacing-sm);
+  padding: 9px var(--spacing-sm);
   border: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
 }
 
 .tab.tabActive {
   background: var(--color-surface);
-  color: var(--color-text);
-  font-weight: 600;
+  color: var(--color-primary);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
 }
 
+/* ── Form ── */
 .form {
   display: flex;
   flex-direction: column;
@@ -65,10 +90,10 @@
 }
 
 .input {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
   color: var(--color-text);
-  padding: var(--spacing-md);
+  padding: 11px var(--spacing-md);
   background: var(--color-surface);
   font-size: 15px;
   outline: none;
@@ -76,7 +101,8 @@
 }
 
 .input:focus {
-  border-color: var(--color-text);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-muted);
 }
 
 .error {
@@ -85,45 +111,94 @@
   text-align: center;
 }
 
+/* ── Primary button ── */
 .button {
-  background: var(--color-text);
-  color: var(--color-surface);
+  background: var(--color-primary);
+  color: var(--color-primary-text);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: var(--spacing-md);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
+  min-height: 46px;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--color-primary-hover);
 }
 
 .button:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
 .spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid rgba(255,255,255,0.3);
+  border: 2px solid rgba(255,255,255,0.35);
   border-top-color: white;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   display: inline-block;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+/* ── Divider ── */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
 }
 
+.dividerLine {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.dividerText {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* ── Google button ── */
+.googleBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px var(--spacing-md);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  min-height: 46px;
+}
+
+.googleBtn:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+  border-color: var(--color-text-muted);
+}
+
+.googleBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Misc ── */
 .note {
   font-size: 12px;
   color: var(--color-text-muted);
   text-align: center;
-  margin-top: var(--spacing-md);
+  margin-top: var(--spacing-sm);
   line-height: 1.6;
   white-space: pre-line;
 }
@@ -142,7 +217,7 @@
 }
 
 .forgotBtn:hover {
-  color: var(--color-text);
+  color: var(--color-primary);
 }
 
 .pwHint {
@@ -176,10 +251,14 @@
   margin-top: var(--spacing-sm);
 }
 
+.linkBtn:hover {
+  color: var(--color-primary);
+}
+
 .googleHint {
   font-size: 12px;
   color: var(--color-text-muted);
   text-align: center;
   line-height: 1.5;
-  margin-top: 8px;
+  margin-top: 6px;
 }

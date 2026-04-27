@@ -6,23 +6,29 @@
 }
 
 .metric {
-  background: var(--color-surface-muted);
-  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: var(--spacing-md);
   display: flex;
   flex-direction: column;
   gap: 4px;
+  box-shadow: var(--shadow-sm);
 }
 
 .label {
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .value {
   color: var(--color-text);
   font-size: 22px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .cardHeaderRow {
@@ -36,35 +42,38 @@
   color: var(--color-text);
   font-size: 24px;
   font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
+/* ── Status pills ── */
 .statusPill {
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
   font-weight: 700;
-  padding: 4px 8px;
+  padding: 3px 10px;
 }
 
-.safePill { background: rgba(59,109,17,0.12); color: var(--color-success); }
-.warningPill { background: rgba(133,79,11,0.14); color: var(--color-warning); }
-.dangerPill { background: rgba(163,45,45,0.12); color: var(--color-danger); }
+.safePill   { background: rgba(45,106,10,0.10); color: var(--color-success); }
+.warningPill{ background: rgba(146,87,12,0.12); color: var(--color-warning); }
+.dangerPill { background: rgba(176,32,32,0.10); color: var(--color-danger);  }
 
+/* ── Progress tracks ── */
 .progressTrack {
   background: var(--color-surface-muted);
-  border-radius: 8px;
-  height: 12px;
+  border-radius: var(--radius-full);
+  height: 8px;
   overflow: hidden;
 }
 
 .progressFill {
   height: 100%;
-  border-radius: 8px;
-  transition: width 0.3s ease;
+  border-radius: var(--radius-full);
+  transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
 }
 
-.safeFill { background: var(--color-success); }
+.safeFill    { background: var(--color-success); }
 .warningFill { background: var(--color-warning); }
-.dangerFill { background: var(--color-danger); }
+.dangerFill  { background: var(--color-danger);  }
 
 .helperText {
   color: var(--color-text-muted);
@@ -75,7 +84,7 @@
 
 .reserveBox {
   background: var(--color-surface-muted);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   margin-top: var(--spacing-md);
   padding: var(--spacing-md);
 }
@@ -90,6 +99,7 @@
   font-weight: 700;
 }
 
+/* ── Category budget list ── */
 .categoryBudgetList {
   margin-top: var(--spacing-md);
   display: flex;
@@ -102,7 +112,7 @@
 .categoryBudgetRow {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .categoryBudgetHeader {
@@ -126,27 +136,38 @@
 
 .progressTrackThin {
   background: var(--color-surface-muted);
-  border-radius: 4px;
-  height: 6px;
+  border-radius: var(--radius-full);
+  height: 5px;
   overflow: hidden;
 }
 
 .progressTrackThin .progressFill {
   height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s ease;
+  border-radius: var(--radius-full);
+  transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
 }
 
+/* ── Transaction rows ── */
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-sm) 0;
+  padding: 10px var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  margin: 0 calc(-1 * var(--spacing-sm));
+  transition: background 0.15s;
+}
+
+.row:not(:last-child) {
   border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  margin: 0;
+  padding: 10px 0;
 }
 
 .row:last-child {
-  border-bottom: none;
+  padding: 10px 0;
+  margin: 0;
 }
 
 .rowText {
@@ -170,14 +191,15 @@
 
 .amount {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   flex-shrink: 0;
 }
 
-.income { color: var(--color-success); }
-.expense { color: var(--color-danger); }
+.income  { color: var(--color-success); }
+.expense { color: var(--color-danger);  }
 
 .empty {
   color: var(--color-text-muted);
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.6;
 }

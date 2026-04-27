@@ -111,8 +111,8 @@
   flex: 1;
   box-sizing: border-box;
   padding: 6px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
   font-size: 14px;
   background: var(--color-surface-muted);
   color: var(--color-text);
@@ -120,7 +120,8 @@
 }
 
 .budgetInput:focus {
-  border-color: var(--color-text-muted);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-muted);
 }
 
 .disabledBtn {
@@ -137,10 +138,10 @@
 .input {
   width: 100%;
   box-sizing: border-box;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 10px var(--spacing-md);
   margin-bottom: var(--spacing-sm);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
   font-size: 16px;
   background: var(--color-surface-muted);
   color: var(--color-text);
@@ -148,7 +149,8 @@
 }
 
 .input:focus {
-  border-color: var(--color-text-muted);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-muted);
 }
 
 .fieldLabel {
@@ -179,30 +181,40 @@
 
 .themeOption {
   padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
   background: var(--color-surface-muted);
   color: var(--color-text);
   font-size: 15px;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.themeOption:hover:not(.themeOptionActive) {
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
 }
 
 .themeOptionActive {
-  background: var(--color-text);
-  color: var(--color-surface);
-  border-color: var(--color-text);
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
 }
 
 .primaryBtn {
   flex: 1;
   padding: 12px;
-  background: var(--color-text);
-  color: var(--color-surface);
+  background: var(--color-primary);
+  color: #fff;
   font-size: 15px;
   font-weight: 600;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
+}
+
+.primaryBtn:hover:not(.disabledBtn) {
+  background: var(--color-primary-hover);
 }
 
 .secondaryBtn {
@@ -212,9 +224,14 @@
   color: var(--color-text);
   font-size: 15px;
   font-weight: 500;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
+}
+
+.secondaryBtn:hover {
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
 }
 
 .dangerBtn {
@@ -224,9 +241,13 @@
   color: var(--color-danger);
   font-size: 15px;
   font-weight: 600;
-  border: 1px solid var(--color-danger);
-  border-radius: 8px;
+  border: 1.5px solid var(--color-danger);
+  border-radius: var(--radius-md);
   cursor: pointer;
+}
+
+.dangerBtn:hover {
+  background: rgba(176,32,32,0.06);
 }
 
 .tutorialToggle {
@@ -258,9 +279,9 @@
   width: 24px;
   height: 24px;
   min-width: 24px;
-  border-radius: 50%;
-  background: var(--color-text);
-  color: var(--color-surface);
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -291,8 +312,8 @@
   display: block;
   text-align: center;
   padding: 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
   color: var(--color-text);
   font-weight: 600;
   font-size: 14px;
@@ -302,6 +323,7 @@
 
 .linkBtn:hover {
   background: var(--color-surface-muted);
+  border-color: var(--color-text-muted);
 }
 
 .freeNote {
@@ -313,15 +335,18 @@
 
 .toast {
   position: fixed;
-  bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + 12px);
+  bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + 16px);
   left: 50%;
   transform: translateX(-50%);
-  background: var(--color-text);
-  color: var(--color-surface);
+  background: var(--color-primary);
+  color: #fff;
   padding: 10px 20px;
-  border-radius: 8px;
+  border-radius: var(--radius-full);
   font-size: 14px;
-  z-index: 100;
+  font-weight: 500;
+  z-index: 200;
   white-space: nowrap;
   pointer-events: none;
+  box-shadow: var(--shadow-md);
+  animation: toastIn 0.25s ease both;
 }

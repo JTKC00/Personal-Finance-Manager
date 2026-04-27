@@ -86,7 +86,10 @@ export function LoginScreen() {
   return (
     <div className={styles.container}>
       <div className={styles.inner}>
-        <h1 className={styles.title}>個人財務管家</h1>
+        <div className={styles.brandMark}>
+          <div className={styles.brandIcon}>💰</div>
+          <h1 className={styles.title}>個人財務管家</h1>
+        </div>
         <p className={styles.subtitle}>安全記錄每一筆收支{'\n'}財務自由從這裡開始</p>
 
         {resetMode ? (
@@ -171,10 +174,10 @@ export function LoginScreen() {
             </form>
 
             {/* 分隔線 */}
-            <div style={{display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0'}}>
-              <div style={{flex: 1, height: 1, background: 'var(--color-border)'}} />
-              <span style={{fontSize: 12, color: '#999'}}>或</span>
-              <div style={{flex: 1, height: 1, background: 'var(--color-border)'}} />
+            <div className={styles.divider}>
+              <div className={styles.dividerLine} />
+              <span className={styles.dividerText}>或</span>
+              <div className={styles.dividerLine} />
             </div>
 
             {/* Google 登入按鈕 */}
@@ -194,7 +197,7 @@ export function LoginScreen() {
                 }
               }}
               disabled={loading}
-              style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '12px', border: '1px solid var(--color-border)', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 15, fontWeight: 500}}
+              className={styles.googleBtn}
             >
               <svg width="18" height="18" viewBox="0 0 48 48">
                 <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
