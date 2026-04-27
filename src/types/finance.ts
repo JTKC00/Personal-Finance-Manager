@@ -13,6 +13,7 @@ export type Transaction = {
   linkedTransferId?: string;
   merchant?: string;
   paymentMethod?: string;
+  subscriptionId?: string;
   note?: string;
   receiptUrl?: string;
   createdAt: string;
@@ -93,4 +94,23 @@ export type AnalyticsEvent = {
   name: string;
   props?: Record<string, unknown>;
   at: string;
+};
+
+export type SubscriptionFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+
+export type Subscription = {
+  id: string;
+  name: string;
+  amount: number;
+  currency: string;
+  category: string;
+  paymentMethod: string;
+  frequency: SubscriptionFrequency;
+  nextBillingDate: string;
+  trialEndDate?: string;
+  reminderDays: number;
+  active: boolean;
+  lastPostedDate?: string;
+  note?: string;
+  createdAt: string;
 };

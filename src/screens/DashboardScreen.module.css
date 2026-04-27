@@ -73,6 +73,23 @@
   margin-top: var(--spacing-sm);
 }
 
+.reserveBox {
+  background: var(--color-surface-muted);
+  border-radius: 8px;
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+}
+
+.reserveBox .cardHeaderRow {
+  margin-bottom: 0;
+}
+
+.reserveTitle {
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .categoryBudgetList {
   margin-top: var(--spacing-md);
   display: flex;

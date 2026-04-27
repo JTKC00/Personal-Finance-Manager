@@ -1,8 +1,16 @@
 ﻿import {useEffect, useState} from 'react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {getCurrentMonthKey, getMonthlySummary, getTransactionsByMonth, loadBudgetRows, loadGoals} from '../services/storage';
-import {Budget, Goal, Transaction} from '../types/finance';
+import {
+  getCurrentMonthKey,
+  getMonthlySummary,
+  getSubscriptionChargesForMonth,
+  getTransactionsByMonth,
+  loadBudgetRows,
+  loadGoals,
+  loadSubscriptions,
+} from '../services/storage';
+import {Budget, Goal, Subscription, Transaction} from '../types/finance';
 import styles from './DashboardScreen.module.css';
 
 type Summary = {
@@ -23,22 +31,25 @@ export function DashboardScreen() {
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const month = getCurrentMonthKey();
 
   useEffect(() => {
     let active = true;
     async function load() {
-      const [nextSummary, nextTransactions, nextBudgets, nextGoals] = await Promise.all([
+      const [nextSummary, nextTransactions, nextBudgets, nextGoals, nextSubscriptions] = await Promise.all([
         getMonthlySummary(month),
         getTransactionsByMonth(month),
         loadBudgetRows(),
-        loadGoals()
+        loadGoals(),
+        loadSubscriptions()
       ]);
       if (!active) return;
       setSummary(nextSummary);
       setTransactions(nextTransactions);
       setBudgets(nextBudgets);
       setGoals(nextGoals);
+      setSubscriptions(nextSubscriptions);
       setRecentTransactions(
         [...nextTransactions]
           .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
@@ -56,9 +67,20 @@ export function DashboardScreen() {
     ['交易筆數', String(summary.count)]
   ];
   const monthlyBudget = budgets.reduce((sum, item) => sum + item.amount, 0);
-  const budgetProgress = monthlyBudget > 0 ? summary.expense / monthlyBudget : 0;
-  const budgetRemaining = monthlyBudget - summary.expense;
   const expenseTransactions = transactions.filter(item => item.type === 'expense');
+  const upcomingSubscriptionCharges = getSubscriptionChargesForMonth(
+    subscriptions,
+    month,
+    transactions,
+    new Date().toISOString().slice(0, 10),
+    true
+  );
+  const reservedSubscriptionTotal = upcomingSubscriptionCharges.reduce((sum, item) => sum + item.amount, 0);
+  const projectedExpense = summary.expense + reservedSubscriptionTotal;
+  const budgetProgress = monthlyBudget > 0 ? summary.expense / monthlyBudget : 0;
+  const projectedBudgetProgress = monthlyBudget > 0 ? projectedExpense / monthlyBudget : 0;
+  const budgetRemaining = monthlyBudget - summary.expense;
+  const projectedBudgetRemaining = monthlyBudget - projectedExpense;
   const averageExpense = expenseTransactions.length ? summary.expense / expenseTransactions.length : 0;
   const unusualTransactions = expenseTransactions
     .filter(item => averageExpense > 0 && item.amount >= averageExpense * 1.8)
@@ -75,13 +97,18 @@ export function DashboardScreen() {
     map[t.category] = (map[t.category] || 0) + t.amount;
     return map;
   }, {});
+  const categoryReserved = upcomingSubscriptionCharges.reduce<Record<string, number>>((map, item) => {
+    map[item.subscription.category] = (map[item.subscription.category] || 0) + item.amount;
+    return map;
+  }, {});
 
   const categoryAlerts = budgets
-    .filter(b => b.amount > 0 && (categorySpending[b.category] || 0) / b.amount >= 0.75)
+    .filter(b => b.amount > 0 && ((categorySpending[b.category] || 0) + (categoryReserved[b.category] || 0)) / b.amount >= 0.75)
     .map(b => ({
       ...b,
       spent: categorySpending[b.category] || 0,
-      ratio: (categorySpending[b.category] || 0) / b.amount
+      reserved: categoryReserved[b.category] || 0,
+      ratio: ((categorySpending[b.category] || 0) + (categoryReserved[b.category] || 0)) / b.amount
     }))
     .sort((a, b) => b.ratio - a.ratio);
 
@@ -121,17 +148,36 @@ export function DashboardScreen() {
               本月預算 {formatMoney(monthlyBudget)}，
               {budgetRemaining >= 0 ? `剩餘 ${formatMoney(budgetRemaining)}` : `已超支 ${formatMoney(Math.abs(budgetRemaining))}`}
             </p>
+            {reservedSubscriptionTotal > 0 ? (
+              <div className={styles.reserveBox}>
+                <div className={styles.cardHeaderRow}>
+                  <span className={styles.reserveTitle}>本月固定開支預留</span>
+                  <span className={[styles.statusPill, pillClass(projectedBudgetProgress)].join(' ')}>
+                    {formatPercent(clampPercent(projectedBudgetProgress))}
+                  </span>
+                </div>
+                <p className={styles.helperText}>
+                  尚未扣款訂閱 {formatMoney(reservedSubscriptionTotal)}，
+                  預計本月支出 {formatMoney(projectedExpense)}，
+                  {projectedBudgetRemaining >= 0
+                    ? `預計剩餘 ${formatMoney(projectedBudgetRemaining)}`
+                    : `預計超支 ${formatMoney(Math.abs(projectedBudgetRemaining))}`}
+                </p>
+              </div>
+            ) : null}
             {budgets.length > 0 && (
               <div className={styles.categoryBudgetList}>
                 {budgets.map(b => {
                   const spent = categorySpending[b.category] || 0;
-                  const ratio = b.amount > 0 ? spent / b.amount : 0;
+                  const reserved = categoryReserved[b.category] || 0;
+                  const projected = spent + reserved;
+                  const ratio = b.amount > 0 ? projected / b.amount : 0;
                   return (
                     <div key={b.category} className={styles.categoryBudgetRow}>
                       <div className={styles.categoryBudgetHeader}>
                         <span className={styles.categoryBudgetName}>{b.category}</span>
                         <span className={styles.categoryBudgetMeta}>
-                          {formatMoney(spent)} / {formatMoney(b.amount)}
+                          {formatMoney(spent)}{reserved ? ` + ${formatMoney(reserved)}` : ''} / {formatMoney(b.amount)}
                         </span>
                         <span className={[styles.statusPill, pillClass(ratio)].join(' ')}>
                           {formatPercent(clampPercent(ratio))}
@@ -158,7 +204,8 @@ export function DashboardScreen() {
             <div className={styles.rowText}>
               <span className={styles.rowTitle}>{alert.category}</span>
               <span className={styles.rowMeta}>
-                {alertLabel(alert.ratio)}&ensp;{formatMoney(alert.spent)} / {formatMoney(alert.amount)}
+                {alertLabel(alert.ratio)}&ensp;{formatMoney(alert.spent)}
+                {alert.reserved ? ` + 預留 ${formatMoney(alert.reserved)}` : ''} / {formatMoney(alert.amount)}
               </span>
             </div>
             <span className={[styles.statusPill, pillClass(alert.ratio)].join(' ')}>

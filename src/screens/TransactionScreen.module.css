@@ -19,6 +19,41 @@
   border-color: var(--color-text-muted);
 }
 
+.fieldLabel {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  margin: var(--spacing-md) 0 4px;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.summaryBox {
+  background: var(--color-surface-muted);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summaryLabel {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.summaryValue {
+  color: var(--color-text);
+  font-size: 22px;
+  font-weight: 700;
+}
+
 .sectionLabel {
   font-size: 12px;
   font-weight: 600;
@@ -163,6 +198,42 @@
   color: var(--color-success);
   font-weight: 600;
   font-size: 14px;
+}
+
+.warningText {
+  color: var(--color-warning);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.budgetRow {
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.budgetRow:last-child {
+  border-bottom: none;
+}
+
+.budgetHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: 6px;
+}
+
+.progressTrackThin {
+  background: var(--color-surface-muted);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-text);
+  border-radius: 4px;
+  transition: width 0.3s ease;
 }
 
 .textBtn {

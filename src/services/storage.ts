@@ -9,7 +9,7 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
-import {Account, AnalyticsEvent, Budget, Goal, Receipt, Transaction, Transfer} from '../types/finance';
+import {Account, AnalyticsEvent, Budget, Goal, Receipt, Subscription, Transaction, Transfer} from '../types/finance';
 import {clean, db, getUid} from './firebase';
 
 // ── Firestore path helpers ────────────────────────────────────────────────────
@@ -85,6 +85,41 @@ export function getCurrentMonthKey(date = new Date()): string {
 function getNextMonthKey(month: string): string {
   const [year, monthIndex] = month.split('-').map(Number);
   return getCurrentMonthKey(new Date(year, monthIndex, 1));
+}
+
+function parseDateKey(dateKey: string): Date {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function daysInMonth(year: number, monthIndex: number): number {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function addMonthsClamped(dateKey: string, months: number): string {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const target = new Date(year, month - 1 + months, 1);
+  const lastDay = daysInMonth(target.getFullYear(), target.getMonth());
+  target.setDate(Math.min(day, lastDay));
+  return formatDateKey(target);
+}
+
+export function getNextSubscriptionBillingDate(subscription: Subscription, fromDate = subscription.nextBillingDate): string {
+  const date = parseDateKey(fromDate);
+  if (subscription.frequency === 'weekly') {
+    date.setDate(date.getDate() + 7);
+    return formatDateKey(date);
+  }
+  if (subscription.frequency === 'quarterly') return addMonthsClamped(fromDate, 3);
+  if (subscription.frequency === 'yearly') return addMonthsClamped(fromDate, 12);
+  return addMonthsClamped(fromDate, 1);
 }
 
 export async function loadTransactions(): Promise<Transaction[]> {
@@ -208,6 +243,115 @@ export async function deleteTransactionWithGoalLink(transaction: Transaction): P
     }
     firestoreTransaction.delete(docRef(uid, 'transactions', transaction.id));
   });
+}
+
+export async function loadSubscriptions(): Promise<Subscription[]> {
+  return loadCollection<Subscription>(getUid(), 'subscriptions');
+}
+
+export async function upsertSubscription(subscription: Subscription): Promise<void> {
+  const uid = getUid();
+  await setDoc(docRef(uid, 'subscriptions', subscription.id), clean(subscription));
+}
+
+export async function deleteSubscription(id: string): Promise<void> {
+  const uid = getUid();
+  await deleteDoc(docRef(uid, 'subscriptions', id));
+}
+
+export type SubscriptionCharge = {
+  subscription: Subscription;
+  date: string;
+  amount: number;
+};
+
+export function getSubscriptionChargesForMonth(
+  subscriptions: Subscription[],
+  month = getCurrentMonthKey(),
+  transactions: Transaction[] = [],
+  today = formatDateKey(new Date()),
+  upcomingOnly = false
+): SubscriptionCharge[] {
+  const monthStart = `${month}-01`;
+  const monthEnd = `${getNextMonthKey(month)}-01`;
+  const postedKeys = new Set(
+    transactions
+      .filter(item => item.subscriptionId)
+      .map(item => `${item.subscriptionId}:${item.date}`)
+  );
+
+  const charges: SubscriptionCharge[] = [];
+  subscriptions
+    .filter(item => item.active && item.nextBillingDate)
+    .forEach(subscription => {
+      let date = subscription.nextBillingDate;
+      let guard = 0;
+      while (date < monthStart && guard < 120) {
+        date = getNextSubscriptionBillingDate(subscription, date);
+        guard += 1;
+      }
+      while (date < monthEnd && guard < 120) {
+        const key = `${subscription.id}:${date}`;
+        const isUpcoming = date >= today && !postedKeys.has(key);
+        if (!upcomingOnly || isUpcoming) {
+          charges.push({subscription, date, amount: subscription.amount});
+        }
+        date = getNextSubscriptionBillingDate(subscription, date);
+        guard += 1;
+      }
+    });
+
+  return charges.sort((a, b) => a.date.localeCompare(b.date) || a.subscription.name.localeCompare(b.subscription.name));
+}
+
+export async function processDueSubscriptions(today = formatDateKey(new Date())): Promise<number> {
+  const [subscriptions, transactions] = await Promise.all([loadSubscriptions(), loadTransactions()]);
+  const postedKeys = new Set(
+    transactions
+      .filter(item => item.subscriptionId)
+      .map(item => `${item.subscriptionId}:${item.date}`)
+  );
+  let created = 0;
+
+  for (const subscription of subscriptions.filter(item => item.active && item.nextBillingDate)) {
+    let dueDate = subscription.nextBillingDate;
+    let lastPostedDate = subscription.lastPostedDate;
+    let guard = 0;
+
+    while (dueDate <= today && guard < 36) {
+      const key = `${subscription.id}:${dueDate}`;
+      if (!postedKeys.has(key)) {
+        const transaction: Transaction = {
+          id: `sub-${subscription.id}-${dueDate}`,
+          type: 'expense',
+          amount: subscription.amount,
+          currency: subscription.currency || 'HKD',
+          date: dueDate,
+          category: subscription.category,
+          paymentMethod: subscription.paymentMethod,
+          subscriptionId: subscription.id,
+          note: subscription.name,
+          createdAt: new Date().toISOString()
+        };
+        await upsertTransaction(transaction);
+        postedKeys.add(key);
+        created += 1;
+      }
+      lastPostedDate = dueDate;
+      dueDate = getNextSubscriptionBillingDate(subscription, dueDate);
+      guard += 1;
+    }
+
+    if (dueDate !== subscription.nextBillingDate || lastPostedDate !== subscription.lastPostedDate) {
+      await upsertSubscription({
+        ...subscription,
+        nextBillingDate: dueDate,
+        lastPostedDate
+      });
+    }
+  }
+
+  return created;
 }
 
 export async function loadBudgets(): Promise<Record<string, number>> {

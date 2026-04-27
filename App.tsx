@@ -5,10 +5,13 @@ import {AnalysisScreen} from './src/screens/AnalysisScreen';
 import {TransactionScreen} from './src/screens/TransactionScreen';
 import {TransactionListScreen} from './src/screens/TransactionListScreen';
 import {GoalsScreen} from './src/screens/GoalsScreen';
+import {SubscriptionsScreen} from './src/screens/SubscriptionsScreen';
 import {ProfileScreen} from './src/screens/ProfileScreen';
 import {LoginScreen} from './src/screens/LoginScreen';
 import {AuthProvider, useAuth} from './src/contexts/AuthContext';
 import {BottomNav} from './src/components/BottomNav';
+import {processDueSubscriptions} from './src/services/storage';
+import {useEffect} from 'react';
 
 function UpdateBanner() {
   const {needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker} = useRegisterSW();
@@ -39,6 +42,12 @@ function UpdateBanner() {
 function AppShell() {
   const {user, loading} = useAuth();
 
+  useEffect(() => {
+    if (user) {
+      processDueSubscriptions().catch(() => undefined);
+    }
+  }, [user]);
+
   if (loading) {
     return (
       <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--color-bg)'}}>
@@ -60,6 +69,7 @@ function AppShell() {
         <Route path="/transaction" element={<TransactionScreen />} />
         <Route path="/transactions" element={<TransactionListScreen />} />
         <Route path="/goals" element={<GoalsScreen />} />
+        <Route path="/subscriptions" element={<SubscriptionsScreen />} />
         <Route path="/profile" element={<ProfileScreen />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
@@ -79,4 +89,3 @@ export default function App() {
     </BrowserRouter>
   );
 }
-

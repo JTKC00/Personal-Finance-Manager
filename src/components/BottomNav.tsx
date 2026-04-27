@@ -1,5 +1,5 @@
 import {NavLink} from 'react-router-dom';
-import {Home, BarChart2, PlusCircle, List, Flag, User} from 'lucide-react';
+import {Home, BarChart2, PlusCircle, List, Flag, Repeat, User} from 'lucide-react';
 import styles from './BottomNav.module.css';
 
 const tabs = [
@@ -8,6 +8,7 @@ const tabs = [
   {to: '/transaction', label: '記帳', Icon: PlusCircle},
   {to: '/transactions', label: '交易', Icon: List},
   {to: '/goals', label: '目標', Icon: Flag},
+  {to: '/subscriptions', label: '訂閱', Icon: Repeat},
   {to: '/profile', label: '我的帳戶', Icon: User},
 ];
 

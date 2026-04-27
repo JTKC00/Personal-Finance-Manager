@@ -8,10 +8,11 @@ import {
   getCurrentMonthKey,
   getTransactionsByMonth,
   loadGoals,
+  loadSubscriptions,
   saveTransactionWithGoalLink,
   trackEvent,
 } from '../services/storage';
-import {Goal, Transaction} from '../types/finance';
+import {Goal, Subscription, Transaction} from '../types/finance';
 import styles from './TransactionScreen.module.css';
 
 type Draft = {
@@ -45,6 +46,7 @@ export function TransactionListScreen() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [searchText, setSearchText] = useState('');
@@ -57,11 +59,16 @@ export function TransactionListScreen() {
   }, [draft]);
 
   const refreshScreen = useCallback(async () => {
-    const [next, nextGoals] = await Promise.all([getTransactionsByMonth(selectedMonth), loadGoals()]);
+    const [next, nextGoals, nextSubscriptions] = await Promise.all([
+      getTransactionsByMonth(selectedMonth),
+      loadGoals(),
+      loadSubscriptions()
+    ]);
     setTransactions(
       [...next].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
     );
     setGoals(nextGoals);
+    setSubscriptions(nextSubscriptions);
   }, [selectedMonth]);
 
   useEffect(() => { refreshScreen(); }, [refreshScreen]);
@@ -161,6 +168,7 @@ export function TransactionListScreen() {
       goalId: draft.type === 'expense' ? (draft.goalId || undefined) : undefined,
       linkedGoalEntryId: draft.type === 'expense' ? editingTransaction.linkedGoalEntryId : undefined,
       paymentMethod: draft.paymentMethod,
+      subscriptionId: editingTransaction.subscriptionId,
       note: draft.note,
       createdAt: editingTransaction.createdAt
     };
@@ -362,6 +370,11 @@ export function TransactionListScreen() {
               {t.goalId && t.type === 'expense' ? (
                 <span className={styles.goalMeta}>
                   由 Goal 支付：{goals.find(g => g.id === t.goalId)?.name || '已刪除目標'}
+                </span>
+              ) : null}
+              {t.subscriptionId && t.type === 'expense' ? (
+                <span className={styles.goalMeta}>
+                  訂閱：{subscriptions.find(item => item.id === t.subscriptionId)?.name || t.note || '已刪除訂閱'}
                 </span>
               ) : null}
             </div>

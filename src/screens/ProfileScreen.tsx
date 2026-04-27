@@ -5,7 +5,7 @@ import {useAuth} from '../contexts/AuthContext';
 import {expenseCategories} from '../constants/categories';
 import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authErrors';
 import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
-import {loadBudgets, loadGoals, loadReceipts, loadTransactions, saveAllBudgets} from '../services/storage';
+import {loadBudgets, loadGoals, loadReceipts, loadSubscriptions, loadTransactions, saveAllBudgets} from '../services/storage';
 import {Receipt} from '../types/finance';
 import styles from './ProfileScreen.module.css';
 
@@ -123,9 +123,10 @@ export function ProfileScreen() {
   }
 
   async function exportCsv() {
-    const all = await loadTransactions();
+    const [all, subscriptions] = await Promise.all([loadTransactions(), loadSubscriptions()]);
+    const subscriptionMap = Object.fromEntries(subscriptions.map(item => [item.id, item.name]));
     all.sort((a, b) => a.date.localeCompare(b.date));
-    const header = ['日期', '類型', '金額', '分類', '備註', '付款方式'];
+    const header = ['日期', '類型', '金額', '分類', '備註', '付款方式', '訂閱'];
     const rows = all.map(t => [
       t.date,
       t.type === 'income' ? '收入' : '支出',
@@ -133,6 +134,7 @@ export function ProfileScreen() {
       t.category,
       t.note || '',
       t.paymentMethod || '',
+      t.subscriptionId ? (subscriptionMap[t.subscriptionId] || t.subscriptionId) : '',
     ]);
     const csv = [header, ...rows]
       .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
@@ -150,19 +152,21 @@ export function ProfileScreen() {
   }
 
   async function exportJsonBackup() {
-    const [transactions, goals, budgets, receiptHistory] = await Promise.all([
+    const [transactions, goals, budgets, receiptHistory, subscriptions] = await Promise.all([
       loadTransactions(),
       loadGoals(),
       loadBudgets(),
-      loadReceipts()
+      loadReceipts(),
+      loadSubscriptions()
     ]);
     const exportedAt = new Date().toISOString();
     const backup = {
-      version: 1,
+      version: 2,
       exportedAt,
       userEmail: user?.email || '',
       transactions: [...transactions].sort((a, b) => a.date.localeCompare(b.date)),
       goals: [...goals].sort((a, b) => a.name.localeCompare(b.name)),
+      subscriptions: [...subscriptions].sort((a, b) => a.name.localeCompare(b.name)),
       budgets,
       receipts: [...receiptHistory].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     };
