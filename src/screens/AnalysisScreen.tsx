@@ -9,8 +9,8 @@ import {Budget, Transaction} from '../types/finance';
 import styles from './AnalysisScreen.module.css';
 
 const CATEGORY_COLORS = [
-  '#3b6d11', '#a32d2d', '#854f0b', '#1a6d6d',
-  '#4a4a8f', '#6d6d1a', '#8f4a4a', '#6d3b6d'
+  '#4F46E5', '#7C3AED', '#0EA5E9', '#059669',
+  '#D97706', '#DC2626', '#DB2777', '#0891B2'
 ];
 
 const formatMoney = (v: number) => `$${Math.round(v).toLocaleString()}`;

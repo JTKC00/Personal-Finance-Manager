@@ -1,4 +1,5 @@
 ﻿import {useCallback, useEffect, useRef, useState} from 'react';
+import {useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {useAuth} from '../contexts/AuthContext';
@@ -28,6 +29,7 @@ function validatePasswordStrength(pw: string): string {
 }
 
 export function ProfileScreen() {
+  const navigate = useNavigate();
   const {user, signOut, linkGoogle, changePassword, authError, clearAuthError} = useAuth();
   const [keyInput, setKeyInput] = useState('');
   const [hasKey, setHasKey] = useState(false);
@@ -268,6 +270,17 @@ export function ProfileScreen() {
           <p className={styles.body} style={{color: 'var(--color-success)', marginBottom: 8}}>✓ 已綁定 Google 帳號</p>
         ) : null}
         <button className={styles.dangerBtn} onClick={handleSignOut}>登出</button>
+      </Card>
+
+      <Card title="快速導航">
+        <button className={styles.navLinkBtn} onClick={() => navigate('/analysis')}>
+          <span>📊 分析報表</span>
+          <span className={styles.navLinkArrow}>›</span>
+        </button>
+        <button className={styles.navLinkBtn} onClick={() => navigate('/subscriptions')}>
+          <span>🔄 訂閱管理</span>
+          <span className={styles.navLinkArrow}>›</span>
+        </button>
       </Card>
 
       <Card title="外觀">

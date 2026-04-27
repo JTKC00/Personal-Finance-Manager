@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
+import {Pencil, Trash2, Pause, Play} from 'lucide-react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {expenseCategories, paymentMethods} from '../constants/categories';
@@ -66,6 +67,7 @@ export function SubscriptionsScreen() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const created = await processDueSubscriptions();
@@ -187,10 +189,10 @@ export function SubscriptionsScreen() {
   }
 
   async function confirmDelete(subscription: Subscription) {
-    if (!window.confirm(`確定刪除訂閱「${subscription.name}」？既有交易記錄會保留。`)) return;
     await deleteSubscription(subscription.id);
     await trackEvent('delete_subscription_success', {subscriptionId: subscription.id});
     if (editingId === subscription.id) resetForm();
+    setConfirmDeleteId(null);
     await refresh();
     showToast('訂閱已刪除。');
   }
@@ -376,19 +378,31 @@ export function SubscriptionsScreen() {
               </span>
               {subscription.note ? <span className={styles.goalMeta}>{subscription.note}</span> : null}
             </div>
-            <div className={styles.txActions}>
+              <div className={styles.txActions}>
               <span className={styles.expenseText}>-{formatMoney(subscription.amount)}</span>
-              <div className={styles.actionRow}>
-                <button className={styles.textBtn} onClick={() => startEdit(subscription)}>編輯</button>
-                <button className={styles.textBtn} onClick={() => toggleActive(subscription)}>
-                  {subscription.active ? '停用' : '啟用'}
-                </button>
-                <button className={[styles.textBtn, styles.deleteBtn].join(' ')} onClick={() => confirmDelete(subscription)}>刪除</button>
-              </div>
+              {confirmDeleteId === subscription.id ? (
+                <div className={styles.confirmRow}>
+                  <span className={styles.confirmText}>確定刪除？</span>
+                  <button className={styles.confirmYes} onClick={() => confirmDelete(subscription)}>確定</button>
+                  <button className={styles.confirmNo} onClick={() => setConfirmDeleteId(null)}>取消</button>
+                </div>
+              ) : (
+                <div className={styles.actionRow}>
+                  <button className={styles.iconBtn} title="編輯" onClick={() => startEdit(subscription)}><Pencil size={15} /></button>
+                  <button className={styles.iconBtn} title={subscription.active ? '停用' : '啟用'} onClick={() => toggleActive(subscription)}>
+                    {subscription.active ? <Pause size={15} /> : <Play size={15} />}
+                  </button>
+                  <button className={styles.iconBtnDanger} title="刪除" onClick={() => setConfirmDeleteId(subscription.id)}><Trash2 size={15} /></button>
+                </div>
+              )}
             </div>
           </div>
         )) : (
-          <p className={styles.hint}>尚未新增訂閱。建立第一個定期支出後，這裡會自動追蹤扣款。</p>
+          <div className={styles.emptyState}>
+            <span className={styles.emptyIcon}>🔄</span>
+            <p className={styles.emptyTitle}>尚未新增訂閱</p>
+            <p className={styles.hint}>在上方表單新增第一個定期支出，App 會自動追蹤每月扣款。</p>
+          </div>
         )}
       </Card>
 

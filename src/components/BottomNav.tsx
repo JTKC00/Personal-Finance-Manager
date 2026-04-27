@@ -1,29 +1,33 @@
 import {NavLink} from 'react-router-dom';
-import {Home, BarChart2, PlusCircle, List, Flag, Repeat, User} from 'lucide-react';
+import {Home, List, PlusCircle, Flag, User} from 'lucide-react';
 import styles from './BottomNav.module.css';
 
-const tabs = [
+const tabs: {to: string; label: string; Icon: React.ElementType; center?: boolean}[] = [
   {to: '/dashboard', label: '首頁', Icon: Home},
-  {to: '/analysis', label: '分析', Icon: BarChart2},
-  {to: '/transaction', label: '記帳', Icon: PlusCircle},
   {to: '/transactions', label: '交易', Icon: List},
+  {to: '/transaction', label: '記帳', Icon: PlusCircle, center: true},
   {to: '/goals', label: '目標', Icon: Flag},
-  {to: '/subscriptions', label: '訂閱', Icon: Repeat},
-  {to: '/profile', label: '我的帳戶', Icon: User},
+  {to: '/profile', label: '我的', Icon: User},
 ];
 
 export function BottomNav() {
   return (
     <nav className={styles.nav}>
-      {tabs.map(({to, label, Icon}) => (
+      {tabs.map(({to, label, Icon, center}) => (
         <NavLink
           key={to}
           to={to}
           className={({isActive}) =>
-            [styles.item, isActive ? styles.active : ''].join(' ')
+            [styles.item, isActive ? styles.active : '', center ? styles.centerItem : ''].join(' ')
           }
         >
-          <Icon size={22} strokeWidth={1.5} />
+          {center ? (
+            <span className={styles.centerIcon}>
+              <Icon size={26} strokeWidth={2} />
+            </span>
+          ) : (
+            <Icon size={22} strokeWidth={1.5} />
+          )}
           <span className={styles.label}>{label}</span>
         </NavLink>
       ))}

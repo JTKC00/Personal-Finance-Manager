@@ -4,6 +4,37 @@
   margin-bottom: var(--spacing-md);
 }
 
+.navLinkBtn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 4px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s;
+}
+
+.navLinkBtn:last-child {
+  border-bottom: none;
+}
+
+.navLinkBtn:hover {
+  color: var(--color-primary);
+}
+
+.navLinkArrow {
+  color: var(--color-text-muted);
+  font-size: 18px;
+  font-weight: 400;
+}
+
 .receiptList {
   margin-top: var(--spacing-sm);
   display: flex;

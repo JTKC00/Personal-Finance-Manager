@@ -1,4 +1,5 @@
 ﻿import {useCallback, useEffect, useMemo, useState} from 'react';
+import {Trash2} from 'lucide-react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {appendGoalEntry, deleteGoal, loadGoals, removeGoalEntry, upsertGoal, trackEvent} from '../services/storage';
@@ -29,6 +30,8 @@ export function GoalsScreen() {
   const [depositNote, setDepositNote] = useState('');
   const [historyGoalId, setHistoryGoalId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmRemoveEntryId, setConfirmRemoveEntryId] = useState<string | null>(null);
 
   const canSave = useMemo(
     () => Boolean(draft.name.trim()) && Number(draft.targetAmount) > 0,
@@ -91,11 +94,11 @@ export function GoalsScreen() {
   }
 
   async function confirmDelete(goal: Goal) {
-    if (!window.confirm(`確定刪除目標「${goal.name}」？這不會刪除關聯的交易記錄。`)) return;
     await deleteGoal(goal.id);
     await trackEvent('delete_goal_success', {goalName: goal.name});
     if (editingId === goal.id) resetForm();
     if (depositGoalId === goal.id) setDepositGoalId(null);
+    setConfirmDeleteId(null);
     await refresh();
     showToast('目標已刪除。');
   }
@@ -121,10 +124,9 @@ export function GoalsScreen() {
   }
 
   async function handleRemoveEntry(goalId: string, entry: GoalDeposit) {
-    const label = entry.note || (entry.type === 'deposit' ? '入金' : '提取');
-    if (!window.confirm(`確定移除這筆記錄「${label} $${entry.amount.toLocaleString()}」？`)) return;
     await removeGoalEntry(goalId, entry.id);
     await trackEvent('goal_entry_remove', {goalId, entryId: entry.id});
+    setConfirmRemoveEntryId(null);
     await refresh();
     showToast('記錄已移除。');
   }
@@ -190,7 +192,10 @@ export function GoalsScreen() {
                 </div>
                 <div className={styles.progressTrack}>
                   <div
-                    className={[styles.progressFill, pct >= 100 ? styles.fillDone : pct >= 60 ? styles.fillGood : ''].join(' ')}
+                    className={[
+                      styles.progressFill,
+                      pct >= 100 ? styles.fillDone : pct >= 75 ? styles.fillGood : pct >= 50 ? styles.fillWarning : ''
+                    ].join(' ')}
                     style={{width: `${pct}%`}}
                   />
                 </div>
@@ -212,7 +217,17 @@ export function GoalsScreen() {
                     className={styles.textBtn}
                     onClick={() => setHistoryGoalId(historyGoalId === goal.id ? null : goal.id)}
                   >{historyGoalId === goal.id ? '收起記錄' : `記錄 (${(goal.deposits || []).length})`}</button>
-                  <button className={[styles.textBtn, styles.deleteBtn].join(' ')} onClick={() => confirmDelete(goal)}>刪除</button>
+                  {confirmDeleteId === goal.id ? (
+                    <div className={styles.confirmRow}>
+                      <span className={styles.confirmText}>確定刪除？</span>
+                      <button className={styles.confirmYes} onClick={() => confirmDelete(goal)}>確定</button>
+                      <button className={styles.confirmNo} onClick={() => setConfirmDeleteId(null)}>取消</button>
+                    </div>
+                  ) : (
+                    <button className={[styles.textBtn, styles.deleteBtn].join(' ')} onClick={() => setConfirmDeleteId(goal.id)}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
                 {depositGoalId === goal.id ? (
                   <div className={styles.depositForm}>
@@ -257,10 +272,18 @@ export function GoalsScreen() {
                               </span>
                             </div>
                             {!entry.linkedTransactionId ? (
-                              <button
-                                className={[styles.textBtn, styles.deleteBtn].join(' ')}
-                                onClick={() => handleRemoveEntry(goal.id, entry)}
-                              >移除</button>
+                              confirmRemoveEntryId === entry.id ? (
+                                <div className={styles.confirmRow}>
+                                  <span className={styles.confirmText}>確定移除？</span>
+                                  <button className={styles.confirmYes} onClick={() => handleRemoveEntry(goal.id, entry)}>確定</button>
+                                  <button className={styles.confirmNo} onClick={() => setConfirmRemoveEntryId(null)}>取消</button>
+                                </div>
+                              ) : (
+                                <button
+                                  className={[styles.textBtn, styles.deleteBtn].join(' ')}
+                                  onClick={() => setConfirmRemoveEntryId(entry.id)}
+                                ><Trash2 size={14} /></button>
+                              )
                             ) : (
                               <span className={styles.linkedBadge}>交易</span>
                             )}
@@ -274,9 +297,11 @@ export function GoalsScreen() {
           })}
         </div>
       ) : (
-        <Card title="">
-          <p className={styles.hint}>尚無目標。建立第一個儲蓄目標吧！</p>
-        </Card>
+        <div className={styles.emptyState}>
+          <span className={styles.emptyIcon}>🎯</span>
+          <p className={styles.emptyTitle}>尚未建立儲蓄目標</p>
+          <p className={styles.emptyHint}>在上方表單建立第一個目標，開始追蹤存款進度！</p>
+        </div>
       )}
 
       {toast ? <div className={styles.toast}>{toast}</div> : null}

@@ -144,6 +144,25 @@
   margin-top: var(--spacing-sm);
 }
 
+.emptyState {
+  text-align: center;
+  padding: 32px 16px;
+}
+
+.emptyIcon {
+  display: block;
+  font-size: 40px;
+  margin-bottom: 12px;
+  line-height: 1;
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 8px;
+}
+
 .helperText {
   color: var(--color-text-muted);
   font-size: 12px;
@@ -258,6 +277,91 @@
 
 .deleteBtn {
   color: var(--color-danger);
+}
+
+/* Icon action buttons */
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iconBtn:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-primary);
+}
+
+.iconBtnDanger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-danger);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.7;
+  transition: background 0.15s, opacity 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iconBtnDanger:hover {
+  background: rgba(176,32,32,0.06);
+  opacity: 1;
+}
+
+/* Inline confirm row */
+.confirmRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: rgba(176,32,32,0.06);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(176,32,32,0.15);
+}
+
+.confirmText {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-danger);
+}
+
+.confirmYes {
+  background: var(--color-danger);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.confirmNo {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  padding: 4px 12px;
+  cursor: pointer;
 }
 
 .monthNav {

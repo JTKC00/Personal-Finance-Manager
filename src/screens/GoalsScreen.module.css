@@ -104,13 +104,14 @@
 
 .progressFill {
   height: 100%;
-  background: var(--color-warning);
+  background: var(--color-primary);
   border-radius: 4px;
   transition: width 0.3s ease;
 }
 
 .fillGood { background: var(--color-success); }
 .fillDone { background: var(--color-success); }
+.fillWarning { background: var(--color-warning); }
 
 .goalMeta {
   display: flex;
@@ -141,9 +142,75 @@
   color: var(--color-danger);
 }
 
+/* Inline confirm */
+.confirmRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  background: rgba(176,32,32,0.06);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(176,32,32,0.15);
+}
+
+.confirmText {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-danger);
+}
+
+.confirmYes {
+  background: var(--color-danger);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.confirmNo {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
 .hint {
   color: var(--color-text-muted);
   font-size: 13px;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 32px 16px;
+}
+
+.emptyIcon {
+  display: block;
+  font-size: 40px;
+  margin-bottom: 12px;
+  line-height: 1;
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 8px;
+}
+
+.emptyHint {
+  font-size: 14px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
 }
 
 .depositForm {

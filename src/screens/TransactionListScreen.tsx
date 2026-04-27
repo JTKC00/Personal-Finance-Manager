@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
+import {Copy, Pencil, Trash2} from 'lucide-react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {expenseCategories, incomeCategories, paymentMethods} from '../constants/categories';
@@ -53,6 +54,7 @@ export function TransactionListScreen() {
   const [typeFilter, setTypeFilter] = useState<TransactionTypeFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [toast, setToast] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const canSave = useMemo(() => {
     return draft ? Number(draft.amount) > 0 && Boolean(draft.date) : false;
@@ -184,10 +186,10 @@ export function TransactionListScreen() {
   }
 
   async function confirmDelete(transaction: Transaction) {
-    if (!window.confirm(`確定刪除「${transaction.note || transaction.category}」？`)) return;
     await deleteTransactionWithGoalLink(transaction);
     await trackEvent('delete_transaction_success', {category: transaction.category});
     if (editingTransaction?.id === transaction.id) resetEdit();
+    setConfirmDeleteId(null);
     await refreshScreen();
     showToast('已刪除。');
   }
@@ -378,15 +380,23 @@ export function TransactionListScreen() {
                 </span>
               ) : null}
             </div>
-            <div className={styles.txActions}>
+              <div className={styles.txActions}>
               <span className={t.type === 'income' ? styles.incomeText : styles.expenseText}>
                 {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
               </span>
-              <div className={styles.actionRow}>
-                <button className={styles.textBtn} onClick={() => copyTransaction(t)}>複製</button>
-                <button className={styles.textBtn} onClick={() => startEdit(t)}>編輯</button>
-                <button className={[styles.textBtn, styles.deleteBtn].join(' ')} onClick={() => confirmDelete(t)}>刪除</button>
-              </div>
+              {confirmDeleteId === t.id ? (
+                <div className={styles.confirmRow}>
+                  <span className={styles.confirmText}>確定刪除？</span>
+                  <button className={styles.confirmYes} onClick={() => confirmDelete(t)}>確定</button>
+                  <button className={styles.confirmNo} onClick={() => setConfirmDeleteId(null)}>取消</button>
+                </div>
+              ) : (
+                <div className={styles.actionRow}>
+                  <button className={styles.iconBtn} title="複製" onClick={() => copyTransaction(t)}><Copy size={15} /></button>
+                  <button className={styles.iconBtn} title="編輯" onClick={() => startEdit(t)}><Pencil size={15} /></button>
+                  <button className={styles.iconBtnDanger} title="刪除" onClick={() => setConfirmDeleteId(t.id)}><Trash2 size={15} /></button>
+                </div>
+              )}
             </div>
           </div>
         )) : (

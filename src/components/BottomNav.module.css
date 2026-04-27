@@ -5,7 +5,6 @@
   right: 0;
   height: calc(var(--bottom-nav-height) + var(--safe-area-bottom));
   padding-bottom: var(--safe-area-bottom);
-  background: rgba(var(--nav-bg-rgb, 255,255,255), 0.85);
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
   backdrop-filter: blur(12px);
@@ -35,7 +34,7 @@
   color: var(--color-primary);
 }
 
-.item.active::after {
+.item.active:not(.centerItem)::after {
   content: '';
   position: absolute;
   bottom: 6px;
@@ -43,6 +42,31 @@
   height: 4px;
   border-radius: var(--radius-full);
   background: var(--color-primary);
+}
+
+/* Center record button */
+.centerItem {
+  flex: 1.2;
+}
+
+.centerIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(79,70,229,0.4);
+  transition: background 0.2s, transform 0.2s;
+  margin-bottom: -2px;
+}
+
+.centerItem.active .centerIcon,
+.centerItem:hover .centerIcon {
+  background: var(--color-primary-hover);
+  transform: scale(1.08);
 }
 
 .label {

@@ -1,4 +1,5 @@
 ﻿import {useEffect, useState} from 'react';
+import {useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {
@@ -26,6 +27,7 @@ const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
 const clampPercent = (value: number) => Math.min(Math.max(value, 0), 1);
 
 export function DashboardScreen() {
+  const navigate = useNavigate();
   const [summary, setSummary] = useState<Summary>(emptySummary);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
@@ -260,7 +262,7 @@ export function DashboardScreen() {
         )}
       </Card>
 
-      <Card title="最近 3 筆交易">
+      <Card title="最近 3 筆交易" action={{label: '全部 ›', onClick: () => navigate('/transactions')}}>
         {recentTransactions.length ? recentTransactions.map(t => (
           <div key={t.id} className={styles.row}>
             <div className={styles.rowText}>
