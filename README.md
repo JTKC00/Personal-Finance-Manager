@@ -24,14 +24,17 @@
 
 | 功能 | 說明 |
 |---|---|
-| **Dashboard** | 一覽本月收支概況、餘額、預算進度、儲蓄目標進度及最近交易記錄 |
-| **收支記錄** | 新增、編輯、刪除收入與支出；可按月份切換瀏覽歷史記錄 |
+| **Dashboard** | 一覽本月收支概況、餘額、預算進度、儲蓄目標進度、即將扣款訂閱金額及最近交易記錄 |
+| **交易列表** | 按月份瀏覽所有交易；支援關鍵字搜尋、收入/支出類型篩選與分類篩選 |
+| **收支記錄** | 新增、編輯、刪除收入與支出；可連結儲蓄目標或訂閱 |
+| **訂閱管理** | 新增定期訂閱（每週/每月/每季/每年），到期自動補記支出；設定試用期提醒、免費到期前推送警示；Dashboard 同步顯示本月預計訂閱支出 |
 | **AI 掃描收據** | 拍照或上傳收據圖片，Gemini AI 自動辨識金額、類別與日期 |
 | **OCR 成本保護** | 後端限制每日個人與全站 OCR 次數，避免過量使用造成帳單風險 |
 | **收據記錄** | 「我的帳戶」可瀏覽所有 OCR 掃描記錄，含成功/失敗狀態 |
 | **財務分析** | 以圓餅圖和長條圖呈現每月支出分佈及每日趨勢，可切換月份 |
 | **儲蓄目標** | 設定目標金額、手動入金/提款、查看入金歷史、連結相關交易 |
 | **月預算設定** | 在「我的帳戶」為各支出分類設定月預算；Dashboard 顯示實際進度 |
+| **深色 / 淺色主題** | 在「我的帳戶」一鍵切換深色與淺色模式，偏好設定存於本地 |
 | **CSV 匯出** | 一鍵匯出全部交易為 UTF-8 CSV，可用 Excel / Google Sheets 開啟 |
 | **JSON 完整備份** | 在「我的帳戶」匯出交易、目標、預算和 OCR 記錄的完整備份 |
 | **Google / Email 登入** | 支援 Google 帳號及電郵密碼兩種登入方式 |
@@ -72,11 +75,14 @@ Personal-Finance-Manager/
 │   ├── screens/             # 各頁面元件
 │   │   ├── LoginScreen.tsx
 │   │   ├── DashboardScreen.tsx
-│   │   ├── TransactionScreen.tsx  # 含 AI 掃描收據功能
+│   │   ├── TransactionScreen.tsx      # 新增交易（含 AI 掃描收據）
+│   │   ├── TransactionListScreen.tsx  # 交易列表（搜尋、篩選、編輯）
+│   │   ├── SubscriptionsScreen.tsx    # 訂閱管理（定期扣款、試用期提醒）
 │   │   ├── AnalysisScreen.tsx
 │   │   ├── GoalsScreen.tsx
-│   │   └── ProfileScreen.tsx      # Gemini API Key 設定
+│   │   └── ProfileScreen.tsx          # 主題切換、Gemini Key、預算設定等
 │   ├── services/
+│   │   ├── appearance.ts    # 深色/淺色主題模式
 │   │   ├── firebase.ts      # Firebase 初始化（app、auth、db）
 │   │   ├── ocr.ts           # 呼叫 OCR Cloud Function
 │   │   ├── secrets.ts       # Gemini API Key 的 localStorage 存取
