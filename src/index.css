@@ -22,6 +22,18 @@
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+:root[data-theme='dark'] {
+  --color-bg: #0f0f0f;
+  --color-surface: #181818;
+  --color-surface-muted: #242424;
+  --color-text: #f4f4f4;
+  --color-text-muted: #b7b7b7;
+  --color-border: rgba(255, 255, 255, 0.14);
+  --color-success: #8fd36a;
+  --color-danger: #ff8a8a;
+  --color-warning: #f4bd5d;
+}
+
 html, body, #root {
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;

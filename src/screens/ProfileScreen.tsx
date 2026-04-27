@@ -4,6 +4,7 @@ import {Screen} from '../components/Screen';
 import {useAuth} from '../contexts/AuthContext';
 import {expenseCategories} from '../constants/categories';
 import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authErrors';
+import {ThemeMode, applyThemeMode, getStoredThemeMode} from '../services/appearance';
 import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
 import {loadBudgets, loadGoals, loadReceipts, loadSubscriptions, loadTransactions, saveAllBudgets} from '../services/storage';
 import {Receipt} from '../types/finance';
@@ -30,6 +31,7 @@ export function ProfileScreen() {
   const {user, signOut, linkGoogle, changePassword, authError, clearAuthError} = useAuth();
   const [keyInput, setKeyInput] = useState('');
   const [hasKey, setHasKey] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredThemeMode());
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [budgetEdits, setBudgetEdits] = useState<Record<string, string>>(() =>
     Object.fromEntries(expenseCategories.map(c => [c, '']))
@@ -86,6 +88,12 @@ export function ProfileScreen() {
   async function handleSignOut() {
     if (!window.confirm('確定要登出嗎？')) return;
     await signOut();
+  }
+
+  function changeThemeMode(mode: ThemeMode) {
+    applyThemeMode(mode);
+    setThemeMode(mode);
+    showToast(mode === 'dark' ? '已切換至黑色模式。' : '已切換至白色模式。');
   }
 
   async function saveKey() {
@@ -260,6 +268,26 @@ export function ProfileScreen() {
           <p className={styles.body} style={{color: 'var(--color-success)', marginBottom: 8}}>✓ 已綁定 Google 帳號</p>
         ) : null}
         <button className={styles.dangerBtn} onClick={handleSignOut}>登出</button>
+      </Card>
+
+      <Card title="外觀">
+        <p className={styles.body}>切換頁面黑白模式，設定會保存在這部裝置。</p>
+        <div className={styles.themeToggle} role="group" aria-label="頁面黑白模式">
+          <button
+            type="button"
+            className={[styles.themeOption, themeMode === 'light' ? styles.themeOptionActive : ''].join(' ')}
+            onClick={() => changeThemeMode('light')}
+          >
+            白色
+          </button>
+          <button
+            type="button"
+            className={[styles.themeOption, themeMode === 'dark' ? styles.themeOptionActive : ''].join(' ')}
+            onClick={() => changeThemeMode('dark')}
+          >
+            黑色
+          </button>
+        </div>
       </Card>
 
       {isEmailUser ? (
