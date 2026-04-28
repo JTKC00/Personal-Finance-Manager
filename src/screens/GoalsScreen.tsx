@@ -13,7 +13,7 @@ type Draft = {
   targetDate: string;
 };
 
-const formatMoney = (v: number) => `$${Math.round(v).toLocaleString()}`;
+const formatMoney = (v: number) => `$${v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 const emptyDraft = (): Draft => ({
   name: '',
   targetAmount: '',
@@ -265,7 +265,7 @@ export function GoalsScreen() {
                           <div key={entry.id} className={styles.entryRow}>
                             <div className={styles.entryInfo}>
                               <span className={entry.type === 'deposit' ? styles.entryDeposit : styles.entryWithdraw}>
-                                {entry.type === 'deposit' ? '+' : '-'}${entry.amount.toLocaleString()}
+                                {entry.type === 'deposit' ? '+' : '-'}${entry.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                               </span>
                               <span className={styles.entryMeta}>
                                 {entry.date} · {entry.note || (entry.type === 'deposit' ? '入金' : '提取')}

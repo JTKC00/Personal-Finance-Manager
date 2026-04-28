@@ -39,7 +39,7 @@ function getMonthLabel(monthKey: string): string {
   return `${year} 年 ${month} 月`;
 }
 
-const formatMoney = (value: number) => `$${Math.round(value).toLocaleString()}`;
+const formatMoney = (value: number) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
 export function TransactionListScreen() {
   const navigate = useNavigate();

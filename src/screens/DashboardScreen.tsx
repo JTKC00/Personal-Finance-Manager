@@ -22,7 +22,7 @@ type Summary = {
 };
 
 const emptySummary: Summary = {income: 0, expense: 0, balance: 0, count: 0};
-const formatMoney = (value: number) => `$${Math.round(value).toLocaleString()}`;
+const formatMoney = (value: number) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
 const clampPercent = (value: number) => Math.min(Math.max(value, 0), 1);
 

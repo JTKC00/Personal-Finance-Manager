@@ -13,7 +13,7 @@ const CATEGORY_COLORS = [
   '#D97706', '#DC2626', '#DB2777', '#0891B2'
 ];
 
-const formatMoney = (v: number) => `$${Math.round(v).toLocaleString()}`;
+const formatMoney = (v: number) => `$${v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 const formatPercent = (v: number) => `${Math.round(v * 100)}%`;
 const formatDelta = (v: number) => `${v >= 0 ? '+' : '-'}${formatMoney(Math.abs(v))}`;
 

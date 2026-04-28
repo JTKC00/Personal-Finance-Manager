@@ -452,7 +452,7 @@ export function ProfileScreen() {
                     {r.status === 'done' ? '成功' : r.status === 'failed' ? '失敗' : '處理中'}
                   </span>
                   <span className={styles.receiptName}>{r.imageUri || '未知檔案'}</span>
-                  {r.amount ? <span className={styles.receiptAmt}>${r.amount.toLocaleString()} · {r.category}</span> : null}
+                  {r.amount ? <span className={styles.receiptAmt}>${r.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} · {r.category}</span> : null}
                   <span className={styles.receiptDate}>{r.createdAt.slice(0, 10)}</span>
                 </div>
                 {(r.lowFields || []).length > 0 ? (

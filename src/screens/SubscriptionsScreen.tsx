@@ -36,7 +36,7 @@ const frequencyLabels: Record<SubscriptionFrequency, string> = {
   yearly: '每年',
 };
 
-const formatMoney = (value: number) => `$${Math.round(value).toLocaleString()}`;
+const formatMoney = (value: number) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 const today = () => new Date().toISOString().slice(0, 10);
 
 function emptyDraft(): Draft {
