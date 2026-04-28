@@ -1,423 +1,341 @@
-# 個人財務管家 💰
+# Personal Finance Manager
 
-一個為個人設計的記帳 Web App，支援收支記錄、財務分析、儲蓄目標追蹤，並可用 AI 掃描收據自動入帳。
+一個以 React、Firebase 和 Cloud Functions 建立的個人理財 Web App。它支援收支紀錄、分類分析、儲蓄目標、訂閱管理、帳戶/轉帳管理，以及透過 Gemini OCR 從收據圖片擷取交易資料。
 
-> 建議不要在公開 README 放私人部署網址。部署後可自行記錄在私有文件或環境說明中。
+正式網站：
 
----
+https://personal-finance-manager-8e8b4.web.app
 
-## 目錄
+Firebase project：
 
-- [功能特色](#功能特色)
-- [技術架構](#技術架構)
-- [專案結構](#專案結構)
-- [從零開始：建立 Firebase 專案](#從零開始建立-firebase-專案)
-- [本地開發環境設定](#本地開發環境設定)
-- [AI OCR 收據掃描設定](#ai-ocr-收據掃描設定)
-- [部署到正式環境](#部署到正式環境)
-- [環境變數說明](#環境變數說明)
-- [常見問題排解](#常見問題排解)
+`personal-finance-manager-8e8b4`
 
 ---
 
-## 功能特色
+## 功能概覽
 
-| 功能 | 說明 |
+- Dashboard：查看收入、支出、餘額和近期交易。
+- 交易管理：新增、編輯、刪除、搜尋和分類收支紀錄。
+- 收據 OCR：登入後可上傳收據圖片，由 Cloud Function 呼叫 Gemini 解析金額、日期、分類和備註。
+- 分析圖表：用 Recharts 顯示支出分類和趨勢。
+- 儲蓄目標：建立目標、記錄存入/提取，並可連結交易。
+- 訂閱管理：追蹤週期性支出、下一次付款日和提醒天數。
+- 帳戶與轉帳：管理現金、銀行、錢包和信用卡帳戶，並記錄帳戶間轉帳。
+- Firebase Authentication：支援 Google 和 Email/Password 登入。
+- Firestore：以登入使用者為單位儲存資料。
+- PWA：支援 manifest、service worker 和離線快取。
+
+---
+
+## 技術棧
+
+| 類別 | 技術 |
 |---|---|
-| **Dashboard** | 一覽本月收支概況、餘額、預算進度、儲蓄目標進度、即將扣款訂閱金額及最近交易記錄 |
-| **交易列表** | 按月份瀏覽所有交易；支援關鍵字搜尋、收入/支出類型篩選與分類篩選 |
-| **收支記錄** | 新增、編輯、刪除收入與支出；可連結儲蓄目標或訂閱 |
-| **訂閱管理** | 新增定期訂閱（每週/每月/每季/每年），到期自動補記支出；設定試用期提醒、免費到期前推送警示；Dashboard 同步顯示本月預計訂閱支出 |
-| **AI 掃描收據** | 拍照或上傳收據圖片，Gemini AI 自動辨識金額、類別與日期 |
-| **OCR 成本保護** | 後端限制每日個人與全站 OCR 次數，避免過量使用造成帳單風險 |
-| **收據記錄** | 「我的帳戶」可瀏覽所有 OCR 掃描記錄，含成功/失敗狀態 |
-| **財務分析** | 以圓餅圖和長條圖呈現每月支出分佈及每日趨勢，可切換月份 |
-| **儲蓄目標** | 設定目標金額、手動入金/提款、查看入金歷史、連結相關交易 |
-| **月預算設定** | 在「我的帳戶」為各支出分類設定月預算；Dashboard 顯示實際進度 |
-| **深色 / 淺色主題** | 在「我的帳戶」一鍵切換深色與淺色模式，偏好設定存於本地 |
-| **CSV 匯出** | 一鍵匯出全部交易為 UTF-8 CSV，可用 Excel / Google Sheets 開啟 |
-| **JSON 完整備份** | 在「我的帳戶」匯出交易、目標、預算和 OCR 記錄的完整備份 |
-| **Google / Email 登入** | 支援 Google 帳號及電郵密碼兩種登入方式 |
-| **忘記密碼** | 登入頁提供「忘記密碼？」流程，發送 Firebase 重設郵件 |
-| **密碼強度要求** | 註冊時要求最少 8 位、含大寫、小寫英文字母及數字 |
-| **綁定 Google 帳號** | 以電郵註冊的用戶可在「我的帳戶」綁定 Google，之後可雙向登入 |
-| **PWA 支援** | 可加入手機主畫面，像原生 App 一樣使用；部署新版本後 App 自動顯示「有新版本，立即更新」通知 |
-
----
-
-## 技術架構
-
-| 層次 | 技術 |
-|---|---|
-| 前端框架 | React 19 + TypeScript |
-| 建構工具 | Vite 6 |
-| 路由 | React Router v6 |
-| 樣式 | CSS Modules |
-| 圖表 | Recharts |
-| 資料庫 | Firebase Firestore（含離線持久化） |
-| 身份驗證 | Firebase Authentication（Google + Email/Password）|
-| AI OCR | Google Gemini 3.1 Flash-Lite Preview（via Cloud Functions v2）|
-| 部署 | Firebase Hosting + Cloud Functions（Node.js 22）|
+| Frontend | React 19、TypeScript |
+| Build | Vite 6 |
+| Routing | React Router v6 |
+| Styling | CSS Modules |
+| Charts | Recharts |
+| Icons | lucide-react |
+| Backend | Firebase Cloud Functions v2 |
+| Database | Cloud Firestore |
+| Auth | Firebase Authentication |
+| AI OCR | Google Gemini via Cloud Functions |
+| Hosting | Firebase Hosting |
+| Functions runtime | Node.js 22 |
 
 ---
 
 ## 專案結構
 
-```
+```text
 Personal-Finance-Manager/
-├── src/
-│   ├── components/          # 共用 UI 元件
-│   │   ├── BottomNav.tsx    # 底部導航列
-│   │   ├── Card.tsx         # 通用卡片容器
-│   │   └── Screen.tsx       # 頁面容器（含 loading/error 狀態）
-│   ├── contexts/
-│   │   └── AuthContext.tsx  # 登入狀態管理（useAuth hook）
-│   ├── screens/             # 各頁面元件
-│   │   ├── LoginScreen.tsx
-│   │   ├── DashboardScreen.tsx
-│   │   ├── TransactionScreen.tsx      # 新增交易（含 AI 掃描收據）
-│   │   ├── TransactionListScreen.tsx  # 交易列表（搜尋、篩選、編輯）
-│   │   ├── SubscriptionsScreen.tsx    # 訂閱管理（定期扣款、試用期提醒）
-│   │   ├── AnalysisScreen.tsx
-│   │   ├── GoalsScreen.tsx
-│   │   └── ProfileScreen.tsx          # 主題切換、Gemini Key、預算設定等
-│   ├── services/
-│   │   ├── appearance.ts    # 深色/淺色主題模式
-│   │   ├── firebase.ts      # Firebase 初始化（app、auth、db）
-│   │   ├── ocr.ts           # 呼叫 OCR Cloud Function
-│   │   ├── secrets.ts       # Gemini API Key 的 localStorage 存取
-│   │   └── storage.ts       # Firestore 資料存取（CRUD）
-│   ├── types/
-│   │   └── finance.ts       # 所有 TypeScript 型別定義
-│   └── constants/
-│       └── categories.ts    # 收支分類清單
-├── functions/
-│   └── src/
-│       └── index.ts         # Cloud Function：OCR 掃描收據（呼叫 Gemini API）
-├── public/
-│   └── manifest.json        # PWA Manifest
-├── App.tsx                  # 路由設定（受保護路由 + 公開路由）
-├── firebase.json            # Firebase Hosting + Functions 設定
-├── firestore.rules          # Firestore 安全規則（每個用戶只能存取自己的資料）
-└── vite.config.ts           # Vite 設定（含開發時 OCR 代理）
+├─ src/
+│  ├─ components/        # 共用 UI 元件
+│  ├─ constants/         # 分類等常數
+│  ├─ contexts/          # AuthContext
+│  ├─ screens/           # App 主要頁面
+│  ├─ services/          # Firebase、OCR、Firestore、外觀設定等服務
+│  ├─ types/             # TypeScript 型別
+│  ├─ index.css
+│  ├─ main.tsx
+│  └─ theme.ts
+├─ functions/
+│  ├─ src/index.ts       # OCR Cloud Function
+│  ├─ package.json
+│  └─ tsconfig.json
+├─ public/               # PWA icons 和 manifest
+├─ DOC/                  # 維護教學 PDF/HTML
+├─ App.tsx
+├─ firebase.json         # Hosting、rewrites、Functions predeploy
+├─ firestore.rules
+├─ vite.config.ts
+├─ package.json
+└─ README.md
 ```
 
 ---
 
-## 從零開始：建立 Firebase 專案
+## 必要條件
 
-> 如果你已有 Firebase 專案可以跳過此節。
+建議使用 Node.js 22，因為 Cloud Functions runtime 設定為 `nodejs22`。
 
-**第一步：建立 Firebase 專案**
+```powershell
+node --version
+npm --version
+git --version
+```
 
-1. 前往 [Firebase Console](https://console.firebase.google.com)，點擊「新增專案」
-2. 輸入專案名稱，依照提示完成建立
+需要安裝 Firebase CLI：
 
-**第二步：啟用 Firestore 資料庫**
+```powershell
+npm install -g firebase-tools
+firebase login
+```
 
-1. 在 Firebase Console 左側選單點擊「Firestore Database」
-2. 點擊「建立資料庫」
-3. 選擇「以正式版模式啟動」（安全規則會由本專案的 `firestore.rules` 管理）
-4. 選擇離你最近的資料中心位置
+確認登入帳戶有 `personal-finance-manager-8e8b4` 的權限：
 
-**第三步：啟用身份驗證**
-
-1. 在左側選單點擊「Authentication」→「開始使用」
-2. 點擊「Sign-in method」分頁
-3. 啟用「**電子郵件/密碼**」
-4. 啟用「**Google**」，填入專案的支援電子郵件後儲存
-
-**第四步：新增 Web 應用程式，取得設定值**
-
-1. 在專案總覽頁點擊「`</>`」圖示，新增 Web 應用程式
-2. 填入應用程式暱稱後，點擊「註冊應用程式」
-3. 複製 `firebaseConfig` 物件內的所有值，稍後會填入 `.env` 檔案
-
-**第五步：升級至 Blaze（Pay-as-you-go）方案**
-
-> ⚠️ 使用 Cloud Functions 必須升級至 Blaze 方案。個人使用量通常在免費額度內，不會實際收費。
-
-在 Firebase Console 左下角點擊「升級」，依步驟設定付款方式。
+```powershell
+firebase projects:list
+```
 
 ---
 
-## 本地開發環境設定
+## 本機設定
 
-### 先決條件
+1. Clone 專案：
 
-- [Node.js](https://nodejs.org) **v22 或以上**（`node -v` 確認）
-- [Firebase CLI](https://firebase.google.com/docs/cli)：執行 `npm install -g firebase-tools` 安裝
-
-### 安裝步驟
-
-**第一步：Clone 專案並安裝前端依賴**
-
-```bash
+```powershell
 git clone https://github.com/JTKC00/Personal-Finance-Manager.git
 cd Personal-Finance-Manager
+```
+
+2. 安裝根目錄依賴：
+
+```powershell
 npm install
 ```
 
-**第二步：安裝 Cloud Functions 依賴**
+3. 安裝 Functions 依賴：
 
-```bash
-cd functions && npm install && cd ..
+```powershell
+npm --prefix functions install
 ```
 
-**第三步：登入 Firebase CLI 並連結專案**
+4. 建立本機環境變數：
 
-```bash
-firebase login
-firebase use --add
+```powershell
+copy .env.example .env
 ```
 
-執行 `firebase use --add` 後，從列表選擇你的 Firebase 專案，並設定別名（例如 `default`）。
-
-**第四步：建立 `.env` 設定檔**
-
-在專案根目錄建立 `.env` 檔案（注意：此檔案已在 `.gitignore` 中，不會被上傳）：
-
-```bash
-touch .env
-```
-
-填入以下內容，將所有「`你的值`」替換成 [第四步](#第四步新增-web-應用程式取得設定值) 取得的 Firebase 設定值：
-
-```env
-VITE_FIREBASE_API_KEY=你的值
-VITE_FIREBASE_AUTH_DOMAIN=你的專案ID.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=你的專案ID
-VITE_FIREBASE_STORAGE_BUCKET=你的專案ID.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=你的值
-VITE_FIREBASE_APP_ID=你的值
-```
-
-**第五步：啟動開發伺服器**
-
-```bash
-npm run dev
-```
-
-打開瀏覽器，前往 `http://localhost:5173`。
-
-> **注意**：在本地開發環境中，AI 掃描收據功能預設無法使用（因為 `/api/ocr` 路由只在部署後由 Firebase Hosting 轉發）。如需在本地測試 OCR，請參考下方的 [本地測試 OCR](#本地測試-ocr（選用）) 說明。
+然後打開 `.env`，填入 Firebase Web App 設定。`.env` 已被 `.gitignore` 排除，不應提交到 Git。
 
 ---
 
-## AI OCR 收據掃描設定
+## 環境變數
 
-OCR 功能透過 Firebase Cloud Function 呼叫 Google Gemini API 來辨識收據。
+前端使用 Vite，因此只有 `VITE_` 開頭的變數會進入 browser bundle。
 
-### Gemini API Key 的兩種使用方式
+| 變數 | 說明 |
+|---|---|
+| `VITE_FIREBASE_API_KEY` | Firebase Web API key |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase Auth domain |
+| `VITE_FIREBASE_PROJECT_ID` | Firebase project ID |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID |
+| `VITE_FIREBASE_APP_ID` | Firebase web app ID |
+| `VITE_FIREBASE_MEASUREMENT_ID` | Firebase measurement ID，可選 |
+| `VITE_OCR_PROXY_URL` | 本機開發時可指定 OCR proxy URL；production 主要使用 `/api/ocr` rewrite |
 
-本專案支援兩種方式提供 Gemini API Key，**擇一即可**：
+Functions OCR 使用 Firebase Secret Manager：
 
-| 方式 | 適合對象 | 說明 |
-|---|---|---|
-| **方式 A：後端 Secret**（推薦） | 自己架設給他人使用 | Key 存在 Cloud Secret Manager，用戶看不到 Key |
-| **方式 B：用戶自帶 Key** | 個人使用 | 用戶在 App「我的帳戶」頁輸入自己的 Key，存在瀏覽器 |
-
-App 呼叫時會優先使用用戶自帶的 Key；若用戶未設定，則使用後端 Secret。
-
-### 方式 A：設定後端 Secret
-
-**1. 取得 Gemini API Key**
-
-前往 [Google AI Studio](https://aistudio.google.com/apikey) 建立 API Key。
-
-**2. 將 Key 存入 Cloud Secret Manager**
-
-```bash
+```powershell
 firebase functions:secrets:set GEMINI_API_KEY
 ```
 
-系統會提示輸入 Key 值，貼上後按 Enter。
+Cloud Function 也支援以下 quota 設定，未設定時會使用預設值：
 
-**3. 部署 Cloud Function**
-
-```bash
-firebase deploy --only functions
-```
-
-**4. 部署 Firebase Hosting（讓 `/api/ocr` 路由生效）**
-
-```bash
-firebase deploy --only hosting
-```
-
-部署完成後，App 內的「掃描收據」功能即可使用。
-
-### OCR 成本與濫用防護
-
-OCR Cloud Function 會驗證 Firebase ID token，未登入用戶不能呼叫；同時會用 Firestore 記錄每日 OCR 使用量，預設限制如下：
-
-| 限額 | 預設值 |
-|---|---:|
-| 每位用戶每日 OCR 次數 | 20 |
-| 全站每日 OCR 次數 | 50 |
-| Cloud Function 最大併發 instances | 3 |
-| 單次請求 body 大小 | 24 MB |
-
-如需調整每日限額，可在 Cloud Functions 環境變數設定：
-
-```env
-OCR_DAILY_LIMIT_PER_USER=20
-OCR_DAILY_LIMIT_GLOBAL=50
-```
-
-> Budget alerts 只會提醒，不會自動停止用量。正式環境仍建議在 Google Cloud Billing 設定預算提醒，例如 HK$50 / HK$100 / HK$200 階梯。
-
-### 方式 B：用戶自帶 Key
-
-只需完成上方的 Function 和 Hosting 部署步驟，然後：
-
-1. 前往 App「我的帳戶」→「Gemini API Key」
-2. 輸入你自己的 Gemini API Key 並儲存
-3. 之後使用「掃描收據」功能時，App 會自動使用此 Key
-
-### 本地測試 OCR（選用）
-
-若需要在本地開發環境測試 OCR 功能，先完成上方的 Function 部署，找到函式 URL（格式為 `https://ocr-xxxxxxxx-uc.a.run.app`），然後在 `.env` 加入：
-
-```env
-VITE_OCR_PROXY_URL=https://ocr-xxxxxxxx-uc.a.run.app
-```
-
-Vite 開發伺服器會自動將 `/api/ocr` 請求代理到此 URL。
-
-> 函式 URL 可在 `firebase deploy --only functions` 輸出結果的最後一行找到，或在 [Firebase Console](https://console.firebase.google.com) → Functions 頁面查看。
+| 變數 | 預設 | 說明 |
+|---|---:|---|
+| `OCR_DAILY_LIMIT_PER_USER` | 20 | 每位使用者每日 OCR 次數 |
+| `OCR_DAILY_LIMIT_GLOBAL` | 50 | 全站每日 OCR 次數 |
 
 ---
 
-## 部署到正式環境
+## 本機開發
 
-**部署前檢查**
+啟動 Vite：
 
-```bash
-npm run lint
+```powershell
+npm run dev
+```
+
+預設網址通常是：
+
+```text
+http://localhost:5173
+```
+
+本機 OCR 開發有兩種方式：
+
+- 使用已部署的 Cloud Function：在 `.env` 設定 `VITE_OCR_PROXY_URL`。
+- 使用 Firebase Hosting rewrite：部署後 production 會透過 `/api/ocr` 轉發到 Cloud Function。
+
+---
+
+## 檢查與 Build
+
+前端 typecheck：
+
+```powershell
 npm run typecheck
+```
+
+前端 production build：
+
+```powershell
 npm run build
 ```
 
-**一次部署全部（Hosting + Functions + Firestore Rules）**
+Functions build：
 
-```bash
+```powershell
+npm --prefix functions run build
+```
+
+Lint：
+
+```powershell
+npm run lint
+```
+
+---
+
+## 部署
+
+完整部署 Firestore rules、Functions 和 Hosting：
+
+```powershell
 firebase deploy
 ```
 
-**單獨部署各部分**
+只部署 Hosting：
 
-```bash
-# 只部署前端
+```powershell
 firebase deploy --only hosting
-
-# 只部署 Cloud Functions
-firebase deploy --only functions
-
-# 只部署 Firestore 安全規則
-firebase deploy --only firestore:rules
 ```
 
-### 提升忘記密碼郵件送達率
+只部署 Functions：
 
-Firebase Authentication 預設會代發忘記密碼郵件。正式環境建議使用自己的網域作為 Auth email domain，讓用戶看到的寄件者和重設連結都更一致。
+```powershell
+firebase deploy --only functions
+```
 
-**設定步驟**
+只部署 Firestore rules：
 
-1. 前往 Firebase Console → Authentication → Templates。
-2. 編輯 Password reset template。
-3. 點擊「customize domain」，輸入正式網域，或專用子網域。
-4. 按 Firebase 顯示的 DNS records 到你的網域供應商新增紀錄。
-5. 等待 DNS 驗證通過後，再發送測試重設郵件。
+```powershell
+firebase deploy --only firestore
+```
 
-**DNS 與信任檢查清單**
+部署成功後會看到：
 
-- Firebase 要求的網域驗證 DNS records 已全部加入並通過驗證。
-- 若同一網域也由 Google Workspace、SendGrid、Mailgun、Postmark 等服務寄信，確認 SPF 不互相衝突。
-- 為主要寄信網域設定 DKIM。
-- 設定 DMARC，初期可使用 `p=none` 觀察，再逐步收緊政策。
-- 忘記密碼郵件主旨和內容保持簡短，避免大量連結或促銷字眼。
-
----
-
-## 環境變數說明
-
-所有以 `VITE_` 開頭的變數需要建立在根目錄的 `.env` 檔案中。
-
-| 變數名稱 | 說明 | 必填 |
-|---|---|---|
-| `VITE_FIREBASE_API_KEY` | Firebase Web API Key | ✅ |
-| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase Auth Domain（`專案ID.firebaseapp.com`）| ✅ |
-| `VITE_FIREBASE_PROJECT_ID` | Firebase 專案 ID | ✅ |
-| `VITE_FIREBASE_STORAGE_BUCKET` | Firebase Storage Bucket | ✅ |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase Cloud Messaging Sender ID | ✅ |
-| `VITE_FIREBASE_APP_ID` | Firebase Web App ID | ✅ |
-| `VITE_OCR_PROXY_URL` | Cloud Function OCR 的完整 URL（僅本地開發測試 OCR 時需要）| ❌ |
-
-> ⚠️ `.env` 已加入 `.gitignore`，絕對不會上傳到 GitHub。**切勿將真實 Key 直接寫死在程式碼中。**
-
-Cloud Functions 的 OCR 限額變數可放在 `functions/.env` 或部署環境設定中，請不要提交真實部署設定。
+```text
+Deploy complete!
+Hosting URL: https://personal-finance-manager-8e8b4.web.app
+```
 
 ---
 
-## 常見問題排解
+## 公司電腦 / 新電腦注意事項
 
-**Q：登入時出現「auth/unauthorized-domain」錯誤**
+如果 PowerShell 禁止執行 `npm.ps1` 或 `firebase.ps1`：
 
-本地開發時的 `localhost` 網域需要加入 Firebase 授權清單。
-前往 Firebase Console → Authentication → Settings → 授權網域，新增 `localhost`。
+```powershell
+npm.cmd run build
+firebase.cmd deploy
+```
 
-**Q：忘記密碼後無法登入**
+如果 NVM 已安裝但 `node`、`npm` 或 `firebase` 找不到，可以只在目前 PowerShell 視窗暫時補 PATH，例如：
 
-在登入頁輸入電郵後，點擊密碼欄下方的「忘記密碼？」連結，系統會發送重設郵件。
-收不到郵件時請檢查垃圾郵件信箱；正式環境建議完成上方的 Auth email custom domain 和 DNS 設定。
+```powershell
+$env:Path='C:\Users\<你的使用者>\AppData\Local\nvm\v22.x.x;C:\Users\<你的使用者>\AppData\Roaming\npm;' + $env:Path
+```
 
-**Q：以電郵註冊後想改用 Google 登入**
+這種做法只影響目前視窗，不會改 repo，也不會影響其他電腦。
 
-在 App「我的帳戶」→「帳號」區塊，點擊「綁定 Google 帳號」，完成後可同時使用兩種方式登入，資料完全共享。
+更多完整步驟可參考：
 
-**Q：手機 PWA 未更新到最新版本**
+- `DOC/web_app_maintenance_guide.pdf`
+- `DOC/web_app_maintenance_guide.html`
 
-App 有新版本時會自動在頂部顯示「🎉 App 有新版本！」橫幅，點「立即更新」即可。
-若沒看到橫幅，請嘗試關閉所有分頁再重新開啟；或在瀏覽器設定中清除該網站的快取資料後重新進入。
+---
 
-**Q：掃描收據後出現「請先到『我的帳戶』輸入 Gemini API Key 後再試」**
+## Git 與清理建議
 
-表示後端的 Secret 未設定或失效，且用戶也未輸入自帶的 Key。
-- 確認已執行 `firebase functions:secrets:set GEMINI_API_KEY` 並填入有效的 Key
-- 或在 App「我的帳戶」頁輸入有效的 Gemini API Key
+開始工作前：
 
-**Q：掃描收據出現「OCR 服務連線失敗」**
+```powershell
+git pull
+git status
+```
 
-確認 Firebase Hosting 已部署最新版本（`firebase deploy --only hosting`）。
-Hosting 的 rewrite 規則負責將 `/api/ocr` 轉發到 Cloud Function；若 Hosting 未部署，路由不會生效。
+部署或 build 後再次檢查：
 
-**Q：掃描收據出現「今日 OCR 掃描次數已用完」**
+```powershell
+git status
+```
 
-代表已達每日個人或全站 OCR 限額。預設每位用戶每日 20 次、全站每日 50 次；可在 Cloud Functions 環境變數調整。
+通常不應提交：
 
-**Q：我曾經把正式網址 commit 到 Git history，刪除 README 還有用嗎？**
+- `.env`
+- `node_modules/`
+- `functions/node_modules/`
+- `dist/`
+- `functions/lib/`
+- `firebase-debug.log`
+- `typecheck_*.txt`
 
-有用，但不能視為完全保密。公開 repo 的 Git history 可能已被搜尋器、fork 或 cache 留存；如果網址已出現過，應視為公開資訊。真正的防護應靠 Firebase Auth、OCR 每日限額、Billing alerts、App Check，而不是靠隱藏網址。
+---
 
-**Q：`firebase deploy` 失敗，提示需要 Blaze Plan**
+## 常見問題
 
-Cloud Functions 需要 Blaze（Pay-as-you-go）方案。前往 Firebase Console 左下角升級，個人使用量通常在免費額度內不會收費。
+### `firebase deploy` 說未登入
 
-**Q：Firestore 讀寫出現 Permission Denied**
+先登入：
 
-確認 Firestore 安全規則已部署，且用戶已登入。
-執行 `firebase deploy --only firestore:rules` 重新部署規則。
+```powershell
+firebase login
+```
+
+再確認 project：
+
+```powershell
+firebase projects:list
+```
+
+### OCR 回傳 401
+
+OCR Cloud Function 需要 Firebase ID token。請確認使用者已登入，前端才會把 token 放入 `Authorization: Bearer <token>`。
+
+### OCR 回傳 429
+
+代表達到每日 quota。預設每人每日 20 次，全站每日 50 次。
+
+### 本機 build 可以，但 deploy 失敗
+
+先分開測試：
+
+```powershell
+npm run build
+npm --prefix functions run build
+firebase deploy --only hosting
+firebase deploy --only functions
+```
+
+這樣較容易分辨是前端、Functions、Firebase 權限，還是公司電腦環境問題。
 
 ---
 
 ## License
 
 MIT
-
-## 聯絡資訊
-
-如有問題或建議，請聯絡：
-
-James Tong
-Email: kachuntong01@gmail.com
