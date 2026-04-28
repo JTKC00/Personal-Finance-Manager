@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Personal Finance Manager 維護教學</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 16mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: #172033;
+      background: #ffffff;
+      font-family: "Microsoft JhengHei", "Microsoft YaHei", "MingLiU", "PMingLiU", Arial, sans-serif;
+      font-size: 12.5px;
+      line-height: 1.62;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.25;
+      color: #111827;
+    }
+
+    h1 {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin: 24px 0 8px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid #d8dee9;
+    }
+
+    h3 {
+      font-size: 14px;
+      margin: 14px 0 5px;
+    }
+
+    p {
+      margin: 6px 0;
+    }
+
+    ul,
+    ol {
+      margin: 6px 0 8px 20px;
+      padding: 0;
+    }
+
+    li {
+      margin: 2px 0;
+    }
+
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      background: #eef2f7;
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-size: 11.5px;
+    }
+
+    pre {
+      margin: 8px 0 12px;
+      padding: 10px 12px;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      color: #111827;
+      background: #f4f7fb;
+      border: 1px solid #dce3ee;
+      border-radius: 8px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .cover {
+      padding: 28px 0 18px;
+      border-bottom: 4px solid #2f6f73;
+      margin-bottom: 20px;
+    }
+
+    .subtitle {
+      color: #4b5563;
+      font-size: 14px;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 5px 12px;
+      margin-top: 14px;
+      color: #374151;
+      font-size: 12px;
+    }
+
+    .label {
+      color: #6b7280;
+      font-weight: 700;
+    }
+
+    .note {
+      margin: 10px 0 12px;
+      padding: 10px 12px;
+      border-left: 4px solid #2f6f73;
+      background: #eff7f5;
+      border-radius: 6px;
+    }
+
+    .warning {
+      border-left-color: #b45309;
+      background: #fff7ed;
+    }
+
+    .checklist li {
+      list-style-type: square;
+    }
+
+    .page-break {
+      break-before: page;
+    }
+
+    a {
+      color: #1f5f8b;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <h1>Personal Finance Manager 維護教學</h1>
+    <p class="subtitle">換新電腦、借用公司電腦，或在非自己電腦上維護與部署 web app 的流程</p>
+    <div class="meta">
+      <div class="label">專案</div>
+      <div>Personal-Finance-Manager</div>
+      <div class="label">Firebase Project</div>
+      <div><code>personal-finance-manager-8e8b4</code></div>
+      <div class="label">正式網址</div>
+      <div><a href="https://personal-finance-manager-8e8b4.web.app">https://personal-finance-manager-8e8b4.web.app</a></div>
+      <div class="label">適用日期</div>
+      <div>2026-04-28</div>
+    </div>
+  </section>
+
+  <div class="note">
+    <strong>核心原則：</strong>在非自己電腦上維護時，盡量只做「暫時環境設定」，不要把公司電腦專用路徑、暫存 config、build output 或登入資料寫進 Git。回到自己電腦時，專案應該仍然可以照常使用。
+  </div>
+
+  <h2>1. 你需要安裝甚麼</h2>
+  <ul class="checklist">
+    <li>Git：用來 clone、pull、commit、push 程式碼。</li>
+    <li>Node.js 與 npm：用來安裝依賴、開發、build 前端。</li>
+    <li>Firebase CLI：用來部署 Hosting、Firestore rules、Cloud Functions。</li>
+    <li>Firebase 權限：登入有專案權限的 Google account。</li>
+    <li><code>.env</code>：本機環境變數檔案，不應提交到 Git。</li>
+  </ul>
+
+  <h2>2. 新電腦基本檢查</h2>
+  <p>開 PowerShell 或 Terminal，先檢查工具是否存在：</p>
+  <pre>git --version
+node --version
+npm --version</pre>
+
+  <p>如果未安裝 Node.js，建議用 Node.js LTS。你的 Cloud Functions 設定使用 Node 22，所以新電腦最好安裝 Node 22 LTS。</p>
+  <pre>nvm install 22
+nvm use 22
+node --version
+npm --version</pre>
+
+  <div class="note warning">
+    <strong>注意：</strong>如果是公司電腦，NVM 可能裝得到但 PATH 接不上，或者 PowerShell 禁止執行 <code>.ps1</code>。這通常是電腦環境限制，不代表 app 壞了。
+  </div>
+
+  <h2>3. 取得專案</h2>
+  <p>第一次在新電腦工作：</p>
+  <pre>git clone &lt;你的-repo-url&gt;
+cd Personal-Finance-Manager</pre>
+
+  <p>如果資料夾已存在，開始工作前先更新：</p>
+  <pre>git pull
+git status</pre>
+
+  <h2>4. 安裝依賴</h2>
+  <p>根目錄安裝前端依賴：</p>
+  <pre>npm install</pre>
+
+  <p>Functions 目錄也要安裝：</p>
+  <pre>npm --prefix functions install</pre>
+
+  <h2>5. 準備 .env</h2>
+  <p><code>.env</code> 不應放上 Git，所以新電腦要自己建立：</p>
+  <pre>copy .env.example .env</pre>
+
+  <p>然後打開 <code>.env</code>，填回 Firebase 或 API 相關設定。不要把真實 secret commit 入 Git。</p>
+
+  <div class="note">
+    <strong>關於 GEMINI_API_KEY：</strong>目前 Cloud Function 使用 Firebase Secret Manager 的 <code>GEMINI_API_KEY</code>，不應硬寫入 repo。部署時 Firebase 會讀取雲端 Secret。
+  </div>
+
+  <h2>6. 本機檢查</h2>
+  <p>改程式前後，建議跑以下檢查：</p>
+  <pre>npm run typecheck
+npm --prefix functions run build
+npm run build</pre>
+
+  <p>三個都成功，代表 TypeScript、Functions 與前端 production build 基本正常。</p>
+
+  <h2>7. 本機開發</h2>
+  <p>開發時啟動 Vite：</p>
+  <pre>npm run dev</pre>
+
+  <p>正常會顯示類似：</p>
+  <pre>http://localhost:5173</pre>
+
+  <h2 class="page-break">8. Firebase 登入與專案確認</h2>
+  <p>第一次 deploy 前，安裝並登入 Firebase CLI：</p>
+  <pre>npm install -g firebase-tools
+firebase login
+firebase projects:list</pre>
+
+  <p>確認清單內見到：</p>
+  <pre>personal-finance-manager-8e8b4</pre>
+
+  <p>你的 repo 內 <code>.firebaserc</code> 已指向這個 project，正常不需要每次手動指定 project。</p>
+
+  <h2>9. Deploy 指令</h2>
+  <p>完整部署：</p>
+  <pre>firebase deploy</pre>
+
+  <p>這會部署：</p>
+  <ul>
+    <li>Firestore rules</li>
+    <li>Cloud Functions</li>
+    <li>Firebase Hosting</li>
+  </ul>
+
+  <p>只部署前端 Hosting：</p>
+  <pre>firebase deploy --only hosting</pre>
+
+  <p>只部署 Functions：</p>
+  <pre>firebase deploy --only functions</pre>
+
+  <p>只部署 Firestore rules：</p>
+  <pre>firebase deploy --only firestore</pre>
+
+  <h2>10. 公司電腦常見問題</h2>
+  <h3>問題 A：PowerShell 禁止 npm.ps1 / firebase.ps1</h3>
+  <p>如果見到類似：</p>
+  <pre>npm.ps1 cannot be loaded because running scripts is disabled</pre>
+
+  <p>不要改專案，用 <code>.cmd</code> 版本即可：</p>
+  <pre>npm.cmd install
+npm.cmd run build
+firebase.cmd deploy</pre>
+
+  <h3>問題 B：NVM 裝了但 node / npm 找不到</h3>
+  <p>先找 NVM 的 Node 版本資料夾，常見位置：</p>
+  <pre>C:\Users\&lt;你個user&gt;\AppData\Local\nvm\v22.x.x</pre>
+
+  <p>只在目前 PowerShell 視窗暫時補 PATH：</p>
+  <pre>$env:Path='C:\Users\&lt;你個user&gt;\AppData\Local\nvm\v22.x.x;C:\Users\&lt;你個user&gt;\AppData\Roaming\npm;' + $env:Path</pre>
+
+  <p>再用：</p>
+  <pre>npm.cmd run build
+firebase.cmd deploy</pre>
+
+  <div class="note">
+    <strong>安全點：</strong>這種 <code>$env:Path</code> 做法只影響目前 PowerShell 視窗。關掉視窗後就失效，不會寫入 repo，也不會影響你回家後自己的電腦。
+  </div>
+
+  <h2>11. Deploy 後檢查</h2>
+  <p>部署成功後會看到：</p>
+  <pre>Deploy complete!
+Hosting URL: https://personal-finance-manager-8e8b4.web.app</pre>
+
+  <p>再檢查本機有沒有被 deploy 工具改到：</p>
+  <pre>git status</pre>
+
+  <p>如果只見到 Firebase cache，例如：</p>
+  <pre>.firebase/hosting.ZGlzdA.cache</pre>
+
+  <p>通常不需要 commit。最好不要把公司電腦產生的快取變更帶回 repo。</p>
+
+  <h2>12. 日常最短流程</h2>
+  <pre>git pull
+npm install
+npm --prefix functions install
+npm run typecheck
+npm run build
+npm --prefix functions run build
+firebase login
+firebase deploy</pre>
+
+  <h2>13. 維護守則</h2>
+  <ul class="checklist">
+    <li>不要 commit <code>.env</code>、secret、token 或登入資料。</li>
+    <li>不要把公司電腦專用 PATH 寫入 <code>package.json</code>。</li>
+    <li>不要為了一台電腦的限制改 Firebase 設定，除非你確定所有電腦都需要。</li>
+    <li>每次 deploy 前先跑 build。</li>
+    <li>每次 deploy 後跑 <code>git status</code>，保持 repo 乾淨。</li>
+    <li>如果環境有問題，優先用暫時 PowerShell 變數解決，不要污染專案。</li>
+  </ul>
+</body>
+</html>
