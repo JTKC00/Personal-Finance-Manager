@@ -22,6 +22,7 @@ yarn-error.log*
 typecheck_*.txt
 .npm/
 .cache/
+.firebase/
 node_modules
 
 #  Vite 標準

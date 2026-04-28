@@ -12,6 +12,8 @@ const firebaseConfig = {
 };
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
+let appCheckPromise: Promise<import('firebase/app-check').AppCheck | null> | null = null;
 
 export const auth = getAuth(app);
 setPersistence(auth, browserLocalPersistence);
@@ -19,6 +21,39 @@ setPersistence(auth, browserLocalPersistence);
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache()
 });
+
+async function loadAppCheck(): Promise<import('firebase/app-check').AppCheck | null> {
+  if (!appCheckSiteKey) return null;
+  if (appCheckPromise) return appCheckPromise;
+
+  appCheckPromise = import('firebase/app-check').then(({initializeAppCheck, ReCaptchaV3Provider}) => {
+    if (import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
+      (globalThis as typeof globalThis & {FIREBASE_APPCHECK_DEBUG_TOKEN?: string}).FIREBASE_APPCHECK_DEBUG_TOKEN =
+        import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN;
+    }
+
+    return initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(appCheckSiteKey),
+      isTokenAutoRefreshEnabled: true,
+    });
+  });
+
+  return appCheckPromise;
+}
+
+export async function getAppCheckHeaders(): Promise<Record<string, string>> {
+  const appCheck = await loadAppCheck();
+  if (!appCheck) return {};
+
+  try {
+    const {getToken} = await import('firebase/app-check');
+    const {token} = await getToken(appCheck);
+    return token ? {'X-Firebase-AppCheck': token} : {};
+  } catch (error) {
+    console.warn('Unable to get App Check token', error);
+    return {};
+  }
+}
 
 /** Returns the current user's uid, or throws if not authenticated. */
 export function getUid(): string {

@@ -2,14 +2,6 @@
 
 一個以 React、Firebase 和 Cloud Functions 建立的個人理財 Web App。它支援收支紀錄、分類分析、儲蓄目標、訂閱管理、帳戶/轉帳管理，以及透過 Gemini OCR 從收據圖片擷取交易資料。
 
-正式網站：
-
-https://personal-finance-manager-8e8b4.web.app
-
-Firebase project：
-
-`personal-finance-manager-8e8b4`
-
 ---
 
 ## 功能概覽
@@ -93,7 +85,7 @@ npm install -g firebase-tools
 firebase login
 ```
 
-確認登入帳戶有 `personal-finance-manager-8e8b4` 的權限：
+確認登入帳戶有目標 Firebase project 的權限：
 
 ```powershell
 firebase projects:list
@@ -146,6 +138,8 @@ copy .env.example .env
 | `VITE_FIREBASE_APP_ID` | Firebase web app ID |
 | `VITE_FIREBASE_MEASUREMENT_ID` | Firebase measurement ID，可選 |
 | `VITE_OCR_PROXY_URL` | 本機開發時可指定 OCR proxy URL；production 主要使用 `/api/ocr` rewrite |
+| `VITE_FIREBASE_APPCHECK_SITE_KEY` | Firebase App Check reCAPTCHA v3 site key，可選 |
+| `VITE_FIREBASE_APPCHECK_DEBUG_TOKEN` | 本機 App Check debug token，可選；不要提交真實 token |
 
 Functions OCR 使用 Firebase Secret Manager：
 
@@ -159,6 +153,12 @@ Cloud Function 也支援以下 quota 設定，未設定時會使用預設值：
 |---|---:|---|
 | `OCR_DAILY_LIMIT_PER_USER` | 20 | 每位使用者每日 OCR 次數 |
 | `OCR_DAILY_LIMIT_GLOBAL` | 50 | 全站每日 OCR 次數 |
+| `REQUIRE_APP_CHECK` | `false` | 設為 `true` 時，OCR Function 會強制驗證 `X-Firebase-AppCheck` |
+
+App Check 建議分兩步啟用：
+
+1. 先在 Firebase Console 建立 Web App Check provider，將 site key 填入 `.env` 的 `VITE_FIREBASE_APPCHECK_SITE_KEY`，部署後觀察是否正常送出 token。
+2. 確認正常後，再將 Functions 環境變數 `REQUIRE_APP_CHECK=true`，讓 OCR 後端強制拒絕沒有 App Check token 的請求。
 
 ---
 
@@ -209,6 +209,12 @@ Lint：
 npm run lint
 ```
 
+一次跑完整本機檢查：
+
+```powershell
+npm run verify
+```
+
 ---
 
 ## 部署
@@ -241,7 +247,7 @@ firebase deploy --only firestore
 
 ```text
 Deploy complete!
-Hosting URL: https://personal-finance-manager-8e8b4.web.app
+Hosting URL: <Firebase CLI 會顯示部署後網址>
 ```
 
 ---

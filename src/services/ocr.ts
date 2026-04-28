@@ -1,5 +1,5 @@
 import {OcrResult} from '../types/finance';
-import {auth} from './firebase';
+import {auth, getAppCheckHeaders} from './firebase';
 
 // 生產環境：透過 firebase.json hosting rewrite 把 /api/ocr 轉發到 Cloud Function
 // 開發環境：vite.config.ts 的 server.proxy 負責轉發，或可用 VITE_OCR_PROXY_URL 覆寫
@@ -22,7 +22,10 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     throw new Error('請先登入後再使用 OCR 掃描。');
   }
 
-  return {Authorization: `Bearer ${idToken}`};
+  return {
+    Authorization: `Bearer ${idToken}`,
+    ...await getAppCheckHeaders()
+  };
 }
 
 export async function loadOcrUsageStatus(): Promise<OcrUsageStatus> {

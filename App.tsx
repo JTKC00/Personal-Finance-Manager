@@ -1,17 +1,26 @@
+import {lazy, Suspense, useEffect} from 'react';
 import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
 import {useRegisterSW} from 'virtual:pwa-register/react';
-import {DashboardScreen} from './src/screens/DashboardScreen';
-import {AnalysisScreen} from './src/screens/AnalysisScreen';
-import {TransactionScreen} from './src/screens/TransactionScreen';
-import {TransactionListScreen} from './src/screens/TransactionListScreen';
-import {GoalsScreen} from './src/screens/GoalsScreen';
-import {SubscriptionsScreen} from './src/screens/SubscriptionsScreen';
-import {ProfileScreen} from './src/screens/ProfileScreen';
-import {LoginScreen} from './src/screens/LoginScreen';
 import {AuthProvider, useAuth} from './src/contexts/AuthContext';
 import {BottomNav} from './src/components/BottomNav';
 import {processDueSubscriptions} from './src/services/storage';
-import {useEffect} from 'react';
+
+const DashboardScreen = lazy(() => import('./src/screens/DashboardScreen').then(module => ({default: module.DashboardScreen})));
+const AnalysisScreen = lazy(() => import('./src/screens/AnalysisScreen').then(module => ({default: module.AnalysisScreen})));
+const TransactionScreen = lazy(() => import('./src/screens/TransactionScreen').then(module => ({default: module.TransactionScreen})));
+const TransactionListScreen = lazy(() => import('./src/screens/TransactionListScreen').then(module => ({default: module.TransactionListScreen})));
+const GoalsScreen = lazy(() => import('./src/screens/GoalsScreen').then(module => ({default: module.GoalsScreen})));
+const SubscriptionsScreen = lazy(() => import('./src/screens/SubscriptionsScreen').then(module => ({default: module.SubscriptionsScreen})));
+const ProfileScreen = lazy(() => import('./src/screens/ProfileScreen').then(module => ({default: module.ProfileScreen})));
+const LoginScreen = lazy(() => import('./src/screens/LoginScreen').then(module => ({default: module.LoginScreen})));
+
+function LoadingScreen() {
+  return (
+    <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--color-bg)'}}>
+      <div style={{width: 32, height: 32, border: '3px solid var(--color-border)', borderTopColor: 'var(--color-text)', borderRadius: '50%', animation: 'spin 0.8s linear infinite'}} />
+    </div>
+  );
+}
 
 function UpdateBanner() {
   const {needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker} = useRegisterSW();
@@ -49,30 +58,32 @@ function AppShell() {
   }, [user]);
 
   if (loading) {
-    return (
-      <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--color-bg)'}}>
-        <div style={{width: 32, height: 32, border: '3px solid var(--color-border)', borderTopColor: 'var(--color-text)', borderRadius: '50%', animation: 'spin 0.8s linear infinite'}} />
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!user) {
-    return <LoginScreen />;
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <LoginScreen />
+      </Suspense>
+    );
   }
 
   return (
     <div style={{minHeight: '100vh', overflowY: 'auto', background: 'var(--color-bg)'}}>
-      <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<DashboardScreen />} />
-        <Route path="/analysis" element={<AnalysisScreen />} />
-        <Route path="/transaction" element={<TransactionScreen />} />
-        <Route path="/transactions" element={<TransactionListScreen />} />
-        <Route path="/goals" element={<GoalsScreen />} />
-        <Route path="/subscriptions" element={<SubscriptionsScreen />} />
-        <Route path="/profile" element={<ProfileScreen />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+      <Suspense fallback={<LoadingScreen />}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardScreen />} />
+          <Route path="/analysis" element={<AnalysisScreen />} />
+          <Route path="/transaction" element={<TransactionScreen />} />
+          <Route path="/transactions" element={<TransactionListScreen />} />
+          <Route path="/goals" element={<GoalsScreen />} />
+          <Route path="/subscriptions" element={<SubscriptionsScreen />} />
+          <Route path="/profile" element={<ProfileScreen />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </Suspense>
       <BottomNav />
     </div>
   );

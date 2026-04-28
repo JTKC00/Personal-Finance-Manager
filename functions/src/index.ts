@@ -1,6 +1,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
+import { getAppCheck } from 'firebase-admin/app-check';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 
@@ -14,6 +15,7 @@ const GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
 const MAX_BODY_BYTES = 24 * 1024 * 1024;
 const OCR_DAILY_LIMIT_PER_USER = readPositiveInt('OCR_DAILY_LIMIT_PER_USER', 20);
 const OCR_DAILY_LIMIT_GLOBAL = readPositiveInt('OCR_DAILY_LIMIT_GLOBAL', 50);
+const REQUIRE_APP_CHECK = process.env.REQUIRE_APP_CHECK === 'true';
 
 class QuotaError extends Error {
   constructor(message: string) {
@@ -41,6 +43,30 @@ function parseGeminiJsonResponse(data: Record<string, unknown>): unknown {
 function getBearerToken(authorizationHeader: string | undefined): string {
   const match = authorizationHeader?.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || '';
+}
+
+function logOcrEvent(event: string, data: Record<string, unknown> = {}) {
+  console.log(JSON.stringify({
+    event,
+    service: 'ocr',
+    timestamp: new Date().toISOString(),
+    ...data,
+  }));
+}
+
+async function verifyAppCheckToken(token: string | undefined): Promise<boolean> {
+  if (!REQUIRE_APP_CHECK) return true;
+  if (!token) return false;
+
+  try {
+    await getAppCheck().verifyToken(token);
+    return true;
+  } catch (error) {
+    logOcrEvent('app_check_rejected', {
+      reason: error instanceof Error ? error.message : 'Unknown App Check error',
+    });
+    return false;
+  }
 }
 
 function getTodayKey(): string {
@@ -135,6 +161,8 @@ export const ocr = onRequest(
     timeoutSeconds: 60,
   },
   async (req, res) => {
+    const startedAt = Date.now();
+
     if (req.method === 'OPTIONS') {
       res.status(204).send('');
       return;
@@ -145,8 +173,15 @@ export const ocr = onRequest(
       return;
     }
 
+    const appCheckOk = await verifyAppCheckToken(req.get('x-firebase-appcheck'));
+    if (!appCheckOk) {
+      res.status(401).json({ error: 'App Check verification failed' });
+      return;
+    }
+
     const idToken = getBearerToken(req.get('authorization'));
     if (!idToken) {
+      logOcrEvent('auth_missing', {method: req.method});
       res.status(401).json({ error: 'Authentication required' });
       return;
     }
@@ -156,15 +191,27 @@ export const ocr = onRequest(
       const decodedToken = await getAuth().verifyIdToken(idToken);
       uid = decodedToken.uid;
     } catch {
+      logOcrEvent('auth_invalid', {method: req.method});
       res.status(401).json({ error: 'Invalid authentication token' });
       return;
     }
 
     if (req.method === 'GET') {
       try {
-        res.json(await getUsageStatus(uid));
+        const usage = await getUsageStatus(uid);
+        logOcrEvent('usage_loaded', {
+          uid,
+          remaining: usage.remaining,
+          durationMs: Date.now() - startedAt,
+        });
+        res.json(usage);
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unable to load OCR usage';
+        logOcrEvent('usage_failed', {
+          uid,
+          reason: msg,
+          durationMs: Date.now() - startedAt,
+        });
         res.status(500).json({ error: msg });
       }
       return;
@@ -176,6 +223,7 @@ export const ocr = onRequest(
       // 檢查 body 大小
       const bodyStr = JSON.stringify(body);
       if (Buffer.byteLength(bodyStr) > MAX_BODY_BYTES) {
+        logOcrEvent('request_too_large', {uid, durationMs: Date.now() - startedAt});
         res.status(413).json({ error: 'Request body too large' });
         return;
       }
@@ -185,10 +233,12 @@ export const ocr = onRequest(
       const apiKey = (body.geminiApiKey || '').toString().trim() || geminiApiKey.value();
 
       if (!apiKey) {
+        logOcrEvent('api_key_missing', {uid, durationMs: Date.now() - startedAt});
         res.status(400).json({ error: 'Gemini API key is required' });
         return;
       }
       if (!imageBase64) {
+        logOcrEvent('image_missing', {uid, durationMs: Date.now() - startedAt});
         res.status(400).json({ error: 'imageBase64 is required' });
         return;
       }
@@ -220,17 +270,39 @@ export const ocr = onRequest(
 
       const data = await response.json() as Record<string, unknown>;
       if (!response.ok) {
+        logOcrEvent('gemini_failed', {
+          uid,
+          status: response.status,
+          usageRemaining: usage.remaining,
+          durationMs: Date.now() - startedAt,
+        });
         res.status(response.status).json({ error: 'Gemini request failed', detail: data });
         return;
       }
 
+      logOcrEvent('scan_completed', {
+        uid,
+        model: GEMINI_MODEL,
+        usageRemaining: usage.remaining,
+        durationMs: Date.now() - startedAt,
+      });
       res.json({ result: parseGeminiJsonResponse(data), model: GEMINI_MODEL, usage });
     } catch (error) {
       if (error instanceof QuotaError) {
+        logOcrEvent('quota_exceeded', {
+          uid,
+          reason: error.message,
+          durationMs: Date.now() - startedAt,
+        });
         res.status(429).json({ error: error.message, usage: await getUsageStatus(uid) });
         return;
       }
       const msg = error instanceof Error ? error.message : 'OCR failed';
+      logOcrEvent('scan_failed', {
+        uid,
+        reason: msg,
+        durationMs: Date.now() - startedAt,
+      });
       res.status(500).json({ error: msg });
     }
   }
