@@ -2,13 +2,7 @@
 
 一個以 React、Firebase 和 Cloud Functions 建立的個人理財 Web App。它支援收支紀錄、分類分析、儲蓄目標、訂閱管理、帳戶/轉帳管理，以及透過 Gemini OCR 從收據圖片擷取交易資料。
 
-正式網站：
 
-https://personal-finance-manager-8e8b4.web.app
-
-Firebase project：
-
-`personal-finance-manager-8e8b4`
 
 ---
 
