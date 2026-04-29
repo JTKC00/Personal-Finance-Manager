@@ -2,21 +2,37 @@
 
 一個以 React、Firebase 和 Cloud Functions 建立的個人理財 Web App。它支援收支紀錄、分類分析、儲蓄目標、訂閱管理、帳戶/轉帳管理，以及透過 Gemini OCR 從收據圖片擷取交易資料。
 
-
+此 README 不包含正式部署網址、私人 Firebase project URL 或任何個人環境連結；部署後的網址請以 Firebase CLI 或 Firebase Console 顯示為準。
 
 ---
 
 ## 功能概覽
 
-- Dashboard：查看收入、支出、餘額和近期交易。
-- 交易管理：新增、編輯、刪除、搜尋和分類收支紀錄。
-- 收據 OCR：登入後可上傳收據圖片，由 Cloud Function 呼叫 Gemini 解析金額、日期、分類和備註。
-- 分析圖表：用 Recharts 顯示支出分類和趨勢。
-- 儲蓄目標：建立目標、記錄存入/提取，並可連結交易。
-- 訂閱管理：追蹤週期性支出、下一次付款日和提醒天數。
+### 記帳與分類
+
+- 新增、編輯、刪除、複製和搜尋收入/支出交易。
+- 支援收入、支出分類篩選，交易列表會保留並顯示歷史交易中已存在的分類文字。
+- 支出分類包含餐飲、交通、購物、娛樂、醫療、居住、金融支出、學習、禮物、旅遊、保險、家庭和其他。
+- 收入分類包含薪資、獎金、投資、利息、副業、自由工作、生意收入、租金收入、退款、回贈、報銷、禮金、政府津貼和其他收入。
+
+### 預算、分析與提醒
+
+- Dashboard 顯示本月收入、支出、餘額、近期交易、分類預算進度和支出提醒。
+- 分析報表以 Recharts 顯示支出分類分佈、趨勢和分類變化。
+- 月預算可按支出分類設定，供 Dashboard 和訂閱頁面計算使用。
+
+### OCR、訂閱與目標
+
+- 收據 OCR：登入後可上傳或拍攝收據圖片，由 Cloud Function 呼叫 Gemini 解析金額、日期、分類和備註。
+- 訂閱管理：追蹤週期性支出、下一次付款日、試用結束日和提醒天數。
+- 儲蓄目標：建立目標、記錄存入/提取，並可連結支出交易。
+
+### 帳戶、安全與 PWA
+
 - 帳戶與轉帳：管理現金、銀行、錢包和信用卡帳戶，並記錄帳戶間轉帳。
 - Firebase Authentication：支援 Google 和 Email/Password 登入。
 - Firestore：以登入使用者為單位儲存資料。
+- App Check：可選擇啟用 reCAPTCHA v3 token 驗證以保護 OCR Function。
 - PWA：支援 manifest、service worker 和離線快取。
 
 ---
@@ -46,7 +62,7 @@
 Personal-Finance-Manager/
 ├─ src/
 │  ├─ components/        # 共用 UI 元件
-│  ├─ constants/         # 分類等常數
+│  ├─ constants/         # 收入/支出分類和付款方式
 │  ├─ contexts/          # AuthContext
 │  ├─ screens/           # App 主要頁面
 │  ├─ services/          # Firebase、OCR、Firestore、外觀設定等服務
@@ -60,7 +76,7 @@ Personal-Finance-Manager/
 │  └─ tsconfig.json
 ├─ public/               # PWA icons 和 manifest
 ├─ DOC/                  # 維護教學 PDF/HTML
-├─ App.tsx
+├─ App.tsx               # App shell、routing 和 PWA update banner
 ├─ firebase.json         # Hosting、rewrites、Functions predeploy
 ├─ firestore.rules
 ├─ vite.config.ts
@@ -80,16 +96,11 @@ npm --version
 git --version
 ```
 
-需要安裝 Firebase CLI：
+需要安裝 Firebase CLI 並登入有 project 權限的帳戶：
 
 ```powershell
 npm install -g firebase-tools
 firebase login
-```
-
-確認登入帳戶有目標 Firebase project 的權限：
-
-```powershell
 firebase projects:list
 ```
 
@@ -100,7 +111,7 @@ firebase projects:list
 1. Clone 專案：
 
 ```powershell
-git clone https://github.com/JTKC00/Personal-Finance-Manager.git
+git clone <repository-url>
 cd Personal-Finance-Manager
 ```
 
@@ -217,6 +228,8 @@ npm run lint
 npm run verify
 ```
 
+Vite build 可能會顯示 chunk size warning。這通常是效能提示，不代表 build 失敗；目前 app 已使用 route lazy loading，若要進一步優化，可再拆分 vendor chunks 或檢查大型依賴的載入時機。
+
 ---
 
 ## 部署
@@ -245,12 +258,7 @@ firebase deploy --only functions
 firebase deploy --only firestore
 ```
 
-部署成功後會看到：
-
-```text
-Deploy complete!
-Hosting URL: <Firebase CLI 會顯示部署後網址>
-```
+部署成功後 Firebase CLI 會顯示 hosting URL；請不要把私人或正式部署網址提交到 README。
 
 ---
 
@@ -300,6 +308,7 @@ git status
 - `functions/node_modules/`
 - `dist/`
 - `functions/lib/`
+- `.firebase/`
 - `firebase-debug.log`
 - `typecheck_*.txt`
 
