@@ -11,7 +11,11 @@ const db = getFirestore();
 // 把 Gemini API Key 存在 Cloud Secret Manager（安全，不會寫死在 code 裡）
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 
-const GEMINI_MODEL = 'gemini-3.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+const GEMINI_FALLBACK_MODELS = parseModelList(process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.1-flash-lite,gemini-2.5-flash')
+  .filter(model => model !== GEMINI_MODEL);
+const GEMINI_MODELS = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS];
+const GEMINI_MAX_ATTEMPTS_PER_MODEL = readPositiveInt('GEMINI_MAX_ATTEMPTS_PER_MODEL', 3);
 const MAX_BODY_BYTES = 24 * 1024 * 1024;
 const OCR_DAILY_LIMIT_PER_USER = readPositiveInt('OCR_DAILY_LIMIT_PER_USER', 20);
 const OCR_DAILY_LIMIT_GLOBAL = readPositiveInt('OCR_DAILY_LIMIT_GLOBAL', 50);
@@ -24,9 +28,38 @@ class QuotaError extends Error {
   }
 }
 
+class GeminiRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly model: string,
+    public readonly detail: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = 'GeminiRequestError';
+  }
+}
+
+type GeminiPayload = {
+  contents: Array<{
+    parts: Array<
+      { inline_data: { mime_type: string; data: string } } |
+      { text: string }
+    >;
+  }>;
+  generationConfig: {
+    temperature: number;
+    response_mime_type: string;
+  };
+};
+
 function readPositiveInt(name: string, fallback: number): number {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+function parseModelList(value: string): string[] {
+  return [...new Set(value.split(',').map(model => model.trim()).filter(Boolean))];
 }
 
 function parseGeminiJsonResponse(data: Record<string, unknown>): unknown {
@@ -38,6 +71,87 @@ function parseGeminiJsonResponse(data: Record<string, unknown>): unknown {
     .trim();
   if (!text) throw new Error('Gemini response did not include text');
   return JSON.parse(text.replace(/```json|```/g, '').trim());
+}
+
+function getGeminiErrorMessage(data: Record<string, unknown>): string {
+  const error = data.error as {message?: unknown; status?: unknown; code?: unknown} | undefined;
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const status = typeof error?.status === 'string' ? error.status : '';
+  const code = typeof error?.code === 'number' || typeof error?.code === 'string' ? String(error.code) : '';
+  return [message, status && `status=${status}`, code && `code=${code}`].filter(Boolean).join(' ');
+}
+
+function isTransientGeminiStatus(status: number): boolean {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function requestGeminiModel(model: string, apiKey: string, payload: GeminiPayload): Promise<Record<string, unknown>> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  const data = await response.json().catch(async () => ({
+    error: {message: await response.text().catch(() => 'Unable to read Gemini error response')},
+  })) as Record<string, unknown>;
+
+  if (!response.ok) {
+    const detailMessage = getGeminiErrorMessage(data);
+    throw new GeminiRequestError(
+      detailMessage || `Gemini request failed with HTTP ${response.status}`,
+      response.status,
+      model,
+      data,
+    );
+  }
+
+  return data;
+}
+
+async function requestGeminiWithFallback(apiKey: string, payload: GeminiPayload) {
+  let lastError: GeminiRequestError | null = null;
+
+  for (const model of GEMINI_MODELS) {
+    for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS_PER_MODEL; attempt += 1) {
+      try {
+        const data = await requestGeminiModel(model, apiKey, payload);
+        return {
+          data,
+          model,
+          attempts: attempt,
+          fallbackUsed: model !== GEMINI_MODEL,
+        };
+      } catch (error) {
+        if (!(error instanceof GeminiRequestError)) throw error;
+
+        lastError = error;
+        logOcrEvent('gemini_attempt_failed', {
+          model,
+          attempt,
+          status: error.status,
+          reason: error.message,
+        });
+
+        if (!isTransientGeminiStatus(error.status)) throw error;
+        if (attempt < GEMINI_MAX_ATTEMPTS_PER_MODEL) {
+          await sleep(400 * attempt);
+        }
+      }
+    }
+  }
+
+  throw lastError || new Error('Gemini request failed');
 }
 
 function getBearerToken(authorizationHeader: string | undefined): string {
@@ -245,48 +359,29 @@ export const ocr = onRequest(
 
       const usage = await reserveOcrQuota(uid);
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey,
-          },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { inline_data: { mime_type: mimeType, data: imageBase64 } },
-                { text: `分析這張收據/發票，僅回傳 JSON。格式必須符合：{"amount": 數字金額, "category": "餐飲/交通/購物/娛樂/醫療/居住/金融支出/學習/禮物/旅遊/保險/家庭/其他 其中之一", "note": "商戶或簡短描述", "date": "YYYY-MM-DD；若看不出則用今天 ${today}"}。不要加 Markdown，不要加解釋。` }
-              ]
-            }],
-            generationConfig: {
-              temperature: 0,
-              response_mime_type: 'application/json',
-            },
-          }),
-        }
-      );
-
-      const data = await response.json() as Record<string, unknown>;
-      if (!response.ok) {
-        logOcrEvent('gemini_failed', {
-          uid,
-          status: response.status,
-          usageRemaining: usage.remaining,
-          durationMs: Date.now() - startedAt,
-        });
-        res.status(response.status).json({ error: 'Gemini request failed', detail: data });
-        return;
-      }
+      const payload: GeminiPayload = {
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: mimeType, data: imageBase64 } },
+            { text: `分析這張收據/發票，僅回傳 JSON。格式必須符合：{"amount": 數字金額, "category": "餐飲/交通/購物/娛樂/醫療/居住/金融支出/學習/禮物/旅遊/保險/家庭/其他 其中之一", "note": "商戶或簡短描述", "date": "YYYY-MM-DD；若看不出則用今天 ${today}"}。不要加 Markdown，不要加解釋。` }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0,
+          response_mime_type: 'application/json',
+        },
+      };
+      const gemini = await requestGeminiWithFallback(apiKey, payload);
 
       logOcrEvent('scan_completed', {
         uid,
-        model: GEMINI_MODEL,
+        model: gemini.model,
+        fallbackUsed: gemini.fallbackUsed,
+        attempts: gemini.attempts,
         usageRemaining: usage.remaining,
         durationMs: Date.now() - startedAt,
       });
-      res.json({ result: parseGeminiJsonResponse(data), model: GEMINI_MODEL, usage });
+      res.json({ result: parseGeminiJsonResponse(gemini.data), model: gemini.model, usage });
     } catch (error) {
       if (error instanceof QuotaError) {
         logOcrEvent('quota_exceeded', {
@@ -295,6 +390,20 @@ export const ocr = onRequest(
           durationMs: Date.now() - startedAt,
         });
         res.status(429).json({ error: error.message, usage: await getUsageStatus(uid) });
+        return;
+      }
+      if (error instanceof GeminiRequestError) {
+        logOcrEvent('gemini_failed', {
+          uid,
+          model: error.model,
+          status: error.status,
+          reason: error.message,
+          durationMs: Date.now() - startedAt,
+        });
+        res.status(error.status).json({
+          error: `Gemini request failed: ${error.message}`,
+          detail: error.detail,
+        });
         return;
       }
       const msg = error instanceof Error ? error.message : 'OCR failed';

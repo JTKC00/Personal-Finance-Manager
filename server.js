@@ -25,7 +25,20 @@ loadLocalEnv();
 const PORT = Number(process.env.PORT || 5173);
 const HOST = process.env.HOST || '127.0.0.1';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+const GEMINI_FALLBACK_MODELS = parseModelList(process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.1-flash-lite,gemini-2.5-flash')
+  .filter(model => model !== GEMINI_MODEL);
+const GEMINI_MODELS = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS];
+const GEMINI_MAX_ATTEMPTS_PER_MODEL = readPositiveInt('GEMINI_MAX_ATTEMPTS_PER_MODEL', 3);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+function readPositiveInt(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+function parseModelList(value) {
+  return [...new Set(value.split(',').map(model => model.trim()).filter(Boolean))];
+}
 
 function sendJson(res, status, data) {
   res.writeHead(status, {
@@ -81,6 +94,81 @@ function parseGeminiJsonResponse(data) {
   return JSON.parse(text.replace(/```json|```/g, '').trim());
 }
 
+function getGeminiErrorMessage(data) {
+  const error = data && data.error;
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const status = typeof error?.status === 'string' ? error.status : '';
+  const code = typeof error?.code === 'number' || typeof error?.code === 'string' ? String(error.code) : '';
+  return [message, status && `status=${status}`, code && `code=${code}`].filter(Boolean).join(' ');
+}
+
+function isTransientGeminiStatus(status) {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => globalThis.setTimeout(resolve, ms));
+}
+
+async function requestGeminiModel(model, apiKey, payload) {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json().catch(async () => ({
+    error: {message: await response.text().catch(() => 'Unable to read Gemini error response')}
+  }));
+
+  if (!response.ok) {
+    const error = new Error(getGeminiErrorMessage(data) || `Gemini request failed with HTTP ${response.status}`);
+    error.status = response.status;
+    error.model = model;
+    error.detail = data;
+    throw error;
+  }
+
+  return data;
+}
+
+async function requestGeminiWithFallback(apiKey, payload) {
+  let lastError = null;
+
+  for (const model of GEMINI_MODELS) {
+    for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS_PER_MODEL; attempt += 1) {
+      try {
+        const data = await requestGeminiModel(model, apiKey, payload);
+        return {
+          data,
+          model,
+          attempts: attempt,
+          fallbackUsed: model !== GEMINI_MODEL
+        };
+      } catch (error) {
+        lastError = error;
+        console.warn(JSON.stringify({
+          event: 'gemini_attempt_failed',
+          model,
+          attempt,
+          status: error.status,
+          reason: error.message
+        }));
+
+        if (!isTransientGeminiStatus(error.status)) throw error;
+        if (attempt < GEMINI_MAX_ATTEMPTS_PER_MODEL) {
+          await sleep(400 * attempt);
+        }
+      }
+    }
+  }
+
+  throw lastError || new Error('Gemini request failed');
+}
+
 async function handleOcr(req, res) {
   try {
     const body = await readJsonBody(req);
@@ -98,35 +186,32 @@ async function handleOcr(req, res) {
       return;
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            {inline_data: {mime_type: mimeType, data: imageBase64}},
-            {text: `分析這張收據/發票，僅回傳 JSON。格式必須符合：{"amount": 數字金額, "category": "餐飲/交通/購物/娛樂/醫療/居住/金融支出/學習/禮物/旅遊/保險/家庭/其他 其中之一", "note": "商戶或簡短描述", "date": "YYYY-MM-DD；若看不出則用今天 ${today}"}。不要加 Markdown，不要加解釋。`}
-          ]
-        }],
-        generationConfig: {
-          temperature: 0,
-          response_mime_type: 'application/json'
-        }
-      })
+    const payload = {
+      contents: [{
+        parts: [
+          {inline_data: {mime_type: mimeType, data: imageBase64}},
+          {text: `分析這張收據/發票，僅回傳 JSON。格式必須符合：{"amount": 數字金額, "category": "餐飲/交通/購物/娛樂/醫療/居住/金融支出/學習/禮物/旅遊/保險/家庭/其他 其中之一", "note": "商戶或簡短描述", "date": "YYYY-MM-DD；若看不出則用今天 ${today}"}。不要加 Markdown，不要加解釋。`}
+        ]
+      }],
+      generationConfig: {
+        temperature: 0,
+        response_mime_type: 'application/json'
+      }
+    };
+    const gemini = await requestGeminiWithFallback(apiKey, payload);
+
+    sendJson(res, 200, {
+      result: parseGeminiJsonResponse(gemini.data),
+      model: gemini.model,
+      fallbackUsed: gemini.fallbackUsed,
+      attempts: gemini.attempts
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      sendJson(res, response.status, {error: 'Gemini request failed', detail: data});
-      return;
-    }
-
-    sendJson(res, 200, {result: parseGeminiJsonResponse(data), model: GEMINI_MODEL});
   } catch (error) {
-    sendJson(res, 500, {error: error.message || 'OCR failed'});
+    const status = Number.isFinite(error.status) ? error.status : 500;
+    sendJson(res, status, {
+      error: error.message ? `Gemini request failed: ${error.message}` : 'OCR failed',
+      detail: error.detail
+    });
   }
 }
 
@@ -167,5 +252,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Personal Finance Manager prototype: http://${HOST}:${PORT}`);
-  console.log(`Gemini OCR model: ${GEMINI_MODEL}`);
+  console.log(`Gemini OCR models: ${GEMINI_MODELS.join(', ')}`);
 });
