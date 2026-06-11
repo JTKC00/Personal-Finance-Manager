@@ -11,7 +11,7 @@ const db = getFirestore();
 // 把 Gemini API Key 存在 Cloud Secret Manager（安全，不會寫死在 code 裡）
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 
-const GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
+const GEMINI_MODEL = 'gemini-3.5-flash';
 const MAX_BODY_BYTES = 24 * 1024 * 1024;
 const OCR_DAILY_LIMIT_PER_USER = readPositiveInt('OCR_DAILY_LIMIT_PER_USER', 20);
 const OCR_DAILY_LIMIT_GLOBAL = readPositiveInt('OCR_DAILY_LIMIT_GLOBAL', 50);

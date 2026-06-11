@@ -24,7 +24,7 @@ loadLocalEnv();
 
 const PORT = Number(process.env.PORT || 5173);
 const HOST = process.env.HOST || '127.0.0.1';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite-preview';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 function sendJson(res, status, data) {
