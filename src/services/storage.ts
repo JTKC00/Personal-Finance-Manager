@@ -1,4 +1,19 @@
 import {
+  formatDateKey,
+  getCurrentMonthKey,
+  getGoalSavedAmount,
+  getGoalWithSavedAmount,
+  getNextMonthKey,
+  getNextSubscriptionBillingDate,
+  normalizeGoal,
+} from './financeLogic';
+export {
+  getCurrentMonthKey,
+  getNextSubscriptionBillingDate,
+  getSubscriptionChargesForMonth,
+  type SubscriptionCharge,
+} from './financeLogic';
+import {
   collection,
   deleteDoc,
   doc,
@@ -43,83 +58,6 @@ async function saveMetaDoc<T extends object>(uid: string, name: string, value: T
 async function loadEventItems(uid: string): Promise<AnalyticsEvent[]> {
   const data = await loadMetaDoc<{items?: AnalyticsEvent[]} | AnalyticsEvent[]>(uid, 'events', []);
   return Array.isArray(data) ? data : data.items ?? [];
-}
-
-// ── Goal helpers ──────────────────────────────────────────────────────────────
-
-function normalizeGoal(goal: Goal): Goal {
-  return {
-    ...goal,
-    deposits: (goal.deposits || []).map(entry => ({
-      id: entry.id || `${goal.id}-${entry.date}-${entry.amount}-${entry.type || 'deposit'}`,
-      amount: Math.abs(entry.amount),
-      date: entry.date,
-      type: entry.type || (entry.amount >= 0 ? 'deposit' : 'withdraw'),
-      note: entry.note,
-      linkedTransactionId: entry.linkedTransactionId
-    }))
-  };
-}
-
-function getGoalSavedAmount(goal: Goal): number {
-  const deposits = goal.deposits || [];
-  if (!deposits.length) return goal.savedAmount;
-
-  return deposits.reduce((sum, entry) => (
-    entry.type === 'deposit' ? sum + entry.amount : Math.max(0, sum - entry.amount)
-  ), 0);
-}
-
-function getGoalWithSavedAmount(goal: Goal): Goal {
-  const normalizedGoal = normalizeGoal(goal);
-  return {
-    ...normalizedGoal,
-    savedAmount: Math.min(normalizedGoal.targetAmount, getGoalSavedAmount(normalizedGoal))
-  };
-}
-
-export function getCurrentMonthKey(date = new Date()): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function getNextMonthKey(month: string): string {
-  const [year, monthIndex] = month.split('-').map(Number);
-  return getCurrentMonthKey(new Date(year, monthIndex, 1));
-}
-
-function parseDateKey(dateKey: string): Date {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  return new Date(year, month - 1, day);
-}
-
-function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function daysInMonth(year: number, monthIndex: number): number {
-  return new Date(year, monthIndex + 1, 0).getDate();
-}
-
-function addMonthsClamped(dateKey: string, months: number): string {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  const target = new Date(year, month - 1 + months, 1);
-  const lastDay = daysInMonth(target.getFullYear(), target.getMonth());
-  target.setDate(Math.min(day, lastDay));
-  return formatDateKey(target);
-}
-
-export function getNextSubscriptionBillingDate(subscription: Subscription, fromDate = subscription.nextBillingDate): string {
-  const date = parseDateKey(fromDate);
-  if (subscription.frequency === 'weekly') {
-    date.setDate(date.getDate() + 7);
-    return formatDateKey(date);
-  }
-  if (subscription.frequency === 'quarterly') return addMonthsClamped(fromDate, 3);
-  if (subscription.frequency === 'yearly') return addMonthsClamped(fromDate, 12);
-  return addMonthsClamped(fromDate, 1);
 }
 
 export async function loadTransactions(): Promise<Transaction[]> {
@@ -257,51 +195,6 @@ export async function upsertSubscription(subscription: Subscription): Promise<vo
 export async function deleteSubscription(id: string): Promise<void> {
   const uid = getUid();
   await deleteDoc(docRef(uid, 'subscriptions', id));
-}
-
-export type SubscriptionCharge = {
-  subscription: Subscription;
-  date: string;
-  amount: number;
-};
-
-export function getSubscriptionChargesForMonth(
-  subscriptions: Subscription[],
-  month = getCurrentMonthKey(),
-  transactions: Transaction[] = [],
-  today = formatDateKey(new Date()),
-  upcomingOnly = false
-): SubscriptionCharge[] {
-  const monthStart = `${month}-01`;
-  const monthEnd = `${getNextMonthKey(month)}-01`;
-  const postedKeys = new Set(
-    transactions
-      .filter(item => item.subscriptionId)
-      .map(item => `${item.subscriptionId}:${item.date}`)
-  );
-
-  const charges: SubscriptionCharge[] = [];
-  subscriptions
-    .filter(item => item.active && item.nextBillingDate)
-    .forEach(subscription => {
-      let date = subscription.nextBillingDate;
-      let guard = 0;
-      while (date < monthStart && guard < 120) {
-        date = getNextSubscriptionBillingDate(subscription, date);
-        guard += 1;
-      }
-      while (date < monthEnd && guard < 120) {
-        const key = `${subscription.id}:${date}`;
-        const isUpcoming = date >= today && !postedKeys.has(key);
-        if (!upcomingOnly || isUpcoming) {
-          charges.push({subscription, date, amount: subscription.amount});
-        }
-        date = getNextSubscriptionBillingDate(subscription, date);
-        guard += 1;
-      }
-    });
-
-  return charges.sort((a, b) => a.date.localeCompare(b.date) || a.subscription.name.localeCompare(b.subscription.name));
 }
 
 export async function processDueSubscriptions(today = formatDateKey(new Date())): Promise<number> {

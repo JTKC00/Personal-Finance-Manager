@@ -225,6 +225,20 @@ Lint：
 npm run lint
 ```
 
+純邏輯測試：
+
+```powershell
+npm run test
+```
+
+Watch 模式：
+
+```powershell
+npm run test:watch
+```
+
+目前測試只覆蓋不含副作用的核心邏輯，例如訂閱扣款日期、目標金額、預算用量與月份 helper；測試不會連接 production Firebase、Auth、Cloud Functions、Gemini 或 OCR endpoint。
+
 一次跑完整本機檢查：
 
 ```powershell
