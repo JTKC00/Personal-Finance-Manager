@@ -1,14 +1,17 @@
 import {describe, expect, it} from 'vitest';
 import {
   calculateBudgetUsage,
+  formatDateKey,
   getCurrentMonthKey,
   getGoalSavedAmount,
   getGoalWithSavedAmount,
   getMonthDateRange,
+  getNextMonthKey,
   getNextSubscriptionBillingDate,
   getSubscriptionChargesForMonth,
+  normalizeGoal,
 } from './financeLogic';
-import type {Goal, Subscription, Transaction} from '../types/finance';
+import type {Goal, GoalDeposit, Subscription, Transaction} from '../types/finance';
 
 function makeSubscription(patch: Partial<Subscription> = {}): Subscription {
   return {
@@ -161,5 +164,67 @@ describe('month helpers', () => {
       start: '2026-12-01',
       endExclusive: '2027-01-01'
     });
+  });
+});
+
+describe('normalizeGoal', () => {
+  it('returns an empty deposits array when none are provided', () => {
+    expect(normalizeGoal(makeGoal()).deposits).toEqual([]);
+  });
+
+  it('stores deposit amounts as absolute values', () => {
+    const goal = normalizeGoal(makeGoal({
+      deposits: [{id: 'a', amount: -120, date: '2026-06-01', type: 'withdraw'}]
+    }));
+
+    expect(goal.deposits?.[0].amount).toBe(120);
+  });
+
+  it('keeps an explicit type even when it disagrees with the amount sign', () => {
+    const goal = normalizeGoal(makeGoal({
+      deposits: [{id: 'a', amount: -40, date: '2026-06-01', type: 'deposit'}]
+    }));
+
+    expect(goal.deposits?.[0]).toMatchObject({type: 'deposit', amount: 40});
+  });
+
+  it('generates an id for entries that are missing one', () => {
+    const goal = normalizeGoal(makeGoal({
+      id: 'goal-9',
+      deposits: [{id: '', amount: 75, date: '2026-06-01', type: 'deposit'}]
+    }));
+
+    expect(goal.deposits?.[0].id).toBe('goal-9-2026-06-01-75-deposit');
+  });
+
+  it('infers the type from the amount sign for untyped legacy entries', () => {
+    // Goals created before the `type` field existed can arrive untyped from
+    // Firestore; normalizeGoal backfills it from the amount sign.
+    const legacyEntry = {amount: -30, date: '2026-06-02'} as unknown as GoalDeposit;
+    const goal = normalizeGoal(makeGoal({deposits: [legacyEntry]}));
+
+    expect(goal.deposits?.[0]).toMatchObject({type: 'withdraw', amount: 30});
+  });
+});
+
+describe('getNextMonthKey', () => {
+  it('advances to the following month', () => {
+    expect(getNextMonthKey('2026-01')).toBe('2026-02');
+    expect(getNextMonthKey('2026-09')).toBe('2026-10');
+  });
+
+  it('rolls over into the next year from December', () => {
+    expect(getNextMonthKey('2026-12')).toBe('2027-01');
+  });
+});
+
+describe('formatDateKey', () => {
+  it('zero-pads month and day from local date parts', () => {
+    expect(formatDateKey(new Date(2026, 0, 5))).toBe('2026-01-05');
+    expect(formatDateKey(new Date(2026, 8, 9))).toBe('2026-09-09');
+  });
+
+  it('formats end-of-year dates', () => {
+    expect(formatDateKey(new Date(2026, 11, 31))).toBe('2026-12-31');
   });
 });
