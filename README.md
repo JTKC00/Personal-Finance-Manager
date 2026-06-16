@@ -245,7 +245,13 @@ npm run test:watch
 npm run verify
 ```
 
+`npm run verify` 會依序執行 typecheck、lint、Vitest 測試、前端 build 和 Functions build。
+
 Vite build 可能會顯示 chunk size warning。這通常是效能提示，不代表 build 失敗；目前 app 已使用 route lazy loading，若要進一步優化，可再拆分 vendor chunks 或檢查大型依賴的載入時機。
+
+### 持續整合（CI）
+
+GitHub Actions（`.github/workflows/ci.yml`）會在 pull request 和 push 到 `main` 時自動執行 `npm run verify`。CI 只做驗證，不會部署，也不使用任何 secret、token 或 API key。
 
 ---
 
