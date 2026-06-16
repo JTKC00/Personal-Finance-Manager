@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "prototype": "node server.js",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm run lint && npm run build && npm --prefix functions run build",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build && npm --prefix functions run build",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest"
