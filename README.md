@@ -60,6 +60,9 @@
 
 ```text
 Personal-Finance-Manager/
+├─ .github/
+│  ├─ workflows/ci.yml   # 非部署型 CI（typecheck/lint/test/build）
+│  └─ dependabot.yml     # 自動依賴更新 PR
 ├─ src/
 │  ├─ components/        # 共用 UI 元件
 │  ├─ constants/         # 收入/支出分類和付款方式
@@ -237,7 +240,7 @@ Watch 模式：
 npm run test:watch
 ```
 
-目前測試只覆蓋不含副作用的核心邏輯，例如訂閱扣款日期、目標金額、預算用量與月份 helper；測試不會連接 production Firebase、Auth、Cloud Functions、Gemini 或 OCR endpoint。
+目前測試以 Vitest 覆蓋不含副作用的純邏輯，例如訂閱扣款日期、目標金額、預算用量、月份 helper，以及登入錯誤訊息對應（`authErrors`）；測試不會連接 production Firebase、Auth、Cloud Functions、Gemini 或 OCR endpoint。
 
 一次跑完整本機檢查：
 
@@ -251,7 +254,11 @@ Vite build 可能會顯示 chunk size warning。這通常是效能提示，不�
 
 ### 持續整合（CI）
 
-GitHub Actions（`.github/workflows/ci.yml`）會在 pull request 和 push 到 `main` 時自動執行 `npm run verify`。CI 只做驗證，不會部署，也不使用任何 secret、token 或 API key。
+GitHub Actions（`.github/workflows/ci.yml`）會在 pull request 和 push 到 `main` 時自動執行 `npm run verify`。CI 只做驗證，不會部署，也不使用任何 secret、token 或 API key。`main` 已啟用 branch protection，PR 需 `Verify` 檢查通過才可合併。
+
+### 依賴維護（Dependabot）
+
+Dependabot（`.github/dependabot.yml`）每週為根目錄 npm、`functions` npm 和 GitHub Actions 開更新 PR：minor/patch 會合併成一組以減少數量，major 則獨立開啟以便逐一審視。Repository 亦已啟用 Dependabot alerts 與 automated security fixes，會自動為已知漏洞開修正 PR。所有 Dependabot PR 同樣受 CI `Verify` 把關。
 
 ---
 
