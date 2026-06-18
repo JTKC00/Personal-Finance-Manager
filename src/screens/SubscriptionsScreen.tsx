@@ -14,6 +14,7 @@ import {
   trackEvent,
   upsertSubscription,
 } from '../services/storage';
+import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Subscription, SubscriptionFrequency, Transaction} from '../types/finance';
 import styles from './TransactionScreen.module.css';
 
@@ -90,9 +91,11 @@ export function SubscriptionsScreen() {
   );
 
   const activeSubscriptions = subscriptions.filter(item => item.active);
-  const postedSubscriptionTotal = transactions
-    .filter(item => item.subscriptionId && item.type === 'expense')
-    .reduce((sum, item) => sum + item.amount, 0);
+  const postedSubscriptionTotal = sumMoney(
+    transactions
+      .filter(item => item.subscriptionId && item.type === 'expense')
+      .map(item => item.amount)
+  );
   const upcomingCharges = getSubscriptionChargesForMonth(
     subscriptions,
     month,
@@ -100,7 +103,7 @@ export function SubscriptionsScreen() {
     today(),
     true
   );
-  const monthlySubscriptionTotal = postedSubscriptionTotal + upcomingCharges.reduce((sum, item) => sum + item.amount, 0);
+  const monthlySubscriptionTotal = roundMoney(postedSubscriptionTotal + sumMoney(upcomingCharges.map(item => item.amount)));
   const trialAlerts = activeSubscriptions
     .filter(item => item.trialEndDate)
     .map(item => ({subscription: item, days: getDaysUntil(item.trialEndDate as string)}))
