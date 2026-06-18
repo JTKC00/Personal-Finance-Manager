@@ -5,6 +5,7 @@ import {
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {getCurrentMonthKey, getTransactionsByMonth, loadBudgetRows} from '../services/storage';
+import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Transaction} from '../types/finance';
 import styles from './AnalysisScreen.module.css';
 
@@ -43,9 +44,9 @@ function getMonthRange(endMonth: string, count: number): string[] {
 }
 
 function getTotals(data: Transaction[]) {
-  const income = data.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const expense = data.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  return {income, expense, balance: income - expense};
+  const income = sumMoney(data.filter(t => t.type === 'income').map(t => t.amount));
+  const expense = sumMoney(data.filter(t => t.type === 'expense').map(t => t.amount));
+  return {income, expense, balance: roundMoney(income - expense)};
 }
 
 function getExpenseCategoryMap(data: Transaction[]): Record<string, number> {
@@ -86,20 +87,20 @@ export function AnalysisScreen() {
   }, [selectedMonth]);
 
   const income = useMemo(
-    () => transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0),
+    () => sumMoney(transactions.filter(t => t.type === 'income').map(t => t.amount)),
     [transactions]
   );
   const expense = useMemo(
-    () => transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
+    () => sumMoney(transactions.filter(t => t.type === 'expense').map(t => t.amount)),
     [transactions]
   );
   const savingsRate = income > 0 ? Math.max(0, (income - expense) / income) : 0;
   const daysInMonth = getDaysInMonth(selectedMonth);
   const activeDays = selectedMonth === currentMonth ? new Date().getDate() : daysInMonth;
-  const avgDailyExpense = expense / (activeDays || 1);
-  const monthlyBudget = budgets.reduce((sum, item) => sum + item.amount, 0);
+  const avgDailyExpense = roundMoney(expense / (activeDays || 1));
+  const monthlyBudget = sumMoney(budgets.map(item => item.amount));
   const projectedExpense = selectedMonth === currentMonth
-    ? (expense / (activeDays || 1)) * daysInMonth
+    ? roundMoney((expense / (activeDays || 1)) * daysInMonth)
     : expense;
 
   const categoryMap = useMemo(() => getExpenseCategoryMap(transactions), [transactions]);
@@ -151,7 +152,7 @@ export function AnalysisScreen() {
       .map(category => {
         const current = categoryMap[category] || 0;
         const previous = previousCategoryMap[category] || 0;
-        return {category, current, previous, delta: current - previous};
+        return {category, current, previous, delta: roundMoney(current - previous)};
       })
       .filter(item => item.current > 0 || item.previous > 0)
       .sort((a, b) => b.delta - a.delta || b.current - a.current)

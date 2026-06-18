@@ -11,6 +11,7 @@ import {
   loadGoals,
   loadSubscriptions,
 } from '../services/storage';
+import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Goal, Subscription, Transaction} from '../types/finance';
 import styles from './DashboardScreen.module.css';
 
@@ -68,7 +69,7 @@ export function DashboardScreen() {
     ['結餘', formatMoney(summary.balance)],
     ['交易筆數', String(summary.count)]
   ];
-  const monthlyBudget = budgets.reduce((sum, item) => sum + item.amount, 0);
+  const monthlyBudget = sumMoney(budgets.map(item => item.amount));
   const expenseTransactions = transactions.filter(item => item.type === 'expense');
   const upcomingSubscriptionCharges = getSubscriptionChargesForMonth(
     subscriptions,
@@ -77,19 +78,19 @@ export function DashboardScreen() {
     new Date().toISOString().slice(0, 10),
     true
   );
-  const reservedSubscriptionTotal = upcomingSubscriptionCharges.reduce((sum, item) => sum + item.amount, 0);
-  const projectedExpense = summary.expense + reservedSubscriptionTotal;
+  const reservedSubscriptionTotal = sumMoney(upcomingSubscriptionCharges.map(item => item.amount));
+  const projectedExpense = roundMoney(summary.expense + reservedSubscriptionTotal);
   const budgetProgress = monthlyBudget > 0 ? summary.expense / monthlyBudget : 0;
   const projectedBudgetProgress = monthlyBudget > 0 ? projectedExpense / monthlyBudget : 0;
-  const budgetRemaining = monthlyBudget - summary.expense;
-  const projectedBudgetRemaining = monthlyBudget - projectedExpense;
-  const averageExpense = expenseTransactions.length ? summary.expense / expenseTransactions.length : 0;
+  const budgetRemaining = roundMoney(monthlyBudget - summary.expense);
+  const projectedBudgetRemaining = roundMoney(monthlyBudget - projectedExpense);
+  const averageExpense = expenseTransactions.length ? roundMoney(summary.expense / expenseTransactions.length) : 0;
   const unusualTransactions = expenseTransactions
     .filter(item => averageExpense > 0 && item.amount >= averageExpense * 1.8)
     .sort((a, b) => b.amount - a.amount);
   const largestExpense = [...expenseTransactions].sort((a, b) => b.amount - a.amount)[0];
-  const totalGoalTarget = goals.reduce((sum, item) => sum + item.targetAmount, 0);
-  const totalGoalSaved = goals.reduce((sum, item) => sum + item.savedAmount, 0);
+  const totalGoalTarget = sumMoney(goals.map(item => item.targetAmount));
+  const totalGoalSaved = sumMoney(goals.map(item => item.savedAmount));
   const goalProgress = totalGoalTarget > 0 ? totalGoalSaved / totalGoalTarget : 0;
   const focusGoal = [...goals]
     .filter(item => item.targetAmount > 0)
@@ -172,7 +173,7 @@ export function DashboardScreen() {
                 {budgets.map(b => {
                   const spent = categorySpending[b.category] || 0;
                   const reserved = categoryReserved[b.category] || 0;
-                  const projected = spent + reserved;
+                  const projected = roundMoney(spent + reserved);
                   const ratio = b.amount > 0 ? projected / b.amount : 0;
                   return (
                     <div key={b.category} className={styles.categoryBudgetRow}>
