@@ -1,3 +1,4 @@
+import {roundMoney} from './money';
 import type {Goal, Subscription, Transaction} from '../types/finance';
 
 export type SubscriptionCharge = {
@@ -36,9 +37,9 @@ export function getGoalSavedAmount(goal: Goal): number {
   const deposits = goal.deposits || [];
   if (!deposits.length) return goal.savedAmount;
 
-  return deposits.reduce((sum, entry) => (
+  return roundMoney(deposits.reduce((sum, entry) => (
     entry.type === 'deposit' ? sum + entry.amount : Math.max(0, sum - entry.amount)
-  ), 0);
+  ), 0));
 }
 
 export function getGoalWithSavedAmount(goal: Goal): Goal {
@@ -145,7 +146,7 @@ export function calculateBudgetUsage(
   warnThreshold = 0.7,
   dangerThreshold = 0.9
 ): BudgetUsage {
-  const projected = spent + reserved;
+  const projected = roundMoney(spent + reserved);
   const ratio = budgetAmount > 0 ? Math.min(projected / budgetAmount, 1) : 0;
   const percentage = Math.round(ratio * 100);
   const status: BudgetUsageStatus = budgetAmount <= 0
