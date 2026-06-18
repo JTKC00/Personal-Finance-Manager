@@ -7,6 +7,7 @@ import {
   getNextSubscriptionBillingDate,
   normalizeGoal,
 } from './financeLogic';
+import {roundMoney, sumMoney} from './money';
 export {
   getCurrentMonthKey,
   getNextSubscriptionBillingDate,
@@ -409,14 +410,14 @@ export async function getAccountBalance(accountId: string): Promise<number> {
   const account = accounts.find(item => item.id === accountId);
   if (!account) return 0;
 
-  const inflow = transfers
-    .filter(item => item.toAccountId === accountId)
-    .reduce((sum, item) => sum + item.amount, 0);
-  const outflow = transfers
-    .filter(item => item.fromAccountId === accountId)
-    .reduce((sum, item) => sum + item.amount, 0);
+  const inflow = sumMoney(
+    transfers.filter(item => item.toAccountId === accountId).map(item => item.amount)
+  );
+  const outflow = sumMoney(
+    transfers.filter(item => item.fromAccountId === accountId).map(item => item.amount)
+  );
 
-  return account.initialBalance + inflow - outflow;
+  return roundMoney(account.initialBalance + inflow - outflow);
 }
 
 export async function syncGoalSavedAmount(goalId: string): Promise<Goal | undefined> {
@@ -513,12 +514,12 @@ export async function clearSensitiveCache(): Promise<void> {
 
 export async function getMonthlySummary(month = getCurrentMonthKey()) {
   const transactions = await getTransactionsByMonth(month);
-  const income = transactions.filter(item => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
-  const expense = transactions.filter(item => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0);
+  const income = sumMoney(transactions.filter(item => item.type === 'income').map(item => item.amount));
+  const expense = sumMoney(transactions.filter(item => item.type === 'expense').map(item => item.amount));
   return {
     income,
     expense,
-    balance: income - expense,
+    balance: roundMoney(income - expense),
     count: transactions.length
   };
 }
