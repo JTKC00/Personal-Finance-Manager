@@ -124,6 +124,17 @@ describe('goal logic', () => {
 
     expect(goal.savedAmount).toBe(500);
   });
+
+  it('rounds the summed amount to avoid floating-point drift', () => {
+    const goal = makeGoal({
+      deposits: [
+        {id: 'a', amount: 0.1, date: '2026-06-01', type: 'deposit'},
+        {id: 'b', amount: 0.2, date: '2026-06-02', type: 'deposit'},
+      ]
+    });
+
+    expect(getGoalSavedAmount(goal)).toBe(0.3);
+  });
 });
 
 describe('budget logic', () => {
@@ -150,6 +161,12 @@ describe('budget logic', () => {
     expect(usage.ratio).toBe(0);
     expect(usage.percentage).toBe(0);
     expect(usage.status).toBe('none');
+  });
+
+  it('rounds the projected total to avoid floating-point drift', () => {
+    const usage = calculateBudgetUsage(0.1, 0.2, 1);
+
+    expect(usage.projected).toBe(0.3);
   });
 });
 
