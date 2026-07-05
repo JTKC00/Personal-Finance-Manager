@@ -1,0 +1,36 @@
+# 50 · 給未來 session 的信（Personal Finance Manager 專案版）
+
+寫信人：Claude Fable 5（2026-07-05）。讀信人：之後在本 repo 工作的每個模型。全域那封 `~/.claude/rules/50-letter.md` 講這台機器與使用者；這封只講這個 repo。三件 James 沒問、但你遲早要面對的事：
+
+## 一、那份資料沒有第二份
+
+兩個真人的完整財務紀錄只存在 Firestore 一處（2026-07-05 James 確認無備份）。這改變所有風險計算：程式碼壞了可以回滾（git 什麼都記得），**資料壞了沒有任何東西可以回滾**。所以 10-prod-safety 對「寫 production 資料」近乎偏執——那不是官僚主義。你能做的最有價值的一件事可能不是任何新功能，而是推進 backlog #1（in-app export）。在那之前，對一切寫資料的操作保持敬畏。
+
+## 二、綠燈只照亮一半的路
+
+`npm run verify` 很好用，但它的測試不碰 Firebase——storage.ts、firestore.rules、functions 是測試盲區，而它們恰好是最能弄壞東西的地方（00-risks）。「verify 全綠」在這個 repo 的正確翻譯是「純邏輯沒退化」，不是「可以上線」。上線判準在 30-judgment R-P2。別讓綠色勾勾給你虛假的安全感。
+
+## 三、你的每次 deploy 都是對別人的生產環境動手
+
+第二位使用者不在對話裡，不會替自己說話。他的裝置要手動按「立即更新」才換版，所以每次 deploy 後的世界是「新舊版並行、讀寫同一份資料」——這就是為什麼向後相容是硬規則不是 best practice。改「他每天看到的數字」之前（R-P3-e），記得那數字對他不是測試資料，是他的錢。
+
+## 這套專案制度最可能的退化方式與預防
+
+1. **地圖腐爛**：20-repo-map 的行號與描述隨改動漂移，模型開始「參考但不信」，最後沒人讀。預防：R-P5 把更新地圖綁進完成定義；發現地圖錯了，修地圖永遠比繞過它便宜。
+2. **「只是小改」侵蝕**：硬規則被「這次只是改個文案」逐次繞過，直到某次「小改」動了 storage.ts。預防：CLAUDE.md 硬規則不設例外；覺得規則太重就走全域 40-maintenance 黃級流程改規則，不要違規。
+3. **backlog 變垃圾場**：越積越多沒人做，檔案失去公信力。預防：backlog 上限 8 條，超過就先刪最不重要的一條或做掉一條。
+4. **教訓失散**：忘了 [PFM] 標記或另開教訓檔。預防：只有一本教訓簿＝`~/.claude/rules/lessons.md`。
+
+## 交接欄（session 收尾時更新）
+
+- 2026-07-05 建置：CLAUDE.md＋00／10／20／30／40／50 六檔全部落地。
+- 建置當日的已知缺口（下個 session 可接手）：
+  - 對抗審查與 commit 已完成，狀態見檔尾補記。
+  - 10-prod-safety §8：.env 追蹤檢查已做掉（從未入 git ✓）；剩 Console rollback 步驟、export 是否需 Blaze 兩項未驗。
+  - functions/src/index.ts 未深讀（僅從 README 與呼叫端 ocr.ts 理解）；要動 OCR 後端，先自己讀一遍。
+  - 兩人是否單幣使用未確認（20-repo-map 慣例節【UNVERIFIED】）。
+
+### 補記（2026-07-05 收尾）
+- 對抗審查：fresh general-purpose agent 完成 26 步審查——事實核對 19 個行號全數命中、誤讀測試 5/5 通過；必修 2 條（§4 的 .env 指示與機密紅線相撞、制度檔未 commit）＋建議 6 條，已全部修正。
+- 制度檔已 commit（分支 chore/claude-project-rules，未 push）；推上 GitHub 與合併由 James 決定。
+- 本 session 期間權限分類器間歇故障，教訓已追加至全域 lessons（2026-07-05 兩條）；James 中途切 accept edits 解鎖。
