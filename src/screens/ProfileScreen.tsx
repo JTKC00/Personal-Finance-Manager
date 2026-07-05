@@ -7,7 +7,7 @@ import {expenseCategories} from '../constants/categories';
 import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authErrors';
 import {ThemeMode, applyThemeMode, getStoredThemeMode} from '../services/appearance';
 import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
-import {loadBudgets, loadGoals, loadReceipts, loadSubscriptions, loadTransactions, saveAllBudgets} from '../services/storage';
+import {loadAccounts, loadBudgets, loadGoals, loadReceipts, loadSubscriptions, loadTransactions, loadTransfers, saveAllBudgets} from '../services/storage';
 import {Receipt} from '../types/finance';
 import styles from './ProfileScreen.module.css';
 
@@ -162,23 +162,27 @@ export function ProfileScreen() {
   }
 
   async function exportJsonBackup() {
-    const [transactions, goals, budgets, receiptHistory, subscriptions] = await Promise.all([
+    const [transactions, goals, budgets, receiptHistory, subscriptions, accounts, transfers] = await Promise.all([
       loadTransactions(),
       loadGoals(),
       loadBudgets(),
       loadReceipts(),
-      loadSubscriptions()
+      loadSubscriptions(),
+      loadAccounts(),
+      loadTransfers()
     ]);
     const exportedAt = new Date().toISOString();
     const backup = {
-      version: 2,
+      version: 3,
       exportedAt,
       userEmail: user?.email || '',
       transactions: [...transactions].sort((a, b) => a.date.localeCompare(b.date)),
       goals: [...goals].sort((a, b) => a.name.localeCompare(b.name)),
       subscriptions: [...subscriptions].sort((a, b) => a.name.localeCompare(b.name)),
       budgets,
-      receipts: [...receiptHistory].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      receipts: [...receiptHistory].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+      accounts: [...accounts].sort((a, b) => a.name.localeCompare(b.name)),
+      transfers: [...transfers].sort((a, b) => a.date.localeCompare(b.date))
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json;charset=utf-8'});
     const url = URL.createObjectURL(blob);
