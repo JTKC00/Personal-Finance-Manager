@@ -48,7 +48,7 @@
 
 ## 慣例（寫碼前先讀）
 
-- **金額**：JS number、單位「元」、2 位小數（不是整數 cents）。運算一律過 money.ts：加總用 `sumMoney(array)`，單一結果用 `roundMoney(x)`。✅ 正例：storage.ts:515 `getMonthlySummary`。❌ 反例（現存違反，backlog #2）：storage.ts:527 `getCategoryBreakdown` 裸 `+` 累加。
+- **金額**：JS number、單位「元」、2 位小數（不是整數 cents）。運算一律過 money.ts：加總用 `sumMoney(array)`，單一結果用 `roundMoney(x)`。✅ 正例：storage.ts:515 `getMonthlySummary`、financeLogic.ts `sumExpensesByCategory`。❌ 反例（仍存在於顯示層）：AnalysisScreen/DashboardScreen/SubscriptionsScreen 的分類 map 仍裸 `+` 累加（見 backlog 待辦）。storage 的 `getCategoryBreakdown` 已改用 `sumExpensesByCategory`。
 - **日期**：`YYYY-MM-DD` 字串、**本地時區**（經 `formatDateKey`），比較直接用字串大小；月鍵 `YYYY-MM`。時間戳欄位（createdAt、at）才用 `toISOString()`。⚠️ 別混用：`toISOString().slice(0,10)` 是 UTC 日期，香港凌晨 0–8 點會差一天——ocr.ts:55 現存此問題（backlog #3）。
 - **幣別**：欄位存在（currency，預設 'HKD'），但聚合層不分幣別直接加總（backlog #4）。兩人是否實務上單幣使用【UNVERIFIED，動多幣功能前先問 James】。
 - **Firestore 寫入**：一律 `setDoc(ref, clean(obj))`；跨文件連動用 `runTransaction`（範本：saveTransactionWithGoalLink）。
@@ -58,8 +58,8 @@
 ## 已知地雷（動到附近先看這裡）
 
 1. `processDueSubscriptions` 登入即跑、靜默吞錯、會寫帳（00-risks 風險 2）。
-2. `getCategoryBreakdown` 裸浮點加總（storage.ts:527 附近）。
-3. ocr.ts:55 的 `today` 用 UTC 日期，清晨掃收據日期可能差一天。
+2. ~~`getCategoryBreakdown` 裸浮點加總~~ 已改用 `sumExpensesByCategory`（financeLogic.ts，有測試；分支 fix/category-breakdown-money 待併 main）；同型裸加總仍存在於 screens（見 backlog 待辦）。
+3. ~~ocr.ts:55 `today` 用 UTC 日期~~ 已改用 `formatDateKey(new Date())`（分支 fix/ocr-utc-date 待併 main）。
 4. 聚合不分幣別（見慣例）。
 5. `meta/budgets` 無月份維度：改預算＝改「每個月」的預算；`loadBudgetRows` 只合成當月列。
 6. Goal 有雙重真相：`savedAmount` 欄位 vs `deposits[]` 重算（`getGoalSavedAmount` 在有 deposits 時以重算為準）、又會被 `syncGoalSavedAmount` 用帳戶餘額覆寫——改目標邏輯前把這三處一起讀。
@@ -68,11 +68,16 @@
 
 ## Backlog（依價值排序，上限 8 條；動手前仍要走專案 CLAUDE.md 硬規則）
 
-1. **資料備份／export**（10-prod-safety §5——最高優先，做掉它其他一切的風險都下降）
-2. getCategoryBreakdown 改用 sumMoney（40-dispatch-fillins 有現成可用的派工單）
-3. ocr.ts `today` 改用 `formatDateKey(new Date())`
-4. 聚合分幣別或明文假設單幣（先問 James 實際使用）
-5. 10-prod-safety §8 的剩餘待驗證（Console rollback 步驟、export 是否需 Blaze）
+已完成（2026-07-05，實作在各自分支、待 James 併入 main）：
+- ✅ 資料備份／export：ProfileScreen `exportJsonBackup`/`exportCsv`，並補上 accounts＋transfers（feat/complete-json-backup）。
+- ✅ getCategoryBreakdown 改用 sumMoney（拆成 financeLogic `sumExpensesByCategory`＋測試；fix/category-breakdown-money）。
+- ✅ ocr.ts `today` 改用 `formatDateKey`（fix/ocr-utc-date）。
+
+待辦（依價值排序）：
+1. **screens 分類 map 仍裸浮點加總**：AnalysisScreen:55、DashboardScreen:100/104、SubscriptionsScreen:114/120——可共用 `sumExpensesByCategory`。
+2. **資料還原／匯入（restore）**：讀備份 JSON 寫回 Firestore；高危（寫 production），須先問 James＋schema 相容設計。
+3. 聚合分幣別或明文假設單幣（先問 James 實際使用）。
+4. 10-prod-safety §8 的剩餘待驗證（Console rollback 步驟、export 是否需 Blaze）。
 
 ## Changelog
 - 2026-07-05 建檔（Fable 5 建置 session）。

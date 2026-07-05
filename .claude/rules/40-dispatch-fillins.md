@@ -12,7 +12,7 @@
 - 慣例摘要（貼進【已知情報】）：金額運算必過 src/services/money.ts 的 roundMoney／sumMoney；日期用 YYYY-MM-DD 本地時區字串（formatDateKey）；Firestore 寫入必經 clean()；純邏輯測試放 src/services/*.test.ts
 - 紅線（貼進每張派工單的【不要做】）：不碰 .env；不動 firestore.rules、types/finance.ts 既有欄位、資料 id 格式；不執行 firebase deploy；不寫「會連 production Firebase」的程式並執行
 
-⚠️ 下方 T1／T2 範例以 backlog #2（getCategoryBreakdown）為題：派用前先看 20-repo-map §backlog 確認它還沒被做掉；做掉後這兩個範例要跟著更新（30-judgment-addendum R-P5）。
+⚠️ 下方 T1／T2 範例原以 backlog #2（getCategoryBreakdown）為題，**該項已於 2026-07-05 完成**（storage 委派給 financeLogic `sumExpensesByCategory`）。範例保留作**格式參考**；要實際套用同型工作，改指向 20-repo-map §backlog 待辦「screens 分類 map 仍裸浮點加總」（AnalysisScreen/DashboardScreen/SubscriptionsScreen）。
 
 ## T1 搜尋——已填好的完整範例
 

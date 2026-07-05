@@ -46,8 +46,8 @@ Vitest 不連 Firebase（README「檢查與 Build」節），所以這三處的�
 
 ## §5 備份／export（目前的最大缺口）
 
-現況：**沒有任何備份**，Firestore 是唯一一份。這是全 repo backlog 第一名（20-repo-map §backlog）。
-- 選項（優先序）：(1) 在 app 內做「匯出我的資料為 JSON」——純前端讀自己的資料下載，不碰別人資料、不需新權限，兩人各自可用；(2) Firebase 官方 Firestore export——需要 GCS bucket，是否需要 Blaze 方案【UNVERIFIED，動手前先查官方文件】；(3) admin SDK 腳本——涉及 service account 金鑰，非必要不走（專案 CLAUDE.md 硬規則 5、6）。
+現況（2026-07-05 更新）：app 內已有**手動**匯出——ProfileScreen `exportJsonBackup`/`exportCsv`（JSON 已含 accounts＋transfers），兩人可各自下載自己的資料存檔，選項 (1) 視為完成。但這是**手動、要使用者記得按**，仍無自動/排程備份、也還無「還原/匯入」；在兩人養成定期匯出習慣前，Firestore 實務上仍近乎唯一一份，下面的謹慎不變。
+- 選項（優先序）：(1) ✅ 已完成——app 內「匯出我的資料為 JSON/CSV」（純前端讀自己的資料下載，不碰別人資料、不需新權限，兩人各自可用）；後續強化：還原/匯入（restore，寫 production 屬高危，見 20-repo-map §backlog 待辦）與定期匯出提示；(2) Firebase 官方 Firestore export——需要 GCS bucket，是否需要 Blaze 方案【UNVERIFIED，動手前先查官方文件】；(3) admin SDK 腳本——涉及 service account 金鑰，非必要不走（專案 CLAUDE.md 硬規則 5、6）。
 - 備份存在之前：一切「寫 production 資料」的操作標準自動提高一級——能不寫就不寫。
 
 ## §6 出事了怎麼辦（rollback）
