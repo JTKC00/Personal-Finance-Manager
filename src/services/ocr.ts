@@ -1,5 +1,6 @@
 import {OcrResult} from '../types/finance';
 import {auth, getAppCheckHeaders} from './firebase';
+import {formatDateKey} from './financeLogic';
 
 // 生產環境：透過 firebase.json hosting rewrite 把 /api/ocr 轉發到 Cloud Function
 // 開發環境：vite.config.ts 的 server.proxy 負責轉發，或可用 VITE_OCR_PROXY_URL 覆寫
@@ -52,7 +53,7 @@ export async function scanReceipt(imageBase64: string, mimeType = 'image/jpeg', 
     body: JSON.stringify({
       imageBase64,
       mimeType,
-      today: new Date().toISOString().slice(0, 10),
+      today: formatDateKey(new Date()),
       geminiApiKey
     })
   });
