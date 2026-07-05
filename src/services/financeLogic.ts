@@ -1,4 +1,4 @@
-import {roundMoney} from './money';
+import {roundMoney, sumMoney} from './money';
 import type {Goal, Subscription, Transaction} from '../types/finance';
 
 export type SubscriptionCharge = {
@@ -48,6 +48,26 @@ export function getGoalWithSavedAmount(goal: Goal): Goal {
     ...normalizedGoal,
     savedAmount: Math.min(normalizedGoal.targetAmount, getGoalSavedAmount(normalizedGoal))
   };
+}
+
+/**
+ * Sums expense transactions by category using integer-cent math (via sumMoney)
+ * so category totals do not accumulate binary floating-point drift. Income
+ * transactions are ignored. Returns the same shape as storage.getCategoryBreakdown.
+ */
+export function sumExpensesByCategory(transactions: Transaction[]): Record<string, number> {
+  const amountsByCategory = new Map<string, number[]>();
+  for (const transaction of transactions) {
+    if (transaction.type !== 'expense') continue;
+    const amounts = amountsByCategory.get(transaction.category) || [];
+    amounts.push(transaction.amount);
+    amountsByCategory.set(transaction.category, amounts);
+  }
+  const breakdown: Record<string, number> = {};
+  for (const [category, amounts] of amountsByCategory) {
+    breakdown[category] = sumMoney(amounts);
+  }
+  return breakdown;
 }
 
 export function getCurrentMonthKey(date = new Date()): string {

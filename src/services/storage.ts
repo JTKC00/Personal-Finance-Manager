@@ -6,6 +6,7 @@ import {
   getNextMonthKey,
   getNextSubscriptionBillingDate,
   normalizeGoal,
+  sumExpensesByCategory,
 } from './financeLogic';
 import {roundMoney, sumMoney} from './money';
 export {
@@ -526,11 +527,5 @@ export async function getMonthlySummary(month = getCurrentMonthKey()) {
 
 export async function getCategoryBreakdown(month = getCurrentMonthKey()): Promise<Record<string, number>> {
   const transactions = await getTransactionsByMonth(month);
-  const map: Record<string, number> = {};
-  transactions
-    .filter(item => item.type === 'expense')
-    .forEach(item => {
-      map[item.category] = (map[item.category] || 0) + item.amount;
-    });
-  return map;
+  return sumExpensesByCategory(transactions);
 }

@@ -10,6 +10,7 @@ import {
   getNextSubscriptionBillingDate,
   getSubscriptionChargesForMonth,
   normalizeGoal,
+  sumExpensesByCategory,
 } from './financeLogic';
 import type {Goal, GoalDeposit, Subscription, Transaction} from '../types/finance';
 
@@ -52,6 +53,47 @@ function makeGoal(patch: Partial<Goal> = {}): Goal {
     ...patch
   };
 }
+
+describe('sumExpensesByCategory', () => {
+  it('sums each expense category at cent precision and ignores income', () => {
+    const transactions = [
+      makeTransaction({category: '飲食', amount: 0.1}),
+      makeTransaction({category: '飲食', amount: 0.2}),
+      makeTransaction({category: '飲食', amount: 10.1}),
+      makeTransaction({category: '交通', amount: 0.3}),
+      makeTransaction({category: '薪水', type: 'income', amount: 5000}),
+    ];
+
+    expect(sumExpensesByCategory(transactions)).toEqual({飲食: 10.4, 交通: 0.3});
+  });
+
+  it('removes the floating-point drift the old naive accumulation left', () => {
+    const transactions = [
+      makeTransaction({category: '飲食', amount: 0.1}),
+      makeTransaction({category: '飲食', amount: 0.2}),
+      makeTransaction({category: '娛樂', amount: 0.7}),
+      makeTransaction({category: '娛樂', amount: 0.1}),
+      makeTransaction({category: '交通', amount: 7}),
+    ];
+    // Reproduce the old getCategoryBreakdown behaviour: naive floating-point accumulation.
+    const naive: Record<string, number> = {};
+    transactions.forEach(item => {
+      naive[item.category] = (naive[item.category] || 0) + item.amount;
+    });
+
+    const clean = sumExpensesByCategory(transactions);
+
+    // Same categories, and each clean total equals the naive sum rounded to cents.
+    expect(Object.keys(clean).sort()).toEqual(Object.keys(naive).sort());
+    for (const category of Object.keys(naive)) {
+      expect(clean[category]).toBe(Math.round(naive[category] * 100) / 100);
+    }
+    // The naive sums genuinely carried FP noise that the new code clears.
+    expect(naive['飲食']).not.toBe(0.3);
+    expect(clean['飲食']).toBe(0.3);
+    expect(clean['娛樂']).toBe(0.8);
+  });
+});
 
 describe('subscription billing logic', () => {
   it('clamps monthly billing dates at month end', () => {
