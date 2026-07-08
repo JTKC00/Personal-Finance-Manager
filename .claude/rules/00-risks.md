@@ -6,7 +6,7 @@
 ## 前提事實
 
 - 本 app 已上線，James 與一位好友日常使用，資料是兩人的真實財務紀錄。【James】
-- 資料唯一存放處是 Firestore（`users/{uid}/...`，每人一棵子樹，互相隔離）；**目前沒有任何備份或 export 機制**。【James 確認「沒有／不確定」】
+- 資料唯一存放處是 Firestore（`users/{uid}/...`，每人一棵子樹，互相隔離）。備份：app 內有**手動** export（ProfileScreen 的 JSON／CSV；2026-07-08 更正——建置時誤判為「無」，James 當時也答「沒有／不確定」，實際功能已存在、其後補齊 accounts＋transfers）；**自動備份仍無**，兩人是否定期匯出【UNVERIFIED】。
 - 部署純手動（`firebase deploy`，James 執行）；CI 只驗證不部署；線上版本 2026-07-05 時＝最新 main。【James】
 - 測試（Vitest）只覆蓋純邏輯（money、financeLogic、authErrors、appearance、secrets），**完全不碰 Firestore、Auth、Functions**。【實測：src/services/*.test.ts 清單＋README】
 
@@ -26,7 +26,7 @@ Firestore 沒有 schema 驗證，`src/types/finance.ts` 是唯一的格式定義
 **救援**：錯誤交易可逐筆刪除（id 前綴 `sub-` 可辨識）；必要時把訂閱 `nextBillingDate` 改回正確日期。
 
 ### 3. 金錢計算回歸——最常發生
-金額是 JS `number`（浮點、單位是「元」不是整數 cents）。已有 `src/services/money.ts` 的 `roundMoney`／`sumMoney`（整數 cents 運算防漂移），但**不是所有舊碼都用了**——實例：storage.ts `getCategoryBreakdown` 仍是裸 `+` 累加（已列 backlog，見 20-repo-map §地雷）。
+金額是 JS `number`（浮點、單位是「元」不是整數 cents）。已有 `src/services/money.ts` 的 `roundMoney`／`sumMoney`（整數 cents 運算防漂移），但**不是所有舊碼都用了**——例：`getCategoryBreakdown` 曾漏網到 2026-07-05 才修（main 75cf3f9），而 screens 的分類 map 至今仍有裸 `+` 累加（20-repo-map §backlog 待辦 #1）。大掃除也會有漏，新改動一律自查。
 **預防**：新寫或改到的金額運算一律過 money.ts helpers；改到錢的 PR 要附數字對拍證據（30-judgment-addendum §R-P1）。
 **救援**：純顯示／統計層的錯不毀原始資料，修計算即可；但若錯的是「寫入端」（風險 2 的路徑），要先止血再清資料。
 
@@ -40,7 +40,7 @@ Firestore 沒有 schema 驗證，`src/types/finance.ts` 是唯一的格式定義
 1. **整檔讀大檔**：screens/*.tsx 動輒數百行（含 .module.css 配對檔）。修法：先讀 `20-repo-map.md` 定位，再用 Read 的 offset/limit 只讀相關段；要掃多檔派 Explore（門檻照全域 ~/.claude/rules/10-dispatch.md §2）。
 2. **被綠燈騙**：`npm run verify` 全綠 ≠ Firestore 行為正確（測試不碰 Firebase）。動了 storage.ts／rules／functions 卻只出示 verify 綠就宣稱完成＝不合格，照 10-prod-safety §4 補人工驗證。
 3. **權限分類器故障漩渦**：本機 desktop session 會間歇出現 `cannot determine the safety`（含 `deepseek-... temporarily unavailable` 字樣）。SOP 在全域 CLAUDE.md 硬規則 7：這不是你的錯，切唯讀／改請 James 換 permission mode，別無限重試。
-4. **順手修地雷**：看到 `getCategoryBreakdown` 裸加總這類已知問題就想順手改。除非任務就是它，否則記 backlog 別擴 scope（全域 20-judgment R4-b）。
+4. **順手修地雷**：看到 screens 分類 map 裸加總這類已知問題（20-repo-map §backlog 待辦 #1）就想順手改。除非任務就是它，否則記 backlog 別擴 scope（全域 20-judgment R4-b）。
 
 ## 本診斷的極限
 
@@ -48,3 +48,4 @@ Firestore 沒有 schema 驗證，`src/types/finance.ts` 是唯一的格式定義
 
 ## Changelog
 - 2026-07-05 建檔（Fable 5 建置 session，James 授權）。
+- 2026-07-08 更正前提事實（export 早已存在）與風險 3 實例（getCategoryBreakdown 已修，改指 screens）。

@@ -18,15 +18,15 @@
 
 ```
 【目標】找出所有「金額運算沒有經過 src/services/money.ts」的位置。
-【動機】執行 20-repo-map backlog #2 前，先盤點同類問題的完整範圍。
-【已知情報】專案根目錄 /Users/jamestong/Desktop/Development/Personal Finance Manager；已知 storage.ts getCategoryBreakdown（:527 附近）是一處；helpers 是 roundMoney/sumMoney（money.ts）。
+【動機】執行 20-repo-map backlog 待辦 #1（screens 分類 map 裸加總）前，先盤點同類問題的完整範圍。
+【已知情報】專案根目錄 /Users/jamestong/Desktop/Development/Personal Finance Manager；storage 層已合規（getCategoryBreakdown 已委派 sumExpensesByCategory）；已知 screens 命中：AnalysisScreen:55、DashboardScreen:100/104、SubscriptionsScreen:114/120；helpers 是 roundMoney/sumMoney（money.ts）與 sumExpensesByCategory（financeLogic.ts:58）。
 【要做】搜 src/**/*.{ts,tsx}：對 amount、initialBalance、savedAmount、targetAmount 做 + - * / 或 reduce 累加、且結果未經 roundMoney/sumMoney 的位置。每處記 檔案:行號＋一行說明。
 【不要做】不讀整檔；不判斷「要不要修」；純顯示用的字串模板拼接不算。
-【驗收條件】(1) 每處附 檔案:行號 (2) 明說「找完了」或「還剩哪些目錄沒掃」(3) 必須找到 storage.ts 的 getCategoryBreakdown——沒找到＝方法有漏，重做。
+【驗收條件】(1) 每處附 檔案:行號 (2) 明說「找完了」或「還剩哪些目錄沒掃」(3) 必須至少命中 AnalysisScreen:55（±30 行）的分類 map——沒找到＝方法有漏，重做。
 【回報格式】照全域 30-templates 通用尾段。
 ```
 
-## T2 實作——已填好的完整範例（就是 backlog #2，可直接派）
+## T2 實作——已填好的完整範例（歷史示範：此任務已由 main 75cf3f9 完成，抄格式用；實際派工把題目換成當前待辦）
 
 ```
 【目標】把 storage.ts 的 getCategoryBreakdown（:527 附近）裸浮點累加改用 sumMoney。
@@ -46,3 +46,4 @@
 
 ## Changelog
 - 2026-07-05 建檔（Fable 5 建置 session）。
+- 2026-07-08 T1 範例改指向 screens 待辦、T2 標記為歷史示範（Fable 覆核）。

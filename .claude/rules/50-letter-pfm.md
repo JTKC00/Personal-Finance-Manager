@@ -34,3 +34,9 @@
 - 對抗審查：fresh general-purpose agent 完成 26 步審查——事實核對 19 個行號全數命中、誤讀測試 5/5 通過；必修 2 條（§4 的 .env 指示與機密紅線相撞、制度檔未 commit）＋建議 6 條，已全部修正。
 - 制度檔已 commit（分支 chore/claude-project-rules，未 push）；推上 GitHub 與合併由 James 決定。
 - 本 session 期間權限分類器間歇故障，教訓已追加至全域 lessons（2026-07-05 兩條）；James 中途切 accept edits 解鎖。
+
+### 補記二（2026-07-08，Fable 回訪覆核）
+- 制度被實際使用並生效：後續 session 照 backlog 完成三項修復（已併 main：f174ea2／75cf3f9／5c1bac2），並照 R-P5 做了制度同步（eca9266）、照維護協議寫了 [PFM] 教訓——驗證迴路運轉正常。
+- 覆核 Opus 代跑的收尾：執行乾淨（verify／機密掃描／commit）；其口頭建議「本地 merge 進 main」有坑（main 有 branch protection，push 會被拒）——正確路徑是 push 分支開 PR。
+- 本次覆核：分支 rebase 到最新 main；補齊 eca9266 漏掉的殘留舊引用（20-repo-map 日期／幣別行與 storage 表格、40-dispatch T1 範例、00-risks 前提與風險 3、30-judgment R-P4）。
+- **重要教訓**：制度檔留在未合併分支上＝新 session（在 main 上開）完全看不到——已記全域 lessons 2026-07-08。在合併前，這套制度只在 chore/claude-project-rules 分支上生效。
