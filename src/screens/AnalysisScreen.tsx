@@ -5,6 +5,7 @@ import {
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {getCurrentMonthKey, getTransactionsByMonth, loadBudgetRows} from '../services/storage';
+import {sumExpensesByCategory} from '../services/financeLogic';
 import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Transaction} from '../types/finance';
 import styles from './AnalysisScreen.module.css';
@@ -47,14 +48,6 @@ function getTotals(data: Transaction[]) {
   const income = sumMoney(data.filter(t => t.type === 'income').map(t => t.amount));
   const expense = sumMoney(data.filter(t => t.type === 'expense').map(t => t.amount));
   return {income, expense, balance: roundMoney(income - expense)};
-}
-
-function getExpenseCategoryMap(data: Transaction[]): Record<string, number> {
-  const map: Record<string, number> = {};
-  data.filter(t => t.type === 'expense').forEach(t => {
-    map[t.category] = (map[t.category] || 0) + t.amount;
-  });
-  return map;
 }
 
 export function AnalysisScreen() {
@@ -103,7 +96,7 @@ export function AnalysisScreen() {
     ? roundMoney((expense / (activeDays || 1)) * daysInMonth)
     : expense;
 
-  const categoryMap = useMemo(() => getExpenseCategoryMap(transactions), [transactions]);
+  const categoryMap = useMemo(() => sumExpensesByCategory(transactions), [transactions]);
 
   const pieData = useMemo(
     () => Object.entries(categoryMap)
@@ -144,7 +137,7 @@ export function AnalysisScreen() {
   const previousSavingsRate = previousTotals.income > 0
     ? Math.max(0, previousTotals.balance / previousTotals.income)
     : null;
-  const previousCategoryMap = useMemo(() => getExpenseCategoryMap(previousTransactions), [previousTransactions]);
+  const previousCategoryMap = useMemo(() => sumExpensesByCategory(previousTransactions), [previousTransactions]);
 
   const categoryChanges = useMemo(() => {
     const categories = new Set([...Object.keys(categoryMap), ...Object.keys(previousCategoryMap)]);

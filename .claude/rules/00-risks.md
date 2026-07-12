@@ -26,7 +26,7 @@ Firestore 沒有 schema 驗證，`src/types/finance.ts` 是唯一的格式定義
 **救援**：錯誤交易可逐筆刪除（id 前綴 `sub-` 可辨識）；必要時把訂閱 `nextBillingDate` 改回正確日期。
 
 ### 3. 金錢計算回歸——最常發生
-金額是 JS `number`（浮點、單位是「元」不是整數 cents）。已有 `src/services/money.ts` 的 `roundMoney`／`sumMoney`（整數 cents 運算防漂移），但**不是所有舊碼都用了**——例：`getCategoryBreakdown` 曾漏網到 2026-07-05 才修（main 75cf3f9），而 screens 的分類 map 至今仍有裸 `+` 累加（20-repo-map §backlog 待辦 #1）。大掃除也會有漏，新改動一律自查。
+金額是 JS `number`（浮點、單位是「元」不是整數 cents）。已有 `src/services/money.ts` 的 `roundMoney`／`sumMoney`（整數 cents 運算防漂移），但**歷史上不是所有舊碼都用了**——`getCategoryBreakdown` 漏網到 2026-07-05（75cf3f9）、screens 分類 map 漏網到 2026-07-11 才修。兩波大掃除各自都有漏網者：新改動一律自查，新聚合先用 financeLogic 現成 helpers。
 **預防**：新寫或改到的金額運算一律過 money.ts helpers；改到錢的 PR 要附數字對拍證據（30-judgment-addendum §R-P1）。
 **救援**：純顯示／統計層的錯不毀原始資料，修計算即可；但若錯的是「寫入端」（風險 2 的路徑），要先止血再清資料。
 
@@ -40,7 +40,7 @@ Firestore 沒有 schema 驗證，`src/types/finance.ts` 是唯一的格式定義
 1. **整檔讀大檔**：screens/*.tsx 動輒數百行（含 .module.css 配對檔）。修法：先讀 `20-repo-map.md` 定位，再用 Read 的 offset/limit 只讀相關段；要掃多檔派 Explore（門檻照全域 ~/.claude/rules/10-dispatch.md §2）。
 2. **被綠燈騙**：`npm run verify` 全綠 ≠ Firestore 行為正確（測試不碰 Firebase）。動了 storage.ts／rules／functions 卻只出示 verify 綠就宣稱完成＝不合格，照 10-prod-safety §4 補人工驗證。
 3. **權限分類器故障漩渦**：本機 desktop session 會間歇出現 `cannot determine the safety`（含 `deepseek-... temporarily unavailable` 字樣）。SOP 在全域 CLAUDE.md 硬規則 7：這不是你的錯，切唯讀／改請 James 換 permission mode，別無限重試。
-4. **順手修地雷**：看到 screens 分類 map 裸加總這類已知問題（20-repo-map §backlog 待辦 #1）就想順手改。除非任務就是它，否則記 backlog 別擴 scope（全域 20-judgment R4-b）。
+4. **順手修地雷**：看到 backlog 上的已知問題（如 UTC-today、restore）就想順手改。除非任務就是它，否則記 backlog 別擴 scope（全域 20-judgment R4-b）。
 
 ## 本診斷的極限
 
@@ -49,3 +49,4 @@ Firestore 沒有 schema 驗證，`src/types/finance.ts` 是唯一的格式定義
 ## Changelog
 - 2026-07-05 建檔（Fable 5 建置 session，James 授權）。
 - 2026-07-08 更正前提事實（export 早已存在）與風險 3 實例（getCategoryBreakdown 已修，改指 screens）。
+- 2026-07-11 風險 3 與樣態 4 更新（screens 裸加總已修）。

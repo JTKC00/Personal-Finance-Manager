@@ -22,7 +22,7 @@
 | 檔案 | 職責與關鍵函式（:行號≈） |
 |---|---|
 | money.ts | `roundMoney`:12、`sumMoney`:21——金額運算唯一合法途徑（整數 cents 防浮點漂移），純函式 |
-| financeLogic.ts | 純邏輯。目標：`normalizeGoal`:22（讀取端 fallback 範本）、`getGoalSavedAmount`:36；日期：`getCurrentMonthKey`:53、`formatDateKey`:74、`addMonthsClamped`:85（月底夾住）；訂閱：`getNextSubscriptionBillingDate`:93、`getSubscriptionChargesForMonth`:104；預算：`calculateBudgetUsage`:142；分類聚合：`sumExpensesByCategory`:58（2026-07-05 新增、含測試，screens 應共用它） |
+| financeLogic.ts | 純邏輯。目標：`normalizeGoal`:22（讀取端 fallback 範本）、`getGoalSavedAmount`:36；分類聚合：`sumExpensesByCategory`:58、`sumSubscriptionChargesByCategory`:79（皆含測試——storage 與 screens 唯一合法的分類聚合）；日期：`getCurrentMonthKey`:94、`formatDateKey`:115、`addMonthsClamped`:126（月底夾住）；訂閱：`getNextSubscriptionBillingDate`:134、`getSubscriptionChargesForMonth`:145；預算：`calculateBudgetUsage`:183≈（screens 尚未採用，見 backlog 待辦 #4） |
 | storage.ts | 全部 Firestore CRUD。**高危**：`processDueSubscriptions`:201（登入自動入帳，00-risks 風險 2）、`saveTransactionWithGoalLink`:95（runTransaction 連動目標）、`syncTransactionTransfer`:454（交易↔轉帳↔帳戶連動）。聚合：`getAccountBalance`:408、`getMonthlySummary`:515、`getCategoryBreakdown`:528（已委派 financeLogic 的 `sumExpensesByCategory`） |
 | firebase.ts | 初始化。`getUid`:59（未登入直接 throw）、`clean`:66（JSON 往返去 undefined——**Firestore 寫入前必經**）；Firestore 開了 persistentLocalCache（離線快取） |
 | ocr.ts | 前端打 `/api/ocr`（正式＝hosting rewrite→Cloud Run；本機＝vite proxy 或 VITE_OCR_PROXY_URL） |
@@ -48,9 +48,9 @@
 
 ## 慣例（寫碼前先讀）
 
-- **金額**：JS number、單位「元」、2 位小數（不是整數 cents）。運算一律過 money.ts：加總用 `sumMoney(array)`，單一結果用 `roundMoney(x)`。✅ 正例：storage.ts:515 `getMonthlySummary`、financeLogic.ts `sumExpensesByCategory`。❌ 反例（仍存在於顯示層）：AnalysisScreen/DashboardScreen/SubscriptionsScreen 的分類 map 仍裸 `+` 累加（見 backlog 待辦）。storage 的 `getCategoryBreakdown` 已改用 `sumExpensesByCategory`。
+- **金額**：JS number、單位「元」、2 位小數（不是整數 cents）。運算一律過 money.ts：加總用 `sumMoney(array)`，單一結果用 `roundMoney(x)`；**分類聚合不要自寫 reduce**，直接用 financeLogic 的 `sumExpensesByCategory`／`sumSubscriptionChargesByCategory`。✅ 正例：storage.ts:528 `getCategoryBreakdown`、三個 screens 的分類聚合（2026-07-11 起）。❌ 反例（歷史，均已修復）：storage 裸加總（75cf3f9 修）、screens 分類 map 裸加總（2026-07-11 修）——同型新犯是本 repo 最常見的回歸。
 - **日期**：`YYYY-MM-DD` 字串、**本地時區**（經 `formatDateKey`），比較直接用字串大小；月鍵 `YYYY-MM`。時間戳欄位（createdAt、at）才用 `toISOString()`。⚠️ 別混用：`toISOString().slice(0,10)` 是 UTC 日期，香港凌晨 0–8 點會差一天——ocr.ts 曾踩此坑，2026-07-05 已修（main 5c1bac2，見地雷 #3）。
-- **幣別**：欄位存在（currency，預設 'HKD'），但聚合層不分幣別直接加總（backlog 待辦 #3）。兩人是否實務上單幣使用【UNVERIFIED，動多幣功能前先問 James】。
+- **幣別**：欄位存在（currency，預設 'HKD'），但聚合層不分幣別直接加總（backlog 待辦 #2）。兩人是否實務上單幣使用【UNVERIFIED——James 2026-07-11 答「不確定」；動多幣或跨幣統計前先跟他確認】。
 - **Firestore 寫入**：一律 `setDoc(ref, clean(obj))`；跨文件連動用 `runTransaction`（範本：saveTransactionWithGoalLink）。
 - **新頁面**：lazy import + Suspense（照 App.tsx 現有模式）；樣式配 .module.css。
 - **測試**：純邏輯放 `src/services/*.test.ts`（Vitest）；不寫連 Firebase 的測試（跑不了，見 00-risks 前提事實）。
@@ -58,7 +58,7 @@
 ## 已知地雷（動到附近先看這裡）
 
 1. `processDueSubscriptions` 登入即跑、靜默吞錯、會寫帳（00-risks 風險 2）。
-2. ~~`getCategoryBreakdown` 裸浮點加總~~ 已改用 `sumExpensesByCategory`（financeLogic.ts:58，有測試；已併 main 75cf3f9）；同型裸加總仍存在於 screens（見 backlog 待辦 #1）。
+2. ~~`getCategoryBreakdown` 與 screens 分類 map 的裸浮點加總~~ 已全數改用 financeLogic 聚合 helpers（storage 修於 75cf3f9；screens 修於 2026-07-11）。
 3. ~~ocr.ts:55 `today` 用 UTC 日期~~ 已改用 `formatDateKey(new Date())`（已併 main 5c1bac2）。
 4. 聚合不分幣別（見慣例）。
 5. `meta/budgets` 無月份維度：改預算＝改「每個月」的預算；`loadBudgetRows` 只合成當月列。
@@ -68,18 +68,21 @@
 
 ## Backlog（依價值排序，上限 8 條；動手前仍要走專案 CLAUDE.md 硬規則）
 
-已完成（2026-07-05 實作，已全部併入 main）：
+已完成：
 - ✅ 資料備份／export：ProfileScreen `exportJsonBackup`/`exportCsv`，並補上 accounts＋transfers（main f174ea2）。
-- ✅ getCategoryBreakdown 改用 sumMoney（拆成 financeLogic `sumExpensesByCategory`＋測試；main 75cf3f9）。
+- ✅ getCategoryBreakdown 改用 sumMoney（financeLogic `sumExpensesByCategory`＋測試；main 75cf3f9）。
 - ✅ ocr.ts `today` 改用 `formatDateKey`（main 5c1bac2）。
+- ✅ screens 分類 map 改用聚合 helpers、警示／預估加總過 roundMoney（分支 fix/screens-money-rounding，2026-07-11）。
 
 待辦（依價值排序）：
-1. **screens 分類 map 仍裸浮點加總**：AnalysisScreen:55、DashboardScreen:100/104、SubscriptionsScreen:114/120——可共用 `sumExpensesByCategory`。
-2. **資料還原／匯入（restore）**：讀備份 JSON 寫回 Firestore；高危（寫 production），須先問 James＋schema 相容設計。
-3. 聚合分幣別或明文假設單幣（先問 James 實際使用）。
-4. 10-prod-safety §8 的剩餘待驗證（Console rollback 步驟、export 是否需 Blaze）。
+1. **資料還原／匯入（restore）**：讀備份 JSON 寫回 Firestore；高危（寫 production），須先問 James＋schema 相容設計。
+2. 聚合分幣別或明文假設單幣（先問 James 實際使用）。
+3. **screens 的 today 用 UTC 日期**：DashboardScreen:78、SubscriptionsScreen:41 以 `toISOString().slice(0,10)` 當 today（同已修的 ocr.ts 地雷 #3；香港凌晨 0–8 點差一天，影響「即將扣款」與試用提醒判定）——改用 financeLogic `formatDateKey(new Date())`。屬行為修正（不是噪音清理），要走完整 R-P1。
+4. screens 預算計算改用 financeLogic `calculateBudgetUsage`（現全 inline；屬重構，需行為對拍：Dashboard 警示門檻 0.75 vs 函式預設 0.7、ratio 有無 clamp）；順帶把 AnalysisScreen 日長條圖的裸加（barData，:113 附近，純顯示）一併收掉。
+5. 10-prod-safety §8 的剩餘待驗證（Console rollback 步驟、export 是否需 Blaze）。
 
 ## Changelog
 - 2026-07-05 建檔（Fable 5 建置 session）。
 - 2026-07-05 與已完成工作同步：backlog #1–#3 標記完成、發現 screens 裸加總（Opus 接手 session）。
 - 2026-07-08 Fable 覆核：三修已併 main（f174ea2／75cf3f9／5c1bac2）、清掉殘留舊引用（日期／幣別行、storage 表格）。
+- 2026-07-11 backlog（舊）#1 完成：screens 聚合改 helpers；financeLogic 行號刷新；新增 UTC-today 與 calculateBudgetUsage 待辦。
