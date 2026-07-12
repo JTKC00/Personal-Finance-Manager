@@ -11,6 +11,7 @@ import {
   loadGoals,
   loadSubscriptions,
 } from '../services/storage';
+import {sumExpensesByCategory, sumSubscriptionChargesByCategory} from '../services/financeLogic';
 import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Goal, Subscription, Transaction} from '../types/finance';
 import styles from './DashboardScreen.module.css';
@@ -96,22 +97,16 @@ export function DashboardScreen() {
     .filter(item => item.targetAmount > 0)
     .sort((a, b) => (b.savedAmount / b.targetAmount) - (a.savedAmount / a.targetAmount))[0];
 
-  const categorySpending = expenseTransactions.reduce<Record<string, number>>((map, t) => {
-    map[t.category] = (map[t.category] || 0) + t.amount;
-    return map;
-  }, {});
-  const categoryReserved = upcomingSubscriptionCharges.reduce<Record<string, number>>((map, item) => {
-    map[item.subscription.category] = (map[item.subscription.category] || 0) + item.amount;
-    return map;
-  }, {});
+  const categorySpending = sumExpensesByCategory(transactions);
+  const categoryReserved = sumSubscriptionChargesByCategory(upcomingSubscriptionCharges);
 
   const categoryAlerts = budgets
-    .filter(b => b.amount > 0 && ((categorySpending[b.category] || 0) + (categoryReserved[b.category] || 0)) / b.amount >= 0.75)
+    .filter(b => b.amount > 0 && roundMoney((categorySpending[b.category] || 0) + (categoryReserved[b.category] || 0)) / b.amount >= 0.75)
     .map(b => ({
       ...b,
       spent: categorySpending[b.category] || 0,
       reserved: categoryReserved[b.category] || 0,
-      ratio: ((categorySpending[b.category] || 0) + (categoryReserved[b.category] || 0)) / b.amount
+      ratio: roundMoney((categorySpending[b.category] || 0) + (categoryReserved[b.category] || 0)) / b.amount
     }))
     .sort((a, b) => b.ratio - a.ratio);
 

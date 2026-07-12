@@ -11,7 +11,10 @@ import {
   getSubscriptionChargesForMonth,
   normalizeGoal,
   sumExpensesByCategory,
+  sumSubscriptionChargesByCategory,
+  type SubscriptionCharge,
 } from './financeLogic';
+import {roundMoney} from './money';
 import type {Goal, GoalDeposit, Subscription, Transaction} from '../types/finance';
 
 function makeSubscription(patch: Partial<Subscription> = {}): Subscription {
@@ -54,6 +57,15 @@ function makeGoal(patch: Partial<Goal> = {}): Goal {
   };
 }
 
+function makeCharge(patch: Partial<SubscriptionCharge> = {}): SubscriptionCharge {
+  return {
+    subscription: makeSubscription(),
+    date: '2026-06-15',
+    amount: 88,
+    ...patch
+  };
+}
+
 describe('sumExpensesByCategory', () => {
   it('sums each expense category at cent precision and ignores income', () => {
     const transactions = [
@@ -92,6 +104,66 @@ describe('sumExpensesByCategory', () => {
     expect(naive['飲食']).not.toBe(0.3);
     expect(clean['飲食']).toBe(0.3);
     expect(clean['娛樂']).toBe(0.8);
+  });
+
+  it('is unaffected by pre-filtering to expenses (idempotent with the screens filter)', () => {
+    const transactions = [
+      makeTransaction({category: '飲食', amount: 12.3}),
+      makeTransaction({category: '薪水', type: 'income', amount: 5000}),
+      makeTransaction({category: '交通', amount: 4.5}),
+    ];
+
+    expect(sumExpensesByCategory(transactions.filter(t => t.type === 'expense')))
+      .toEqual(sumExpensesByCategory(transactions));
+  });
+});
+
+describe('sumSubscriptionChargesByCategory', () => {
+  it('sums charges per category at cent precision, reading the amount from the charge', () => {
+    const charges = [
+      makeCharge({subscription: makeSubscription({category: '娛樂', amount: 999}), amount: 0.1}),
+      makeCharge({subscription: makeSubscription({category: '娛樂'}), amount: 0.2}),
+      makeCharge({subscription: makeSubscription({category: '學習'}), amount: 45.5}),
+      makeCharge({subscription: makeSubscription({category: ''}), amount: 3}),
+    ];
+
+    expect(sumSubscriptionChargesByCategory(charges)).toEqual({'娛樂': 0.3, '學習': 45.5, '': 3});
+  });
+
+  it('returns an empty map for no charges', () => {
+    expect(sumSubscriptionChargesByCategory([])).toEqual({});
+  });
+
+  it('removes the floating-point drift the old naive screen accumulation left', () => {
+    const charges = [
+      makeCharge({subscription: makeSubscription({category: '娛樂'}), amount: 0.1}),
+      makeCharge({subscription: makeSubscription({category: '娛樂'}), amount: 0.2}),
+      makeCharge({subscription: makeSubscription({category: '保險'}), amount: 0.7}),
+      makeCharge({subscription: makeSubscription({category: '保險'}), amount: 0.1}),
+      makeCharge({subscription: makeSubscription({category: '居住'}), amount: 7}),
+    ];
+    // Reproduce the old DashboardScreen/SubscriptionsScreen reduce: naive accumulation.
+    const naive: Record<string, number> = {};
+    charges.forEach(item => {
+      naive[item.subscription.category] = (naive[item.subscription.category] || 0) + item.amount;
+    });
+
+    const clean = sumSubscriptionChargesByCategory(charges);
+
+    // Same categories, and each clean total equals the naive sum rounded to cents.
+    expect(Object.keys(clean).sort()).toEqual(Object.keys(naive).sort());
+    for (const category of Object.keys(naive)) {
+      expect(clean[category]).toBe(Math.round(naive[category] * 100) / 100);
+    }
+    // The naive sums genuinely carried FP noise that the new code clears.
+    expect(naive['娛樂']).not.toBe(0.3);
+    expect(clean['娛樂']).toBe(0.3);
+    expect(clean['保險']).toBe(0.8);
+  });
+
+  it('keeps the deterministic budget-alert boundary after rounding', () => {
+    expect(roundMoney(60.35 + 14.65)).toBe(75);
+    expect(roundMoney(60.35 + 14.65) / 100).toBeGreaterThanOrEqual(0.75);
   });
 });
 

@@ -70,6 +70,27 @@ export function sumExpensesByCategory(transactions: Transaction[]): Record<strin
   return breakdown;
 }
 
+/**
+ * Sums subscription charges by category using integer-cent math (via sumMoney)
+ * so reserved-budget totals do not accumulate binary floating-point drift.
+ * Mirrors sumExpensesByCategory for the SubscriptionCharge shape; reads the
+ * amount from the charge itself (a charge may differ from subscription.amount).
+ */
+export function sumSubscriptionChargesByCategory(charges: SubscriptionCharge[]): Record<string, number> {
+  const amountsByCategory = new Map<string, number[]>();
+  for (const charge of charges) {
+    const category = charge.subscription.category;
+    const amounts = amountsByCategory.get(category) || [];
+    amounts.push(charge.amount);
+    amountsByCategory.set(category, amounts);
+  }
+  const breakdown: Record<string, number> = {};
+  for (const [category, amounts] of amountsByCategory) {
+    breakdown[category] = sumMoney(amounts);
+  }
+  return breakdown;
+}
+
 export function getCurrentMonthKey(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
