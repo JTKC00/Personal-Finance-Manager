@@ -101,13 +101,13 @@ export function DashboardScreen() {
   const categoryReserved = sumSubscriptionChargesByCategory(upcomingSubscriptionCharges);
 
   const categoryAlerts = budgets
-    .filter(b => b.amount > 0 && roundMoney((categorySpending[b.category] || 0) + (categoryReserved[b.category] || 0)) / b.amount >= 0.75)
-    .map(b => ({
-      ...b,
-      spent: categorySpending[b.category] || 0,
-      reserved: categoryReserved[b.category] || 0,
-      ratio: roundMoney((categorySpending[b.category] || 0) + (categoryReserved[b.category] || 0)) / b.amount
-    }))
+    .filter(b => b.amount > 0)
+    .map(b => {
+      const spent = categorySpending[b.category] || 0;
+      const reserved = categoryReserved[b.category] || 0;
+      return {...b, spent, reserved, ratio: roundMoney(spent + reserved) / b.amount};
+    })
+    .filter(alert => alert.ratio >= 0.75)
     .sort((a, b) => b.ratio - a.ratio);
 
   const alertLabel = (ratio: number) =>

@@ -50,18 +50,18 @@ export function getGoalWithSavedAmount(goal: Goal): Goal {
   };
 }
 
-/**
- * Sums expense transactions by category using integer-cent math (via sumMoney)
- * so category totals do not accumulate binary floating-point drift. Income
- * transactions are ignored. Returns the same shape as storage.getCategoryBreakdown.
- */
-export function sumExpensesByCategory(transactions: Transaction[]): Record<string, number> {
+/** Shared core: group amounts by category, then sum each group at cent precision. */
+function sumAmountsByCategory<T>(
+  items: T[],
+  getCategory: (item: T) => string,
+  getAmount: (item: T) => number
+): Record<string, number> {
   const amountsByCategory = new Map<string, number[]>();
-  for (const transaction of transactions) {
-    if (transaction.type !== 'expense') continue;
-    const amounts = amountsByCategory.get(transaction.category) || [];
-    amounts.push(transaction.amount);
-    amountsByCategory.set(transaction.category, amounts);
+  for (const item of items) {
+    const category = getCategory(item);
+    const amounts = amountsByCategory.get(category) || [];
+    amounts.push(getAmount(item));
+    amountsByCategory.set(category, amounts);
   }
   const breakdown: Record<string, number> = {};
   for (const [category, amounts] of amountsByCategory) {
@@ -71,24 +71,29 @@ export function sumExpensesByCategory(transactions: Transaction[]): Record<strin
 }
 
 /**
+ * Sums expense transactions by category using integer-cent math (via sumMoney)
+ * so category totals do not accumulate binary floating-point drift. Income
+ * transactions are ignored. Returns the same shape as storage.getCategoryBreakdown.
+ */
+export function sumExpensesByCategory(transactions: Transaction[]): Record<string, number> {
+  return sumAmountsByCategory(
+    transactions.filter(transaction => transaction.type === 'expense'),
+    transaction => transaction.category,
+    transaction => transaction.amount
+  );
+}
+
+/**
  * Sums subscription charges by category using integer-cent math (via sumMoney)
  * so reserved-budget totals do not accumulate binary floating-point drift.
- * Mirrors sumExpensesByCategory for the SubscriptionCharge shape; reads the
- * amount from the charge itself (a charge may differ from subscription.amount).
+ * Reads the amount from the charge itself (it may differ from subscription.amount).
  */
 export function sumSubscriptionChargesByCategory(charges: SubscriptionCharge[]): Record<string, number> {
-  const amountsByCategory = new Map<string, number[]>();
-  for (const charge of charges) {
-    const category = charge.subscription.category;
-    const amounts = amountsByCategory.get(category) || [];
-    amounts.push(charge.amount);
-    amountsByCategory.set(category, amounts);
-  }
-  const breakdown: Record<string, number> = {};
-  for (const [category, amounts] of amountsByCategory) {
-    breakdown[category] = sumMoney(amounts);
-  }
-  return breakdown;
+  return sumAmountsByCategory(
+    charges,
+    charge => charge.subscription.category,
+    charge => charge.amount
+  );
 }
 
 export function getCurrentMonthKey(date = new Date()): string {

@@ -78,7 +78,7 @@
 1. **資料還原／匯入（restore）**：讀備份 JSON 寫回 Firestore；高危（寫 production），須先問 James＋schema 相容設計。
 2. 聚合分幣別或明文假設單幣（先問 James 實際使用）。
 3. **screens 的 today 用 UTC 日期**：DashboardScreen:78、SubscriptionsScreen:41 以 `toISOString().slice(0,10)` 當 today（同已修的 ocr.ts 地雷 #3；香港凌晨 0–8 點差一天，影響「即將扣款」與試用提醒判定）——改用 financeLogic `formatDateKey(new Date())`。屬行為修正（不是噪音清理），要走完整 R-P1。
-4. screens 預算計算改用 financeLogic `calculateBudgetUsage`（現全 inline；屬重構，需行為對拍：Dashboard 警示門檻 0.75 vs 函式預設 0.7、ratio 有無 clamp）。
+4. screens 預算計算改用 financeLogic `calculateBudgetUsage`（現全 inline；屬重構，需行為對拍：Dashboard 警示門檻 0.75 vs 函式預設 0.7、ratio 有無 clamp）；順帶把 AnalysisScreen 日長條圖的裸加（barData，:113 附近，純顯示）一併收掉。
 5. 10-prod-safety §8 的剩餘待驗證（Console rollback 步驟、export 是否需 Blaze）。
 
 ## Changelog

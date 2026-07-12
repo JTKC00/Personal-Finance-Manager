@@ -14,7 +14,6 @@ import {
   sumSubscriptionChargesByCategory,
   type SubscriptionCharge,
 } from './financeLogic';
-import {roundMoney} from './money';
 import type {Goal, GoalDeposit, Subscription, Transaction} from '../types/finance';
 
 function makeSubscription(patch: Partial<Subscription> = {}): Subscription {
@@ -162,8 +161,15 @@ describe('sumSubscriptionChargesByCategory', () => {
   });
 
   it('keeps the deterministic budget-alert boundary after rounding', () => {
-    expect(roundMoney(60.35 + 14.65)).toBe(75);
-    expect(roundMoney(60.35 + 14.65) / 100).toBeGreaterThanOrEqual(0.75);
+    const charges = [
+      makeCharge({subscription: makeSubscription({category: '娛樂'}), amount: 60.35}),
+      makeCharge({subscription: makeSubscription({category: '娛樂'}), amount: 14.65}),
+    ];
+
+    const total = sumSubscriptionChargesByCategory(charges)['娛樂'];
+
+    expect(total).toBe(75);
+    expect(total / 100).toBeGreaterThanOrEqual(0.75);
   });
 });
 
