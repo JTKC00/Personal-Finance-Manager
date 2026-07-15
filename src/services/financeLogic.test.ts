@@ -1,6 +1,8 @@
 import {describe, expect, it} from 'vitest';
 import {
+  buildBudgetRows,
   calculateBudgetUsage,
+  compareBudgetToActual,
   formatDateKey,
   getCurrentMonthKey,
   getGoalSavedAmount,
@@ -10,6 +12,7 @@ import {
   getNextSubscriptionBillingDate,
   getSubscriptionChargesForMonth,
   normalizeGoal,
+  resolveBudgetMonth,
   sumExpensesByCategory,
   sumSubscriptionChargesByCategory,
   type SubscriptionCharge,
@@ -170,6 +173,85 @@ describe('sumSubscriptionChargesByCategory', () => {
 
     expect(total).toBe(75);
     expect(total / 100).toBeGreaterThanOrEqual(0.75);
+  });
+});
+
+describe('monthly budgets', () => {
+  it('buildBudgetRows matches the legacy loadBudgetRows synthesis (對拍)', () => {
+    const record = {飲食: 3000, 交通: 800.5, 娛樂: 0.3};
+    const month = '2026-07';
+    // Reproduce the pre-refactor storage.loadBudgetRows inline synthesis.
+    const legacyRows = Object.entries(record).map(([category, amount]) => ({
+      id: `${month}-${category}`,
+      category,
+      month,
+      amount,
+      warnThreshold: 0.7,
+      dangerThreshold: 0.9
+    }));
+
+    expect(buildBudgetRows(record, month)).toEqual(legacyRows);
+    expect(buildBudgetRows({}, month)).toEqual([]);
+  });
+
+  it('resolveBudgetMonth: for a past month, its own stored doc wins, even when cleared to empty', () => {
+    const legacy = {飲食: 1000};
+
+    expect(resolveBudgetMonth({交通: 500}, legacy, '2026-06', '2026-07')).toEqual({交通: 500});
+    expect(resolveBudgetMonth({}, legacy, '2026-06', '2026-07')).toEqual({});
+  });
+
+  it('resolveBudgetMonth: the current month prefers legacy even over an existing month doc（防跨裝置新舊版資料遺失）', () => {
+    // Simulates: an old-version device just wrote 1500 to legacy for 飲食, while
+    // budgetMonths/{currentMonth} still holds an earlier snapshot (1200) from
+    // the last time a new-version device saved. If the month doc won here, the
+    // next save from the new-version device would silently overwrite the old
+    // device's 1500 back down to 1200 — resolveBudgetMonth must not do that.
+    const staleMonthDoc = {飲食: 1200};
+    const freshLegacy = {飲食: 1500};
+
+    expect(resolveBudgetMonth(staleMonthDoc, freshLegacy, '2026-07', '2026-07')).toEqual(freshLegacy);
+  });
+
+  it('resolveBudgetMonth: the current month falls back to legacy budgets（向後相容）', () => {
+    const legacy = {飲食: 1000};
+
+    expect(resolveBudgetMonth(null, legacy, '2026-07', '2026-07')).toEqual(legacy);
+    expect(resolveBudgetMonth(null, {}, '2026-07', '2026-07')).toEqual({});
+  });
+
+  it('resolveBudgetMonth: past and future months without a doc have no record', () => {
+    const legacy = {飲食: 1000};
+
+    expect(resolveBudgetMonth(null, legacy, '2026-06', '2026-07')).toBeNull();
+    expect(resolveBudgetMonth(null, legacy, '2026-08', '2026-07')).toBeNull();
+  });
+
+  it('compareBudgetToActual sums at cent precision and ranks overruns', () => {
+    const rows = buildBudgetRows({飲食: 0.3, 交通: 100, 娛樂: 50}, '2026-06');
+    // 飲食 under budget; 交通 over 30.05; 娛樂 over 25.5; 其他 unbudgeted (counts in totalSpent only).
+    const spent = {飲食: 0.1, 交通: 130.05, 娛樂: 75.5, 其他: 20};
+
+    const result = compareBudgetToActual(rows, spent);
+
+    expect(result.totalBudget).toBe(150.3);
+    expect(result.totalSpent).toBe(225.65);
+    expect(result.delta).toBe(-75.35);
+    expect(result.overCategories).toEqual([
+      {category: '交通', budget: 100, spent: 130.05, over: 30.05},
+      {category: '娛樂', budget: 50, spent: 75.5, over: 25.5},
+    ]);
+  });
+
+  it('compareBudgetToActual clears floating-point noise in totals', () => {
+    const rows = buildBudgetRows({飲食: 0.1, 交通: 0.2}, '2026-06');
+    const spent = {飲食: 0.7, 交通: 0.1};
+
+    const result = compareBudgetToActual(rows, spent);
+
+    expect(result.totalBudget).toBe(0.3);
+    expect(result.totalSpent).toBe(0.8);
+    expect(result.delta).toBe(-0.5);
   });
 });
 
