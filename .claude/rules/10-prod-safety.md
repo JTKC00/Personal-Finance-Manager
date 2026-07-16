@@ -29,7 +29,7 @@
 
 ## §3 schema／資料格式變更協議
 
-「schema」包括：types/finance.ts 的欄位、Firestore 文件結構（`users/{uid}/{transactions|subscriptions|goals|accounts|transfers|receipts}` 與 `meta/{budgets|events}`）、以及**資料 id 與去重鍵格式**（`sub-{訂閱id}-{日期}`、`txn-{交易id}`、`{subscriptionId}:{date}`——00-risks 風險 1）。
+「schema」包括：types/finance.ts 的欄位、Firestore 文件結構（`users/{uid}/{transactions|subscriptions|goals|accounts|transfers|receipts}`、`meta/{budgets|events}` 與 `budgetMonths/{YYYY-MM}`）、以及**資料 id 與去重鍵格式**（`sub-{訂閱id}-{日期}`、`txn-{交易id}`、`{subscriptionId}:{date}`——00-risks 風險 1）。
 
 規則（全部強制）：
 1. **只加不改**：新需求用「新增可選欄位」解決；不改既有欄位的名稱、型別、語意，不改 id 格式。做不到 → 停下，把「為什麼做不到」帶給 James（全域 20-judgment R3）。

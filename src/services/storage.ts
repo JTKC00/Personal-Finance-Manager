@@ -1,4 +1,5 @@
 import {
+  buildBudgetRows,
   formatDateKey,
   getCurrentMonthKey,
   getGoalSavedAmount,
@@ -6,6 +7,7 @@ import {
   getNextMonthKey,
   getNextSubscriptionBillingDate,
   normalizeGoal,
+  resolveBudgetMonth,
   sumExpensesByCategory,
 } from './financeLogic';
 import {roundMoney, sumMoney} from './money';
@@ -25,6 +27,7 @@ import {
   runTransaction,
   setDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import {Account, AnalyticsEvent, Budget, Goal, Receipt, Subscription, Transaction, Transfer} from '../types/finance';
 import {clean, db, getUid} from './firebase';
@@ -253,30 +256,51 @@ export async function loadBudgets(): Promise<Record<string, number>> {
   return loadMetaDoc<Record<string, number>>(getUid(), 'budgets', {});
 }
 
-export async function saveBudget(category: string, amount: number): Promise<Record<string, number>> {
+const BUDGET_MONTHS = 'budgetMonths';
+
+/**
+ * Budget record for one month. The current month always reads legacy
+ * meta/budgets (the field both old and new app versions keep in sync, so it
+ * can't go stale across devices); any other month reads its own
+ * budgetMonths/{month} snapshot, or null if none was ever saved.
+ */
+export async function loadBudgetMonth(month: string): Promise<Record<string, number> | null> {
   const uid = getUid();
-  const budgets = await loadBudgets();
-  const next = {...budgets, [category]: amount};
-  await saveMetaDoc(uid, 'budgets', next);
-  return next;
+  const snap = await getDoc(docRef(uid, BUDGET_MONTHS, month));
+  const monthDoc = snap.exists() ? (snap.data() as Record<string, number>) : null;
+  const legacy = await loadBudgets();
+  return resolveBudgetMonth(monthDoc, legacy, month, getCurrentMonthKey());
 }
 
-export async function saveAllBudgets(data: Record<string, number>): Promise<void> {
+/**
+ * Saves the current month's budgets, atomically dual-writing the legacy
+ * meta/budgets document (kept in sync so older app versions on the other
+ * device keep working) and budgetMonths/{currentMonth}.
+ */
+export async function saveCurrentMonthBudgets(data: Record<string, number>): Promise<void> {
   const uid = getUid();
-  await saveMetaDoc(uid, 'budgets', data);
+  const month = getCurrentMonthKey();
+  const batch = writeBatch(db);
+  batch.set(metaRef(uid, 'budgets'), clean(data));
+  batch.set(docRef(uid, BUDGET_MONTHS, month), clean(data));
+  await batch.commit();
+}
+
+export async function loadBudgetRowsForMonth(month: string): Promise<Budget[] | null> {
+  const record = await loadBudgetMonth(month);
+  return record === null ? null : buildBudgetRows(record, month);
 }
 
 export async function loadBudgetRows(): Promise<Budget[]> {
-  const budgets = await loadBudgets();
-  const month = getCurrentMonthKey();
-  return Object.entries(budgets).map(([category, amount]) => ({
-    id: `${month}-${category}`,
-    category,
-    month,
-    amount,
-    warnThreshold: 0.7,
-    dangerThreshold: 0.9
-  }));
+  return (await loadBudgetRowsForMonth(getCurrentMonthKey())) ?? [];
+}
+
+export async function loadAllBudgetMonths(): Promise<{month: string; budgets: Record<string, number>}[]> {
+  const uid = getUid();
+  const snap = await getDocs(col(uid, BUDGET_MONTHS));
+  return snap.docs
+    .map(item => ({month: item.id, budgets: item.data() as Record<string, number>}))
+    .sort((a, b) => a.month.localeCompare(b.month));
 }
 
 export async function loadReceipts(): Promise<Receipt[]> {

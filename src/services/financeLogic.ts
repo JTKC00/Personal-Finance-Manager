@@ -1,5 +1,5 @@
 import {roundMoney, sumMoney} from './money';
-import type {Goal, Subscription, Transaction} from '../types/finance';
+import type {Budget, Goal, Subscription, Transaction} from '../types/finance';
 
 export type SubscriptionCharge = {
   subscription: Subscription;
@@ -183,6 +183,78 @@ export function getSubscriptionChargesForMonth(
     });
 
   return charges.sort((a, b) => a.date.localeCompare(b.date) || a.subscription.name.localeCompare(b.subscription.name));
+}
+
+/**
+ * Synthesises Budget rows from a stored month record (extracted from the old
+ * storage.loadBudgetRows inline logic so the shape stays testable).
+ */
+export function buildBudgetRows(record: Record<string, number>, month: string): Budget[] {
+  return Object.entries(record).map(([category, amount]) => ({
+    id: `${month}-${category}`,
+    category,
+    month,
+    amount,
+    warnThreshold: 0.7,
+    dangerThreshold: 0.9
+  }));
+}
+
+/**
+ * Decides which budget record applies to a month. The current month always
+ * reads the legacy meta/budgets record — it is the one both old and new app
+ * versions keep writing to, so it is guaranteed to reflect the latest edit
+ * regardless of which device/version made it. (saveCurrentMonthBudgets also
+ * copies it into budgetMonths/{currentMonth} on every save, but that copy is
+ * only an archival snapshot for once the month becomes a past month — reading
+ * it back for the *current* month would let a stale snapshot silently
+ * overwrite a newer legacy edit made from an old-version device on next save.)
+ * Any other month reads its own stored document, or has no history record if
+ * none was ever saved.
+ */
+export function resolveBudgetMonth(
+  monthDoc: Record<string, number> | null,
+  legacyBudgets: Record<string, number>,
+  month: string,
+  currentMonth: string
+): Record<string, number> | null {
+  if (month === currentMonth) return legacyBudgets;
+  return monthDoc;
+}
+
+export type BudgetComparison = {
+  totalBudget: number;
+  totalSpent: number;
+  /** totalBudget − totalSpent：正＝省下、負＝超支 */
+  delta: number;
+  overCategories: {category: string; budget: number; spent: number; over: number}[];
+};
+
+/**
+ * Budget vs actual for one month. totalSpent covers every expense category
+ * (budgeted or not); overCategories lists budgeted categories that went over,
+ * biggest overrun first. All sums at cent precision.
+ */
+export function compareBudgetToActual(
+  rows: Budget[],
+  spentByCategory: Record<string, number>
+): BudgetComparison {
+  const totalBudget = sumMoney(rows.map(row => row.amount));
+  const totalSpent = sumMoney(Object.values(spentByCategory));
+  const overCategories = rows
+    .map(row => {
+      const spent = spentByCategory[row.category] || 0;
+      return {category: row.category, budget: row.amount, spent, over: roundMoney(spent - row.amount)};
+    })
+    .filter(item => item.over > 0)
+    .sort((a, b) => b.over - a.over);
+
+  return {
+    totalBudget,
+    totalSpent,
+    delta: roundMoney(totalBudget - totalSpent),
+    overCategories
+  };
 }
 
 export function calculateBudgetUsage(
