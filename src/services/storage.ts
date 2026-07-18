@@ -1,4 +1,5 @@
 import {
+  buildBudgetRows,
   formatDateKey,
   getCurrentMonthKey,
   getGoalSavedAmount,
@@ -6,7 +7,10 @@ import {
   getNextMonthKey,
   getNextSubscriptionBillingDate,
   normalizeGoal,
+  resolveBudgetMonth,
+  sumExpensesByCategory,
 } from './financeLogic';
+import {roundMoney, sumMoney} from './money';
 export {
   getCurrentMonthKey,
   getNextSubscriptionBillingDate,
@@ -23,6 +27,7 @@ import {
   runTransaction,
   setDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import {Account, AnalyticsEvent, Budget, Goal, Receipt, Subscription, Transaction, Transfer} from '../types/finance';
 import {clean, db, getUid} from './firebase';
@@ -251,30 +256,51 @@ export async function loadBudgets(): Promise<Record<string, number>> {
   return loadMetaDoc<Record<string, number>>(getUid(), 'budgets', {});
 }
 
-export async function saveBudget(category: string, amount: number): Promise<Record<string, number>> {
+const BUDGET_MONTHS = 'budgetMonths';
+
+/**
+ * Budget record for one month. The current month always reads legacy
+ * meta/budgets (the field both old and new app versions keep in sync, so it
+ * can't go stale across devices); any other month reads its own
+ * budgetMonths/{month} snapshot, or null if none was ever saved.
+ */
+export async function loadBudgetMonth(month: string): Promise<Record<string, number> | null> {
   const uid = getUid();
-  const budgets = await loadBudgets();
-  const next = {...budgets, [category]: amount};
-  await saveMetaDoc(uid, 'budgets', next);
-  return next;
+  const snap = await getDoc(docRef(uid, BUDGET_MONTHS, month));
+  const monthDoc = snap.exists() ? (snap.data() as Record<string, number>) : null;
+  const legacy = await loadBudgets();
+  return resolveBudgetMonth(monthDoc, legacy, month, getCurrentMonthKey());
 }
 
-export async function saveAllBudgets(data: Record<string, number>): Promise<void> {
+/**
+ * Saves the current month's budgets, atomically dual-writing the legacy
+ * meta/budgets document (kept in sync so older app versions on the other
+ * device keep working) and budgetMonths/{currentMonth}.
+ */
+export async function saveCurrentMonthBudgets(data: Record<string, number>): Promise<void> {
   const uid = getUid();
-  await saveMetaDoc(uid, 'budgets', data);
+  const month = getCurrentMonthKey();
+  const batch = writeBatch(db);
+  batch.set(metaRef(uid, 'budgets'), clean(data));
+  batch.set(docRef(uid, BUDGET_MONTHS, month), clean(data));
+  await batch.commit();
+}
+
+export async function loadBudgetRowsForMonth(month: string): Promise<Budget[] | null> {
+  const record = await loadBudgetMonth(month);
+  return record === null ? null : buildBudgetRows(record, month);
 }
 
 export async function loadBudgetRows(): Promise<Budget[]> {
-  const budgets = await loadBudgets();
-  const month = getCurrentMonthKey();
-  return Object.entries(budgets).map(([category, amount]) => ({
-    id: `${month}-${category}`,
-    category,
-    month,
-    amount,
-    warnThreshold: 0.7,
-    dangerThreshold: 0.9
-  }));
+  return (await loadBudgetRowsForMonth(getCurrentMonthKey())) ?? [];
+}
+
+export async function loadAllBudgetMonths(): Promise<{month: string; budgets: Record<string, number>}[]> {
+  const uid = getUid();
+  const snap = await getDocs(col(uid, BUDGET_MONTHS));
+  return snap.docs
+    .map(item => ({month: item.id, budgets: item.data() as Record<string, number>}))
+    .sort((a, b) => a.month.localeCompare(b.month));
 }
 
 export async function loadReceipts(): Promise<Receipt[]> {
@@ -409,14 +435,14 @@ export async function getAccountBalance(accountId: string): Promise<number> {
   const account = accounts.find(item => item.id === accountId);
   if (!account) return 0;
 
-  const inflow = transfers
-    .filter(item => item.toAccountId === accountId)
-    .reduce((sum, item) => sum + item.amount, 0);
-  const outflow = transfers
-    .filter(item => item.fromAccountId === accountId)
-    .reduce((sum, item) => sum + item.amount, 0);
+  const inflow = sumMoney(
+    transfers.filter(item => item.toAccountId === accountId).map(item => item.amount)
+  );
+  const outflow = sumMoney(
+    transfers.filter(item => item.fromAccountId === accountId).map(item => item.amount)
+  );
 
-  return account.initialBalance + inflow - outflow;
+  return roundMoney(account.initialBalance + inflow - outflow);
 }
 
 export async function syncGoalSavedAmount(goalId: string): Promise<Goal | undefined> {
@@ -513,23 +539,17 @@ export async function clearSensitiveCache(): Promise<void> {
 
 export async function getMonthlySummary(month = getCurrentMonthKey()) {
   const transactions = await getTransactionsByMonth(month);
-  const income = transactions.filter(item => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
-  const expense = transactions.filter(item => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0);
+  const income = sumMoney(transactions.filter(item => item.type === 'income').map(item => item.amount));
+  const expense = sumMoney(transactions.filter(item => item.type === 'expense').map(item => item.amount));
   return {
     income,
     expense,
-    balance: income - expense,
+    balance: roundMoney(income - expense),
     count: transactions.length
   };
 }
 
 export async function getCategoryBreakdown(month = getCurrentMonthKey()): Promise<Record<string, number>> {
   const transactions = await getTransactionsByMonth(month);
-  const map: Record<string, number> = {};
-  transactions
-    .filter(item => item.type === 'expense')
-    .forEach(item => {
-      map[item.category] = (map[item.category] || 0) + item.amount;
-    });
-  return map;
+  return sumExpensesByCategory(transactions);
 }
