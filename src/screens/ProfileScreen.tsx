@@ -8,7 +8,7 @@ import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authE
 import {ThemeMode, applyThemeMode, getStoredThemeMode} from '../services/appearance';
 import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
 import {daysSinceBackup, getLastBackupAt, markBackupDone} from '../services/backupReminder';
-import {loadAccounts, loadBudgets, loadGoals, loadReceipts, loadSubscriptions, loadTransactions, loadTransfers, saveAllBudgets} from '../services/storage';
+import {getCurrentMonthKey, loadAccounts, loadAllBudgetMonths, loadBudgetMonth, loadBudgets, loadGoals, loadReceipts, loadSubscriptions, loadTransactions, loadTransfers, saveCurrentMonthBudgets} from '../services/storage';
 import {Receipt} from '../types/finance';
 import styles from './ProfileScreen.module.css';
 
@@ -64,7 +64,7 @@ export function ProfileScreen() {
   }, []);
 
   const refreshBudgets = useCallback(async () => {
-    const data = await loadBudgets();
+    const data = (await loadBudgetMonth(getCurrentMonthKey())) ?? {};
     setBudgetEdits(Object.fromEntries(
       expenseCategories.map(c => [c, data[c] ? String(data[c]) : ''])
     ));
@@ -127,8 +127,10 @@ export function ProfileScreen() {
         const val = Number(budgetEdits[cat]);
         if (val > 0) data[cat] = val;
       }
-      await saveAllBudgets(data);
+      await saveCurrentMonthBudgets(data);
       showToast('月預算已儲存。');
+    } catch {
+      showToast('儲存失敗，請檢查網路後再試一次。');
     } finally {
       setBudgetSaving(false);
     }
@@ -164,24 +166,26 @@ export function ProfileScreen() {
   }
 
   async function exportJsonBackup() {
-    const [transactions, goals, budgets, receiptHistory, subscriptions, accounts, transfers] = await Promise.all([
+    const [transactions, goals, budgets, receiptHistory, subscriptions, accounts, transfers, budgetMonths] = await Promise.all([
       loadTransactions(),
       loadGoals(),
       loadBudgets(),
       loadReceipts(),
       loadSubscriptions(),
       loadAccounts(),
-      loadTransfers()
+      loadTransfers(),
+      loadAllBudgetMonths()
     ]);
     const exportedAt = new Date().toISOString();
     const backup = {
-      version: 3,
+      version: 4,
       exportedAt,
       userEmail: user?.email || '',
       transactions: [...transactions].sort((a, b) => a.date.localeCompare(b.date)),
       goals: [...goals].sort((a, b) => a.name.localeCompare(b.name)),
       subscriptions: [...subscriptions].sort((a, b) => a.name.localeCompare(b.name)),
       budgets,
+      budgetMonths,
       receipts: [...receiptHistory].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       accounts: [...accounts].sort((a, b) => a.name.localeCompare(b.name)),
       transfers: [...transfers].sort((a, b) => a.date.localeCompare(b.date))

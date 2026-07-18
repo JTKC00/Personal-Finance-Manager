@@ -22,8 +22,8 @@
 | 檔案 | 職責與關鍵函式（:行號≈） |
 |---|---|
 | money.ts | `roundMoney`:12、`sumMoney`:21——金額運算唯一合法途徑（整數 cents 防浮點漂移），純函式 |
-| financeLogic.ts | 純邏輯。目標：`normalizeGoal`:22（讀取端 fallback 範本）、`getGoalSavedAmount`:36；分類聚合：`sumExpensesByCategory`:58、`sumSubscriptionChargesByCategory`:79（皆含測試——storage 與 screens 唯一合法的分類聚合）；日期：`getCurrentMonthKey`:94、`formatDateKey`:115、`addMonthsClamped`:126（月底夾住）；訂閱：`getNextSubscriptionBillingDate`:134、`getSubscriptionChargesForMonth`:145；預算：`calculateBudgetUsage`:183≈（screens 尚未採用，見 backlog 待辦 #4） |
-| storage.ts | 全部 Firestore CRUD。**高危**：`processDueSubscriptions`:201（登入自動入帳，00-risks 風險 2）、`saveTransactionWithGoalLink`:95（runTransaction 連動目標）、`syncTransactionTransfer`:454（交易↔轉帳↔帳戶連動）。聚合：`getAccountBalance`:408、`getMonthlySummary`:515、`getCategoryBreakdown`:528（已委派 financeLogic 的 `sumExpensesByCategory`） |
+| financeLogic.ts | 純邏輯。目標：`normalizeGoal`:22（讀取端 fallback 範本）、`getGoalSavedAmount`:36；分類聚合：`sumExpensesByCategory`:58、`sumSubscriptionChargesByCategory`:79（皆含測試——storage 與 screens 唯一合法的分類聚合）；日期：`getCurrentMonthKey`:94、`formatDateKey`:115、`addMonthsClamped`:126（月底夾住）；訂閱：`getNextSubscriptionBillingDate`:134、`getSubscriptionChargesForMonth`:145；預算：`calculateBudgetUsage`:183≈（screens 尚未採用，見 backlog 待辦 #4）；預算月份化（2026-07-13）：`buildBudgetRows`／`resolveBudgetMonth`／`compareBudgetToActual`（皆含測試） |
+| storage.ts | 全部 Firestore CRUD。**高危**：`processDueSubscriptions`:201（登入自動入帳，00-risks 風險 2）、`saveTransactionWithGoalLink`:95（runTransaction 連動目標）、`syncTransactionTransfer`:454（交易↔轉帳↔帳戶連動）。聚合：`getAccountBalance`:408、`getMonthlySummary`:515、`getCategoryBreakdown`:528（已委派 financeLogic 的 `sumExpensesByCategory`）。預算（2026-07-13 起）：`loadBudgetMonth`／`saveCurrentMonthBudgets`（writeBatch 原子雙寫 legacy＋月文件）／`loadBudgetRowsForMonth`；`loadBudgetRows`＝當月委派，Dashboard/Subscriptions 零改動 |
 | firebase.ts | 初始化。`getUid`:59（未登入直接 throw）、`clean`:66（JSON 往返去 undefined——**Firestore 寫入前必經**）；Firestore 開了 persistentLocalCache（離線快取） |
 | ocr.ts | 前端打 `/api/ocr`（正式＝hosting rewrite→Cloud Run；本機＝vite proxy 或 VITE_OCR_PROXY_URL） |
 | appearance.ts | localStorage 主題 `pfm-theme-mode` |
@@ -34,7 +34,8 @@
 ## 資料模型（Firestore：`users/{uid}/` 底下，兩位使用者各自一棵、互不可見）
 
 - 集合：`transactions`、`subscriptions`、`goals`、`accounts`、`transfers`、`receipts`——文件 id＝物件 id，內容＝types/finance.ts 對應型別經 `clean()` 後原樣。
-- 單文件：`meta/budgets`（`Record<分類, 金額>`，**只有一份、無月份歷史**）、`meta/events`（分析事件，保留最後 500 筆）。
+- 單文件：`meta/budgets`（`Record<分類, 金額>`——**legacy，儲存預算時與月度文件原子雙寫保持同步**）、`meta/events`（分析事件，保留最後 500 筆）。
+- 月度預算集合：`budgetMonths/{YYYY-MM}`（2026-07-13 起；文件＝`Record<分類, 金額>`。**當月一律讀 legacy**（兩版 app 都寫它，不會跨裝置過期）；其他月讀該月自己的文件、缺文件＝該月無紀錄。舊版 app 只讀寫 legacy 也不壞）。
 - **id／去重鍵格式＝schema 的一部分，改了＝資料相容性破壞**（00-risks 風險 1）：
   - 訂閱入帳交易 id：`sub-{訂閱id}-{日期}`；去重鍵 `{subscriptionId}:{date}`
   - 交易連動轉帳 id：`txn-{交易id}`
@@ -62,7 +63,7 @@
 2. ~~`getCategoryBreakdown` 與 screens 分類 map 的裸浮點加總~~ 已全數改用 financeLogic 聚合 helpers（storage 修於 75cf3f9；screens 修於 2026-07-11）。
 3. ~~ocr.ts:55 `today` 用 UTC 日期~~ 已改用 `formatDateKey(new Date())`（已併 main 5c1bac2）。
 4. 聚合不分幣別（見慣例）。
-5. `meta/budgets` 無月份維度：改預算＝改「每個月」的預算；`loadBudgetRows` 只合成當月列。
+5. ~~`meta/budgets` 無月份維度~~ 2026-07-13 起有 `budgetMonths/{月}` 歷史（feat/monthly-budgets）。殘餘限制：某月從未按過「儲存預算」＝該月無歷史紀錄；另一裝置跑舊版寫 legacy 時，新版下次儲存才會把月文件補回同步。
 6. Goal 有雙重真相：`savedAmount` 欄位 vs `deposits[]` 重算（`getGoalSavedAmount` 在有 deposits 時以重算為準）、又會被 `syncGoalSavedAmount` 用帳戶餘額覆寫——改目標邏輯前把這三處一起讀。
 7. `clearSensitiveCache()` 是 no-op（storage.ts:509），別依賴它清資料。
 8. PWA 更新要使用者手動按橫幅（00-risks 次要風險）。
@@ -88,3 +89,4 @@
 - 2026-07-08 Fable 覆核：三修已併 main（f174ea2／75cf3f9／5c1bac2）、清掉殘留舊引用（日期／幣別行、storage 表格）。
 - 2026-07-11 backlog（舊）#1 完成：screens 聚合改 helpers；financeLogic 行號刷新；新增 UTC-today 與 calculateBudgetUsage 待辦。
 - 2026-07-13 新增 backupReminder.ts（備份提醒，feat/backup-reminder）。
+- 2026-07-13 預算月份化（feat/monthly-budgets）：新增 budgetMonths 集合＋原子雙寫、地雷 #5 劃掉、storage/financeLogic 表格更新。

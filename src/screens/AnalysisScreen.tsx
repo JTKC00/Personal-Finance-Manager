@@ -4,8 +4,8 @@ import {
 } from 'recharts';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {getCurrentMonthKey, getTransactionsByMonth, loadBudgetRows} from '../services/storage';
-import {sumExpensesByCategory} from '../services/financeLogic';
+import {getCurrentMonthKey, getTransactionsByMonth, loadBudgetRowsForMonth} from '../services/storage';
+import {compareBudgetToActual, sumExpensesByCategory} from '../services/financeLogic';
 import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Transaction} from '../types/finance';
 import styles from './AnalysisScreen.module.css';
@@ -55,15 +55,17 @@ export function AnalysisScreen() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [monthlyTransactions, setMonthlyTransactions] = useState<Record<string, Transaction[]>>({});
-  const [budgets, setBudgets] = useState<Budget[]>([]);
+  // undefined＝該月尚未載入完成（初始或切換月份中，避免瞬間顯示上一個月的預算資料）
+  const [budgets, setBudgets] = useState<Budget[] | null | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
-    loadBudgetRows().then(data => {
+    setBudgets(undefined);
+    loadBudgetRowsForMonth(selectedMonth).then(data => {
       if (active) setBudgets(data);
     });
     return () => { active = false; };
-  }, []);
+  }, [selectedMonth]);
 
   useEffect(() => {
     let active = true;
@@ -91,7 +93,7 @@ export function AnalysisScreen() {
   const daysInMonth = getDaysInMonth(selectedMonth);
   const activeDays = selectedMonth === currentMonth ? new Date().getDate() : daysInMonth;
   const avgDailyExpense = roundMoney(expense / (activeDays || 1));
-  const monthlyBudget = sumMoney(budgets.map(item => item.amount));
+  const monthlyBudget = sumMoney((budgets ?? []).map(item => item.amount));
   const projectedExpense = selectedMonth === currentMonth
     ? roundMoney((expense / (activeDays || 1)) * daysInMonth)
     : expense;
@@ -103,6 +105,11 @@ export function AnalysisScreen() {
       .sort((a, b) => b[1] - a[1])
       .map(([name, value], i) => ({name, value, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length]})),
     [categoryMap]
+  );
+
+  const budgetComparison = useMemo(
+    () => (budgets && budgets.length ? compareBudgetToActual(budgets, categoryMap) : null),
+    [budgets, categoryMap]
   );
 
   const barDays = selectedMonth === currentMonth ? new Date().getDate() : daysInMonth;
@@ -232,6 +239,48 @@ export function AnalysisScreen() {
           </div>
         ))}
       </div>
+
+      {selectedMonth < currentMonth ? (
+        <Card title="預算 vs 實際">
+          {budgets === undefined ? (
+            <p className={styles.empty}>載入中…</p>
+          ) : budgets === null ? (
+            <p className={styles.empty}>該月無預算紀錄（歷史從啟用月度預算後開始累積）。</p>
+          ) : !budgetComparison ? (
+            <p className={styles.empty}>該月未設定預算。</p>
+          ) : (
+            <div className={styles.changeList}>
+              <div className={styles.changeRow}>
+                <div className={styles.changeMain}>
+                  <span className={styles.changeTitle}>總計</span>
+                  <span className={styles.changeMeta}>
+                    預算 {formatMoney(budgetComparison.totalBudget)} · 實際 {formatMoney(budgetComparison.totalSpent)}
+                  </span>
+                </div>
+                <span className={[styles.changeDelta, budgetComparison.delta >= 0 ? styles.deltaDown : styles.deltaUp].join(' ')}>
+                  {budgetComparison.delta >= 0
+                    ? `省下 ${formatMoney(budgetComparison.delta)}`
+                    : `超支 ${formatMoney(Math.abs(budgetComparison.delta))}`}
+                </span>
+              </div>
+              {budgetComparison.overCategories.map(item => (
+                <div key={item.category} className={styles.changeRow}>
+                  <div className={styles.changeMain}>
+                    <span className={styles.changeTitle}>{item.category}</span>
+                    <span className={styles.changeMeta}>
+                      {formatMoney(item.spent)} / 預算 {formatMoney(item.budget)}
+                    </span>
+                  </div>
+                  <span className={[styles.changeDelta, styles.deltaUp].join(' ')}>超 {formatMoney(item.over)}</span>
+                </div>
+              ))}
+              {budgetComparison.overCategories.length === 0 ? (
+                <p className={styles.empty}>所有分類都在預算內。</p>
+              ) : null}
+            </div>
+          )}
+        </Card>
+      ) : null}
 
       <Card title="本月洞察">
         {insights.length ? (
