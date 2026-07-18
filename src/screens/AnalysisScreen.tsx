@@ -4,7 +4,9 @@ import {
 } from 'recharts';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {getCurrentMonthKey, getTransactionsByMonth, loadBudgetRows} from '../services/storage';
+import {getCurrentMonthKey, getTransactionsByMonth, loadBudgetRowsForMonth} from '../services/storage';
+import {compareBudgetToActual, sumExpensesByCategory} from '../services/financeLogic';
+import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Transaction} from '../types/finance';
 import styles from './AnalysisScreen.module.css';
 
@@ -43,17 +45,9 @@ function getMonthRange(endMonth: string, count: number): string[] {
 }
 
 function getTotals(data: Transaction[]) {
-  const income = data.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const expense = data.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  return {income, expense, balance: income - expense};
-}
-
-function getExpenseCategoryMap(data: Transaction[]): Record<string, number> {
-  const map: Record<string, number> = {};
-  data.filter(t => t.type === 'expense').forEach(t => {
-    map[t.category] = (map[t.category] || 0) + t.amount;
-  });
-  return map;
+  const income = sumMoney(data.filter(t => t.type === 'income').map(t => t.amount));
+  const expense = sumMoney(data.filter(t => t.type === 'expense').map(t => t.amount));
+  return {income, expense, balance: roundMoney(income - expense)};
 }
 
 export function AnalysisScreen() {
@@ -61,15 +55,17 @@ export function AnalysisScreen() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [monthlyTransactions, setMonthlyTransactions] = useState<Record<string, Transaction[]>>({});
-  const [budgets, setBudgets] = useState<Budget[]>([]);
+  // undefined＝該月尚未載入完成（初始或切換月份中，避免瞬間顯示上一個月的預算資料）
+  const [budgets, setBudgets] = useState<Budget[] | null | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
-    loadBudgetRows().then(data => {
+    setBudgets(undefined);
+    loadBudgetRowsForMonth(selectedMonth).then(data => {
       if (active) setBudgets(data);
     });
     return () => { active = false; };
-  }, []);
+  }, [selectedMonth]);
 
   useEffect(() => {
     let active = true;
@@ -86,29 +82,34 @@ export function AnalysisScreen() {
   }, [selectedMonth]);
 
   const income = useMemo(
-    () => transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0),
+    () => sumMoney(transactions.filter(t => t.type === 'income').map(t => t.amount)),
     [transactions]
   );
   const expense = useMemo(
-    () => transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
+    () => sumMoney(transactions.filter(t => t.type === 'expense').map(t => t.amount)),
     [transactions]
   );
   const savingsRate = income > 0 ? Math.max(0, (income - expense) / income) : 0;
   const daysInMonth = getDaysInMonth(selectedMonth);
   const activeDays = selectedMonth === currentMonth ? new Date().getDate() : daysInMonth;
-  const avgDailyExpense = expense / (activeDays || 1);
-  const monthlyBudget = budgets.reduce((sum, item) => sum + item.amount, 0);
+  const avgDailyExpense = roundMoney(expense / (activeDays || 1));
+  const monthlyBudget = sumMoney((budgets ?? []).map(item => item.amount));
   const projectedExpense = selectedMonth === currentMonth
-    ? (expense / (activeDays || 1)) * daysInMonth
+    ? roundMoney((expense / (activeDays || 1)) * daysInMonth)
     : expense;
 
-  const categoryMap = useMemo(() => getExpenseCategoryMap(transactions), [transactions]);
+  const categoryMap = useMemo(() => sumExpensesByCategory(transactions), [transactions]);
 
   const pieData = useMemo(
     () => Object.entries(categoryMap)
       .sort((a, b) => b[1] - a[1])
       .map(([name, value], i) => ({name, value, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length]})),
     [categoryMap]
+  );
+
+  const budgetComparison = useMemo(
+    () => (budgets && budgets.length ? compareBudgetToActual(budgets, categoryMap) : null),
+    [budgets, categoryMap]
   );
 
   const barDays = selectedMonth === currentMonth ? new Date().getDate() : daysInMonth;
@@ -143,7 +144,7 @@ export function AnalysisScreen() {
   const previousSavingsRate = previousTotals.income > 0
     ? Math.max(0, previousTotals.balance / previousTotals.income)
     : null;
-  const previousCategoryMap = useMemo(() => getExpenseCategoryMap(previousTransactions), [previousTransactions]);
+  const previousCategoryMap = useMemo(() => sumExpensesByCategory(previousTransactions), [previousTransactions]);
 
   const categoryChanges = useMemo(() => {
     const categories = new Set([...Object.keys(categoryMap), ...Object.keys(previousCategoryMap)]);
@@ -151,7 +152,7 @@ export function AnalysisScreen() {
       .map(category => {
         const current = categoryMap[category] || 0;
         const previous = previousCategoryMap[category] || 0;
-        return {category, current, previous, delta: current - previous};
+        return {category, current, previous, delta: roundMoney(current - previous)};
       })
       .filter(item => item.current > 0 || item.previous > 0)
       .sort((a, b) => b.delta - a.delta || b.current - a.current)
@@ -238,6 +239,48 @@ export function AnalysisScreen() {
           </div>
         ))}
       </div>
+
+      {selectedMonth < currentMonth ? (
+        <Card title="預算 vs 實際">
+          {budgets === undefined ? (
+            <p className={styles.empty}>載入中…</p>
+          ) : budgets === null ? (
+            <p className={styles.empty}>該月無預算紀錄（歷史從啟用月度預算後開始累積）。</p>
+          ) : !budgetComparison ? (
+            <p className={styles.empty}>該月未設定預算。</p>
+          ) : (
+            <div className={styles.changeList}>
+              <div className={styles.changeRow}>
+                <div className={styles.changeMain}>
+                  <span className={styles.changeTitle}>總計</span>
+                  <span className={styles.changeMeta}>
+                    預算 {formatMoney(budgetComparison.totalBudget)} · 實際 {formatMoney(budgetComparison.totalSpent)}
+                  </span>
+                </div>
+                <span className={[styles.changeDelta, budgetComparison.delta >= 0 ? styles.deltaDown : styles.deltaUp].join(' ')}>
+                  {budgetComparison.delta >= 0
+                    ? `省下 ${formatMoney(budgetComparison.delta)}`
+                    : `超支 ${formatMoney(Math.abs(budgetComparison.delta))}`}
+                </span>
+              </div>
+              {budgetComparison.overCategories.map(item => (
+                <div key={item.category} className={styles.changeRow}>
+                  <div className={styles.changeMain}>
+                    <span className={styles.changeTitle}>{item.category}</span>
+                    <span className={styles.changeMeta}>
+                      {formatMoney(item.spent)} / 預算 {formatMoney(item.budget)}
+                    </span>
+                  </div>
+                  <span className={[styles.changeDelta, styles.deltaUp].join(' ')}>超 {formatMoney(item.over)}</span>
+                </div>
+              ))}
+              {budgetComparison.overCategories.length === 0 ? (
+                <p className={styles.empty}>所有分類都在預算內。</p>
+              ) : null}
+            </div>
+          )}
+        </Card>
+      ) : null}
 
       <Card title="本月洞察">
         {insights.length ? (

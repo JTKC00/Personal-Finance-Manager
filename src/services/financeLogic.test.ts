@@ -1,6 +1,8 @@
 import {describe, expect, it} from 'vitest';
 import {
+  buildBudgetRows,
   calculateBudgetUsage,
+  compareBudgetToActual,
   formatDateKey,
   getCurrentMonthKey,
   getGoalSavedAmount,
@@ -10,6 +12,10 @@ import {
   getNextSubscriptionBillingDate,
   getSubscriptionChargesForMonth,
   normalizeGoal,
+  resolveBudgetMonth,
+  sumExpensesByCategory,
+  sumSubscriptionChargesByCategory,
+  type SubscriptionCharge,
 } from './financeLogic';
 import type {Goal, GoalDeposit, Subscription, Transaction} from '../types/finance';
 
@@ -52,6 +58,202 @@ function makeGoal(patch: Partial<Goal> = {}): Goal {
     ...patch
   };
 }
+
+function makeCharge(patch: Partial<SubscriptionCharge> = {}): SubscriptionCharge {
+  return {
+    subscription: makeSubscription(),
+    date: '2026-06-15',
+    amount: 88,
+    ...patch
+  };
+}
+
+describe('sumExpensesByCategory', () => {
+  it('sums each expense category at cent precision and ignores income', () => {
+    const transactions = [
+      makeTransaction({category: '飲食', amount: 0.1}),
+      makeTransaction({category: '飲食', amount: 0.2}),
+      makeTransaction({category: '飲食', amount: 10.1}),
+      makeTransaction({category: '交通', amount: 0.3}),
+      makeTransaction({category: '薪水', type: 'income', amount: 5000}),
+    ];
+
+    expect(sumExpensesByCategory(transactions)).toEqual({飲食: 10.4, 交通: 0.3});
+  });
+
+  it('removes the floating-point drift the old naive accumulation left', () => {
+    const transactions = [
+      makeTransaction({category: '飲食', amount: 0.1}),
+      makeTransaction({category: '飲食', amount: 0.2}),
+      makeTransaction({category: '娛樂', amount: 0.7}),
+      makeTransaction({category: '娛樂', amount: 0.1}),
+      makeTransaction({category: '交通', amount: 7}),
+    ];
+    // Reproduce the old getCategoryBreakdown behaviour: naive floating-point accumulation.
+    const naive: Record<string, number> = {};
+    transactions.forEach(item => {
+      naive[item.category] = (naive[item.category] || 0) + item.amount;
+    });
+
+    const clean = sumExpensesByCategory(transactions);
+
+    // Same categories, and each clean total equals the naive sum rounded to cents.
+    expect(Object.keys(clean).sort()).toEqual(Object.keys(naive).sort());
+    for (const category of Object.keys(naive)) {
+      expect(clean[category]).toBe(Math.round(naive[category] * 100) / 100);
+    }
+    // The naive sums genuinely carried FP noise that the new code clears.
+    expect(naive['飲食']).not.toBe(0.3);
+    expect(clean['飲食']).toBe(0.3);
+    expect(clean['娛樂']).toBe(0.8);
+  });
+
+  it('is unaffected by pre-filtering to expenses (idempotent with the screens filter)', () => {
+    const transactions = [
+      makeTransaction({category: '飲食', amount: 12.3}),
+      makeTransaction({category: '薪水', type: 'income', amount: 5000}),
+      makeTransaction({category: '交通', amount: 4.5}),
+    ];
+
+    expect(sumExpensesByCategory(transactions.filter(t => t.type === 'expense')))
+      .toEqual(sumExpensesByCategory(transactions));
+  });
+});
+
+describe('sumSubscriptionChargesByCategory', () => {
+  it('sums charges per category at cent precision, reading the amount from the charge', () => {
+    const charges = [
+      makeCharge({subscription: makeSubscription({category: '娛樂', amount: 999}), amount: 0.1}),
+      makeCharge({subscription: makeSubscription({category: '娛樂'}), amount: 0.2}),
+      makeCharge({subscription: makeSubscription({category: '學習'}), amount: 45.5}),
+      makeCharge({subscription: makeSubscription({category: ''}), amount: 3}),
+    ];
+
+    expect(sumSubscriptionChargesByCategory(charges)).toEqual({'娛樂': 0.3, '學習': 45.5, '': 3});
+  });
+
+  it('returns an empty map for no charges', () => {
+    expect(sumSubscriptionChargesByCategory([])).toEqual({});
+  });
+
+  it('removes the floating-point drift the old naive screen accumulation left', () => {
+    const charges = [
+      makeCharge({subscription: makeSubscription({category: '娛樂'}), amount: 0.1}),
+      makeCharge({subscription: makeSubscription({category: '娛樂'}), amount: 0.2}),
+      makeCharge({subscription: makeSubscription({category: '保險'}), amount: 0.7}),
+      makeCharge({subscription: makeSubscription({category: '保險'}), amount: 0.1}),
+      makeCharge({subscription: makeSubscription({category: '居住'}), amount: 7}),
+    ];
+    // Reproduce the old DashboardScreen/SubscriptionsScreen reduce: naive accumulation.
+    const naive: Record<string, number> = {};
+    charges.forEach(item => {
+      naive[item.subscription.category] = (naive[item.subscription.category] || 0) + item.amount;
+    });
+
+    const clean = sumSubscriptionChargesByCategory(charges);
+
+    // Same categories, and each clean total equals the naive sum rounded to cents.
+    expect(Object.keys(clean).sort()).toEqual(Object.keys(naive).sort());
+    for (const category of Object.keys(naive)) {
+      expect(clean[category]).toBe(Math.round(naive[category] * 100) / 100);
+    }
+    // The naive sums genuinely carried FP noise that the new code clears.
+    expect(naive['娛樂']).not.toBe(0.3);
+    expect(clean['娛樂']).toBe(0.3);
+    expect(clean['保險']).toBe(0.8);
+  });
+
+  it('keeps the deterministic budget-alert boundary after rounding', () => {
+    const charges = [
+      makeCharge({subscription: makeSubscription({category: '娛樂'}), amount: 60.35}),
+      makeCharge({subscription: makeSubscription({category: '娛樂'}), amount: 14.65}),
+    ];
+
+    const total = sumSubscriptionChargesByCategory(charges)['娛樂'];
+
+    expect(total).toBe(75);
+    expect(total / 100).toBeGreaterThanOrEqual(0.75);
+  });
+});
+
+describe('monthly budgets', () => {
+  it('buildBudgetRows matches the legacy loadBudgetRows synthesis (對拍)', () => {
+    const record = {飲食: 3000, 交通: 800.5, 娛樂: 0.3};
+    const month = '2026-07';
+    // Reproduce the pre-refactor storage.loadBudgetRows inline synthesis.
+    const legacyRows = Object.entries(record).map(([category, amount]) => ({
+      id: `${month}-${category}`,
+      category,
+      month,
+      amount,
+      warnThreshold: 0.7,
+      dangerThreshold: 0.9
+    }));
+
+    expect(buildBudgetRows(record, month)).toEqual(legacyRows);
+    expect(buildBudgetRows({}, month)).toEqual([]);
+  });
+
+  it('resolveBudgetMonth: for a past month, its own stored doc wins, even when cleared to empty', () => {
+    const legacy = {飲食: 1000};
+
+    expect(resolveBudgetMonth({交通: 500}, legacy, '2026-06', '2026-07')).toEqual({交通: 500});
+    expect(resolveBudgetMonth({}, legacy, '2026-06', '2026-07')).toEqual({});
+  });
+
+  it('resolveBudgetMonth: the current month prefers legacy even over an existing month doc（防跨裝置新舊版資料遺失）', () => {
+    // Simulates: an old-version device just wrote 1500 to legacy for 飲食, while
+    // budgetMonths/{currentMonth} still holds an earlier snapshot (1200) from
+    // the last time a new-version device saved. If the month doc won here, the
+    // next save from the new-version device would silently overwrite the old
+    // device's 1500 back down to 1200 — resolveBudgetMonth must not do that.
+    const staleMonthDoc = {飲食: 1200};
+    const freshLegacy = {飲食: 1500};
+
+    expect(resolveBudgetMonth(staleMonthDoc, freshLegacy, '2026-07', '2026-07')).toEqual(freshLegacy);
+  });
+
+  it('resolveBudgetMonth: the current month falls back to legacy budgets（向後相容）', () => {
+    const legacy = {飲食: 1000};
+
+    expect(resolveBudgetMonth(null, legacy, '2026-07', '2026-07')).toEqual(legacy);
+    expect(resolveBudgetMonth(null, {}, '2026-07', '2026-07')).toEqual({});
+  });
+
+  it('resolveBudgetMonth: past and future months without a doc have no record', () => {
+    const legacy = {飲食: 1000};
+
+    expect(resolveBudgetMonth(null, legacy, '2026-06', '2026-07')).toBeNull();
+    expect(resolveBudgetMonth(null, legacy, '2026-08', '2026-07')).toBeNull();
+  });
+
+  it('compareBudgetToActual sums at cent precision and ranks overruns', () => {
+    const rows = buildBudgetRows({飲食: 0.3, 交通: 100, 娛樂: 50}, '2026-06');
+    // 飲食 under budget; 交通 over 30.05; 娛樂 over 25.5; 其他 unbudgeted (counts in totalSpent only).
+    const spent = {飲食: 0.1, 交通: 130.05, 娛樂: 75.5, 其他: 20};
+
+    const result = compareBudgetToActual(rows, spent);
+
+    expect(result.totalBudget).toBe(150.3);
+    expect(result.totalSpent).toBe(225.65);
+    expect(result.delta).toBe(-75.35);
+    expect(result.overCategories).toEqual([
+      {category: '交通', budget: 100, spent: 130.05, over: 30.05},
+      {category: '娛樂', budget: 50, spent: 75.5, over: 25.5},
+    ]);
+  });
+
+  it('compareBudgetToActual clears floating-point noise in totals', () => {
+    const rows = buildBudgetRows({飲食: 0.1, 交通: 0.2}, '2026-06');
+    const spent = {飲食: 0.7, 交通: 0.1};
+
+    const result = compareBudgetToActual(rows, spent);
+
+    expect(result.totalBudget).toBe(0.3);
+    expect(result.totalSpent).toBe(0.8);
+    expect(result.delta).toBe(-0.5);
+  });
+});
 
 describe('subscription billing logic', () => {
   it('clamps monthly billing dates at month end', () => {
@@ -124,6 +326,17 @@ describe('goal logic', () => {
 
     expect(goal.savedAmount).toBe(500);
   });
+
+  it('rounds the summed amount to avoid floating-point drift', () => {
+    const goal = makeGoal({
+      deposits: [
+        {id: 'a', amount: 0.1, date: '2026-06-01', type: 'deposit'},
+        {id: 'b', amount: 0.2, date: '2026-06-02', type: 'deposit'},
+      ]
+    });
+
+    expect(getGoalSavedAmount(goal)).toBe(0.3);
+  });
 });
 
 describe('budget logic', () => {
@@ -150,6 +363,12 @@ describe('budget logic', () => {
     expect(usage.ratio).toBe(0);
     expect(usage.percentage).toBe(0);
     expect(usage.status).toBe('none');
+  });
+
+  it('rounds the projected total to avoid floating-point drift', () => {
+    const usage = calculateBudgetUsage(0.1, 0.2, 1);
+
+    expect(usage.projected).toBe(0.3);
   });
 });
 

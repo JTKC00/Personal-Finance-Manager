@@ -1,4 +1,5 @@
-import type {Goal, Subscription, Transaction} from '../types/finance';
+import {roundMoney, sumMoney} from './money';
+import type {Budget, Goal, Subscription, Transaction} from '../types/finance';
 
 export type SubscriptionCharge = {
   subscription: Subscription;
@@ -36,9 +37,9 @@ export function getGoalSavedAmount(goal: Goal): number {
   const deposits = goal.deposits || [];
   if (!deposits.length) return goal.savedAmount;
 
-  return deposits.reduce((sum, entry) => (
+  return roundMoney(deposits.reduce((sum, entry) => (
     entry.type === 'deposit' ? sum + entry.amount : Math.max(0, sum - entry.amount)
-  ), 0);
+  ), 0));
 }
 
 export function getGoalWithSavedAmount(goal: Goal): Goal {
@@ -47,6 +48,52 @@ export function getGoalWithSavedAmount(goal: Goal): Goal {
     ...normalizedGoal,
     savedAmount: Math.min(normalizedGoal.targetAmount, getGoalSavedAmount(normalizedGoal))
   };
+}
+
+/** Shared core: group amounts by category, then sum each group at cent precision. */
+function sumAmountsByCategory<T>(
+  items: T[],
+  getCategory: (item: T) => string,
+  getAmount: (item: T) => number
+): Record<string, number> {
+  const amountsByCategory = new Map<string, number[]>();
+  for (const item of items) {
+    const category = getCategory(item);
+    const amounts = amountsByCategory.get(category) || [];
+    amounts.push(getAmount(item));
+    amountsByCategory.set(category, amounts);
+  }
+  const breakdown: Record<string, number> = {};
+  for (const [category, amounts] of amountsByCategory) {
+    breakdown[category] = sumMoney(amounts);
+  }
+  return breakdown;
+}
+
+/**
+ * Sums expense transactions by category using integer-cent math (via sumMoney)
+ * so category totals do not accumulate binary floating-point drift. Income
+ * transactions are ignored. Returns the same shape as storage.getCategoryBreakdown.
+ */
+export function sumExpensesByCategory(transactions: Transaction[]): Record<string, number> {
+  return sumAmountsByCategory(
+    transactions.filter(transaction => transaction.type === 'expense'),
+    transaction => transaction.category,
+    transaction => transaction.amount
+  );
+}
+
+/**
+ * Sums subscription charges by category using integer-cent math (via sumMoney)
+ * so reserved-budget totals do not accumulate binary floating-point drift.
+ * Reads the amount from the charge itself (it may differ from subscription.amount).
+ */
+export function sumSubscriptionChargesByCategory(charges: SubscriptionCharge[]): Record<string, number> {
+  return sumAmountsByCategory(
+    charges,
+    charge => charge.subscription.category,
+    charge => charge.amount
+  );
 }
 
 export function getCurrentMonthKey(date = new Date()): string {
@@ -138,6 +185,78 @@ export function getSubscriptionChargesForMonth(
   return charges.sort((a, b) => a.date.localeCompare(b.date) || a.subscription.name.localeCompare(b.subscription.name));
 }
 
+/**
+ * Synthesises Budget rows from a stored month record (extracted from the old
+ * storage.loadBudgetRows inline logic so the shape stays testable).
+ */
+export function buildBudgetRows(record: Record<string, number>, month: string): Budget[] {
+  return Object.entries(record).map(([category, amount]) => ({
+    id: `${month}-${category}`,
+    category,
+    month,
+    amount,
+    warnThreshold: 0.7,
+    dangerThreshold: 0.9
+  }));
+}
+
+/**
+ * Decides which budget record applies to a month. The current month always
+ * reads the legacy meta/budgets record — it is the one both old and new app
+ * versions keep writing to, so it is guaranteed to reflect the latest edit
+ * regardless of which device/version made it. (saveCurrentMonthBudgets also
+ * copies it into budgetMonths/{currentMonth} on every save, but that copy is
+ * only an archival snapshot for once the month becomes a past month — reading
+ * it back for the *current* month would let a stale snapshot silently
+ * overwrite a newer legacy edit made from an old-version device on next save.)
+ * Any other month reads its own stored document, or has no history record if
+ * none was ever saved.
+ */
+export function resolveBudgetMonth(
+  monthDoc: Record<string, number> | null,
+  legacyBudgets: Record<string, number>,
+  month: string,
+  currentMonth: string
+): Record<string, number> | null {
+  if (month === currentMonth) return legacyBudgets;
+  return monthDoc;
+}
+
+export type BudgetComparison = {
+  totalBudget: number;
+  totalSpent: number;
+  /** totalBudget − totalSpent：正＝省下、負＝超支 */
+  delta: number;
+  overCategories: {category: string; budget: number; spent: number; over: number}[];
+};
+
+/**
+ * Budget vs actual for one month. totalSpent covers every expense category
+ * (budgeted or not); overCategories lists budgeted categories that went over,
+ * biggest overrun first. All sums at cent precision.
+ */
+export function compareBudgetToActual(
+  rows: Budget[],
+  spentByCategory: Record<string, number>
+): BudgetComparison {
+  const totalBudget = sumMoney(rows.map(row => row.amount));
+  const totalSpent = sumMoney(Object.values(spentByCategory));
+  const overCategories = rows
+    .map(row => {
+      const spent = spentByCategory[row.category] || 0;
+      return {category: row.category, budget: row.amount, spent, over: roundMoney(spent - row.amount)};
+    })
+    .filter(item => item.over > 0)
+    .sort((a, b) => b.over - a.over);
+
+  return {
+    totalBudget,
+    totalSpent,
+    delta: roundMoney(totalBudget - totalSpent),
+    overCategories
+  };
+}
+
 export function calculateBudgetUsage(
   spent: number,
   reserved: number,
@@ -145,7 +264,7 @@ export function calculateBudgetUsage(
   warnThreshold = 0.7,
   dangerThreshold = 0.9
 ): BudgetUsage {
-  const projected = spent + reserved;
+  const projected = roundMoney(spent + reserved);
   const ratio = budgetAmount > 0 ? Math.min(projected / budgetAmount, 1) : 0;
   const percentage = Math.round(ratio * 100);
   const status: BudgetUsageStatus = budgetAmount <= 0

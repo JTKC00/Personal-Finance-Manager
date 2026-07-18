@@ -3,6 +3,7 @@ import {Trash2} from 'lucide-react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {appendGoalEntry, deleteGoal, loadGoals, removeGoalEntry, upsertGoal, trackEvent} from '../services/storage';
+import {roundMoney} from '../services/money';
 import {Goal, GoalDeposit} from '../types/finance';
 import styles from './GoalsScreen.module.css';
 
@@ -183,7 +184,7 @@ export function GoalsScreen() {
           {goals.map(goal => {
             const progress = goal.targetAmount > 0 ? Math.min(1, goal.savedAmount / goal.targetAmount) : 0;
             const pct = Math.round(progress * 100);
-            const remaining = Math.max(0, goal.targetAmount - goal.savedAmount);
+            const remaining = roundMoney(Math.max(0, goal.targetAmount - goal.savedAmount));
             return (
               <Card key={goal.id} title={goal.name}>
                 <div className={styles.goalHeader}>
