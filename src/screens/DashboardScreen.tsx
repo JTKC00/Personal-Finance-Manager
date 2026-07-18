@@ -12,6 +12,7 @@ import {
   loadSubscriptions,
 } from '../services/storage';
 import {sumExpensesByCategory, sumSubscriptionChargesByCategory} from '../services/financeLogic';
+import {getLastBackupAt, isBackupOverdue} from '../services/backupReminder';
 import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Goal, Subscription, Transaction} from '../types/finance';
 import styles from './DashboardScreen.module.css';
@@ -118,6 +119,8 @@ export function DashboardScreen() {
   const fillClass = (p: number) =>
     p >= 0.9 ? styles.dangerFill : p >= 0.7 ? styles.warningFill : styles.safeFill;
 
+  const backupOverdue = isBackupOverdue(getLastBackupAt());
+
   return (
     <Screen title="首頁" subtitle={`${month} 月現金流與重點提醒`}>
       <div className={styles.grid}>
@@ -128,6 +131,12 @@ export function DashboardScreen() {
           </div>
         ))}
       </div>
+
+      {backupOverdue ? (
+        <Card title="🛡️ 該做備份了" action={{label: '去備份 ›', onClick: () => navigate('/profile')}}>
+          <p className={styles.helperText}>此裝置已超過 30 天沒有匯出完整 JSON 備份。花 30 秒到個人頁按一下，資料多一份保障。</p>
+        </Card>
+      ) : null}
 
       <Card title="月預算進度">
         {monthlyBudget > 0 ? (
