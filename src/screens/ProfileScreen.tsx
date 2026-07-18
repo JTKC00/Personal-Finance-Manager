@@ -7,6 +7,7 @@ import {expenseCategories} from '../constants/categories';
 import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authErrors';
 import {ThemeMode, applyThemeMode, getStoredThemeMode} from '../services/appearance';
 import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
+import {daysSinceBackup, getLastBackupAt, markBackupDone} from '../services/backupReminder';
 import {getCurrentMonthKey, loadAccounts, loadAllBudgetMonths, loadBudgetMonth, loadBudgets, loadGoals, loadReceipts, loadSubscriptions, loadTransactions, loadTransfers, saveCurrentMonthBudgets} from '../services/storage';
 import {Receipt} from '../types/finance';
 import styles from './ProfileScreen.module.css';
@@ -48,6 +49,7 @@ export function ProfileScreen() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState('');
   const [toast, setToast] = useState('');
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => getLastBackupAt());
   const handledAuthErrorRef = useRef('');
 
   function showToast(msg: string) {
@@ -197,11 +199,15 @@ export function ProfileScreen() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    markBackupDone(exportedAt);
+    setLastBackupAt(exportedAt);
     showToast('完整 JSON 備份已匯出。');
   }
 
   const hasGoogleLinked = user?.providerData.some(p => p.providerId === 'google.com') ?? false;
   const isEmailUser = user?.providerData.some(p => p.providerId === 'password') ?? false;
+  const backupDays = daysSinceBackup(lastBackupAt);
+  const backupStatusText = backupDays === null ? '從未備份' : backupDays === 0 ? '今天' : `${backupDays} 天前`;
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -474,6 +480,7 @@ export function ProfileScreen() {
 
       <Card title="資料備份">
         <p className={styles.body}>匯出完整 JSON 備份，包含交易、目標、預算和 OCR 收據記錄。此功能只負責備份，不會匯入或覆蓋資料。</p>
+        <p className={styles.status}>上次完整備份（此裝置）：{backupStatusText}</p>
         <button className={styles.primaryBtn} onClick={exportJsonBackup}>匯出完整 JSON 備份</button>
       </Card>
 

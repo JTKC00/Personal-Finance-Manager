@@ -27,6 +27,7 @@
 | firebase.ts | 初始化。`getUid`:59（未登入直接 throw）、`clean`:66（JSON 往返去 undefined——**Firestore 寫入前必經**）；Firestore 開了 persistentLocalCache（離線快取） |
 | ocr.ts | 前端打 `/api/ocr`（正式＝hosting rewrite→Cloud Run；本機＝vite proxy 或 VITE_OCR_PROXY_URL） |
 | appearance.ts | localStorage 主題 `pfm-theme-mode` |
+| backupReminder.ts | localStorage 備份提醒 `pfm-last-backup-at`（>30 天沒匯出完整 JSON 備份 → Dashboard 提醒卡＋Profile 狀態行；純邏輯含測試） |
 | secrets.ts | localStorage 使用者自備 Gemini key `fin_gemini_api_key`（**機密：勿印出、勿寫 log、勿放測試 fixture**） |
 | authErrors.ts | Firebase Auth 錯誤碼 → 中文訊息 |
 
@@ -87,4 +88,5 @@
 - 2026-07-05 與已完成工作同步：backlog #1–#3 標記完成、發現 screens 裸加總（Opus 接手 session）。
 - 2026-07-08 Fable 覆核：三修已併 main（f174ea2／75cf3f9／5c1bac2）、清掉殘留舊引用（日期／幣別行、storage 表格）。
 - 2026-07-11 backlog（舊）#1 完成：screens 聚合改 helpers；financeLogic 行號刷新；新增 UTC-today 與 calculateBudgetUsage 待辦。
+- 2026-07-13 新增 backupReminder.ts（備份提醒，feat/backup-reminder）。
 - 2026-07-13 預算月份化（feat/monthly-budgets）：新增 budgetMonths 集合＋原子雙寫、地雷 #5 劃掉、storage/financeLogic 表格更新。
