@@ -40,3 +40,13 @@
 - 覆核 Opus 代跑的收尾：執行乾淨（verify／機密掃描／commit）；其口頭建議「本地 merge 進 main」有坑（main 有 branch protection，push 會被拒）——正確路徑是 push 分支開 PR。
 - 本次覆核：分支 rebase 到最新 main；補齊 eca9266 漏掉的殘留舊引用（20-repo-map 日期／幣別行與 storage 表格、40-dispatch T1 範例、00-risks 前提與風險 3、30-judgment R-P4）。
 - **重要教訓**：制度檔留在未合併分支上＝新 session（在 main 上開）完全看不到——已記全域 lessons 2026-07-08。在合併前，這套制度只在 chore/claude-project-rules 分支上生效。
+
+### 補記三（2026-07-18，兩個新功能上線）
+- 完成並**已部署到正式站**：backlog #2（screens 金額聚合修復，PR #29）、備份提醒（PR #30）、預算月份化＋budgetMonths（PR #33，動 storage.ts）。三個 PR 皆各自跑過 max-effort code review 或聚焦審查，皆有必修缺陷被抓到並修正——制度的審查流程不是走過場，這三次都真的攔到東西：
+  - PR #29：4 條 findings（reuse 共用內核、simplification 收斂 ratio 表達式、test-coverage 假信心測試、地圖聲明過寬），全修。
+  - PR #33：1 條必修**資料遺失 bug**——`resolveBudgetMonth` 讓「當月月文件」贏過 legacy，會在兩人新舊版裝置並存時（00-risks 風險 1 的具體實例）靜默丟失剛寫入的預算值；已修正為當月一律讀 legacy，並補測試釘住。這是本專案制度第一次在合併前攔到會實際遺失使用者資料的 bug，值得當範例：**審查不是形式，是真的會抓到東西**。
+- §4 人工驗證：James 本人在本機 dev 登入操作 8 步驟（存值→重新整理→Dashboard/Subscriptions/Analysis 檢查→匯出 JSON 驗證 budgetMonths），全數正常後才合併。
+- 兩個 PR（backup-reminder、monthly-budgets）平行開發、各自動了 ProfileScreen.tsx 與同幾份制度檔，先合併的那個讓後合併的產生 3 個檔案衝突（皆為雙方各自新增、非真矛盾，合併後重跑 verify 全綠）——教訓見全域 lessons 2026-07-18。
+- deploy 已執行（`firebase deploy --only hosting`，James 本人跑指令），正式站 smoke test 全數通過。
+- 本 session 過程中 Browser pane 的 dev server／分頁多次在輪次間被重置、10 個平行審查 agent 一次打爆 session 額度——皆已記全域 lessons 2026-07-18，下個 session 遇到同款狀況直接查那幾條，不用重新摸索。
+- **已知缺口**：GitHub Dependabot 掃出 27 個依賴漏洞（1 critical、10 high）尚未處理，已有 spawn_task 待處理（任務名稱「處理 Dependabot 漏洞警報」）；backlog 待辦 #1–#4（restore／匯入、幣別分類、screens UTC-today、calculateBudgetUsage 重構）皆未動。
