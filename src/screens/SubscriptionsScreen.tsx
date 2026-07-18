@@ -14,6 +14,8 @@ import {
   trackEvent,
   upsertSubscription,
 } from '../services/storage';
+import {sumExpensesByCategory, sumSubscriptionChargesByCategory} from '../services/financeLogic';
+import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Subscription, SubscriptionFrequency, Transaction} from '../types/finance';
 import styles from './TransactionScreen.module.css';
 
@@ -90,9 +92,11 @@ export function SubscriptionsScreen() {
   );
 
   const activeSubscriptions = subscriptions.filter(item => item.active);
-  const postedSubscriptionTotal = transactions
-    .filter(item => item.subscriptionId && item.type === 'expense')
-    .reduce((sum, item) => sum + item.amount, 0);
+  const postedSubscriptionTotal = sumMoney(
+    transactions
+      .filter(item => item.subscriptionId && item.type === 'expense')
+      .map(item => item.amount)
+  );
   const upcomingCharges = getSubscriptionChargesForMonth(
     subscriptions,
     month,
@@ -100,23 +104,15 @@ export function SubscriptionsScreen() {
     today(),
     true
   );
-  const monthlySubscriptionTotal = postedSubscriptionTotal + upcomingCharges.reduce((sum, item) => sum + item.amount, 0);
+  const monthlySubscriptionTotal = roundMoney(postedSubscriptionTotal + sumMoney(upcomingCharges.map(item => item.amount)));
   const trialAlerts = activeSubscriptions
     .filter(item => item.trialEndDate)
     .map(item => ({subscription: item, days: getDaysUntil(item.trialEndDate as string)}))
     .filter(item => item.days >= 0 && item.days <= item.subscription.reminderDays)
     .sort((a, b) => a.days - b.days);
 
-  const categoryReserved = upcomingCharges.reduce<Record<string, number>>((map, item) => {
-    map[item.subscription.category] = (map[item.subscription.category] || 0) + item.amount;
-    return map;
-  }, {});
-  const categorySpent = transactions
-    .filter(item => item.type === 'expense')
-    .reduce<Record<string, number>>((map, item) => {
-      map[item.category] = (map[item.category] || 0) + item.amount;
-      return map;
-    }, {});
+  const categoryReserved = sumSubscriptionChargesByCategory(upcomingCharges);
+  const categorySpent = sumExpensesByCategory(transactions);
 
   function showToast(message: string) {
     setToast(message);
@@ -346,7 +342,7 @@ export function SubscriptionsScreen() {
         {budgets.length ? budgets.map(budget => {
           const spent = categorySpent[budget.category] || 0;
           const reserved = categoryReserved[budget.category] || 0;
-          const projected = spent + reserved;
+          const projected = roundMoney(spent + reserved);
           const ratio = budget.amount > 0 ? Math.min(projected / budget.amount, 1) : 0;
           return (
             <div key={budget.category} className={styles.budgetRow}>

@@ -5,6 +5,9 @@
 .vscode/
 *.swp
 
+# Claude Code：個人設定不進 git（CLAUDE.md 與 .claude/rules/ 要進 git）
+.claude/settings.local.json
+
 # Environment / secrets
 .env
 .env.*
