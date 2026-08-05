@@ -200,10 +200,14 @@ git status</pre>
   <p><code>.env</code> 不應放上 Git，所以新電腦要自己建立：</p>
   <pre>copy .env.example .env</pre>
 
-  <p>然後打開 <code>.env</code>，填回 Firebase 或 API 相關設定。不要把真實 secret commit 入 Git。</p>
+  <p>然後打開 <code>.env</code>，填回 Firebase Web App 和 App Check 的公開設定。不要把真實 secret commit 入 Git，也不要把 Gemini API key 放進 <code>VITE_</code> 前端環境變數或瀏覽器儲存空間；只有執行本機 <code>server.js</code> OCR proxy 時，才由未提交的 <code>.env</code> 提供後端 <code>GEMINI_API_KEY</code>。</p>
 
   <div class="note">
-    <strong>關於 GEMINI_API_KEY：</strong>目前 Cloud Function 使用 Firebase Secret Manager 的 <code>GEMINI_API_KEY</code>，不應硬寫入 repo。部署時 Firebase 會讀取雲端 Secret。
+    <strong>關於 GEMINI_API_KEY：</strong>Gemini API key 只由 Cloud Function 從 Firebase Secret Manager 的 <code>GEMINI_API_KEY</code> 讀取，不應硬寫入 repo，也不會由使用者輸入、儲存或傳送。部署 Functions 前，以有 Firebase project 權限的帳戶執行 <code>firebase functions:secrets:set GEMINI_API_KEY</code>，輸入值後再部署；Firebase Hosting 的 <code>/api/ocr</code> rewrite 會把前端 OCR 請求轉交後端。
+  </div>
+
+  <div class="note">
+    <strong>OCR 存取與配額：</strong>使用者必須先登入，前端才會帶 Firebase ID token 呼叫 OCR backend proxy。若 Functions 設定 <code>REQUIRE_APP_CHECK=true</code>，還必須有有效的 App Check token。後端會同時套用每位使用者與全站的每日 OCR 配額；任一配額用完便拒絕新的掃描。這些配額是專案維護者設定的限制，不是 Gemini 免費額度；實際值請以部署中的 <code>OCR_DAILY_LIMIT_PER_USER</code> 和 <code>OCR_DAILY_LIMIT_GLOBAL</code> 為準。
   </div>
 
   <h2>6. 本機檢查</h2>

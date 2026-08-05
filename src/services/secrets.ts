@@ -1,13 +1,6 @@
-const GEMINI_API_KEY = 'fin_gemini_api_key';
+const LEGACY_GEMINI_API_KEY = 'fin_gemini_api_key';
 
-export async function loadGeminiApiKey(): Promise<string> {
-  return localStorage.getItem(GEMINI_API_KEY) ?? '';
-}
-
-export async function saveGeminiApiKey(key: string): Promise<void> {
-  localStorage.setItem(GEMINI_API_KEY, key.trim());
-}
-
-export async function clearGeminiApiKey(): Promise<void> {
-  localStorage.removeItem(GEMINI_API_KEY);
+/** Removes the obsolete browser-stored Gemini key after the backend migration. */
+export function clearLegacyGeminiApiKey(): void {
+  localStorage.removeItem(LEGACY_GEMINI_API_KEY);
 }

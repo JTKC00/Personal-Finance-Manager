@@ -1,8 +1,9 @@
-const http = require('node:http');
-const fs = require('node:fs');
-const path = require('node:path');
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 
-const ROOT = __dirname;
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MAX_BODY_BYTES = 24 * 1024 * 1024;
 
 function loadLocalEnv() {
@@ -29,7 +30,7 @@ const GEMINI_FALLBACK_MODELS = parseModelList(process.env.GEMINI_FALLBACK_MODELS
   .filter(model => model !== GEMINI_MODEL);
 const GEMINI_MODELS = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS];
 const GEMINI_MAX_ATTEMPTS_PER_MODEL = readPositiveInt('GEMINI_MAX_ATTEMPTS_PER_MODEL', 3);
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim();
 
 function readPositiveInt(name, fallback) {
   const value = Number(process.env[name]);
@@ -155,7 +156,7 @@ async function requestGeminiWithFallback(apiKey, payload) {
           model,
           attempt,
           status: error.status,
-          reason: error.message
+          reason: 'Gemini request failed'
         }));
 
         if (!isTransientGeminiStatus(error.status)) throw error;
@@ -173,11 +174,10 @@ async function handleOcr(req, res) {
   try {
     const body = await readJsonBody(req);
     const {imageBase64, mimeType = 'image/jpeg', today = new Date().toISOString().slice(0, 10)} = body;
-    const userKey = (req.headers['x-gemini-api-key'] || body.geminiApiKey || '').toString().trim();
-    const apiKey = userKey || GEMINI_API_KEY;
+    const apiKey = GEMINI_API_KEY;
 
     if (!apiKey) {
-      sendJson(res, 400, {error: 'Gemini API key is required'});
+      sendJson(res, 500, {error: 'Server configuration error'});
       return;
     }
 
@@ -209,8 +209,7 @@ async function handleOcr(req, res) {
   } catch (error) {
     const status = Number.isFinite(error.status) ? error.status : 500;
     sendJson(res, status, {
-      error: error.message ? `Gemini request failed: ${error.message}` : 'OCR failed',
-      detail: error.detail
+      error: status === 500 ? 'OCR failed' : 'Gemini request failed'
     });
   }
 }
@@ -224,7 +223,7 @@ const server = http.createServer((req, res) => {
   // 處理瀏覽器的 CORS preflight 請求 (OPTIONS)
   res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, x-gemini-api-key');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Firebase-AppCheck');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);

@@ -140,7 +140,7 @@ async function requestGeminiWithFallback(apiKey: string, payload: GeminiPayload)
           model,
           attempt,
           status: error.status,
-          reason: error.message,
+          reason: 'Gemini request failed',
         });
 
         if (!isTransientGeminiStatus(error.status)) throw error;
@@ -269,13 +269,19 @@ export const ocr = onRequest(
   {
     secrets: [geminiApiKey],
     invoker: 'public',    // 允許 Firebase Hosting rewrite 呼叫（v2 函式預設需要 IAM 驗證）
-    cors: true,           // 允許瀏覽器跨域呼叫
+    cors: false,
     maxInstances: 3,      // 控制最大並發，避免超出免費額度
     memory: '256MiB',
     timeoutSeconds: 60,
   },
   async (req, res) => {
     const startedAt = Date.now();
+
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Firebase-AppCheck',
+    });
 
     if (req.method === 'OPTIONS') {
       res.status(204).send('');
@@ -343,12 +349,11 @@ export const ocr = onRequest(
       }
 
       const { imageBase64, mimeType = 'image/jpeg', today = new Date().toISOString().slice(0, 10) } = body;
-      // 優先用用戶自己的 key，否則用 Cloud Secret
-      const apiKey = (body.geminiApiKey || '').toString().trim() || geminiApiKey.value();
+      const apiKey = geminiApiKey.value().trim();
 
       if (!apiKey) {
         logOcrEvent('api_key_missing', {uid, durationMs: Date.now() - startedAt});
-        res.status(400).json({ error: 'Gemini API key is required' });
+        res.status(500).json({ error: 'Server configuration error' });
         return;
       }
       if (!imageBase64) {
@@ -397,12 +402,11 @@ export const ocr = onRequest(
           uid,
           model: error.model,
           status: error.status,
-          reason: error.message,
+          reason: 'Gemini request failed',
           durationMs: Date.now() - startedAt,
         });
         res.status(error.status).json({
-          error: `Gemini request failed: ${error.message}`,
-          detail: error.detail,
+          error: 'Gemini request failed',
         });
         return;
       }

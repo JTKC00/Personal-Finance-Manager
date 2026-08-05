@@ -4,7 +4,6 @@ import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {expenseCategories, incomeCategories, paymentMethods} from '../constants/categories';
 import {OcrUsageStatus, loadOcrUsageStatus, scanReceipt} from '../services/ocr';
-import {loadGeminiApiKey} from '../services/secrets';
 import {
   loadGoals,
   saveTransactionWithGoalLink,
@@ -161,8 +160,7 @@ export function TransactionScreen() {
     await upsertReceipt({id, imageUri: filename, status: 'processing', createdAt: new Date().toISOString()});
 
     try {
-      const geminiApiKey = await loadGeminiApiKey();
-      const result = await scanReceipt(imageBase64, mimeType, geminiApiKey);
+      const result = await scanReceipt(imageBase64, mimeType);
       const lowFields = [
         !result.amount ? 'amount' : '',
         !expenseCategories.includes(result.category) ? 'category' : '',
@@ -191,13 +189,8 @@ export function TransactionScreen() {
       });
       const errMsg = error instanceof Error ? error.message : 'unknown';
       await trackEvent('ocr_scan_fail', {reason: errMsg});
-      const needsKey = /key is required|api key/i.test(errMsg);
       await refreshOcrUsage();
-      showToast(
-        needsKey
-          ? '請先到「我的帳戶」輸入 Gemini API Key 後再試'
-          : `OCR 服務連線失敗，請手動輸入（${errMsg}）`
-      );
+      showToast(`OCR 服務連線失敗，請手動輸入（${errMsg}）`);
     } finally {
       setScanning(false);
     }

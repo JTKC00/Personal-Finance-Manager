@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from './secrets';
+import {clearLegacyGeminiApiKey} from './secrets';
 
 function createLocalStorageStub() {
   const store = new Map<string, string>();
@@ -16,7 +16,7 @@ function createLocalStorageStub() {
 
 const STORAGE_KEY = 'fin_gemini_api_key';
 
-describe('Gemini API key storage', () => {
+describe('legacy Gemini API key cleanup', () => {
   let storage: ReturnType<typeof createLocalStorageStub>;
 
   beforeEach(() => {
@@ -28,26 +28,13 @@ describe('Gemini API key storage', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns an empty string when no key is stored', async () => {
-    expect(await loadGeminiApiKey()).toBe('');
-  });
+  it('removes the legacy key without creating another value', () => {
+    storage.setItem(STORAGE_KEY, 'to-be-removed');
+    const setItem = vi.spyOn(storage, 'setItem');
 
-  it('saves and loads the key', async () => {
-    await saveGeminiApiKey('secret-key');
+    clearLegacyGeminiApiKey();
 
-    expect(await loadGeminiApiKey()).toBe('secret-key');
-  });
-
-  it('trims surrounding whitespace before saving', async () => {
-    await saveGeminiApiKey('  spaced-key  ');
-
-    expect(storage.getItem(STORAGE_KEY)).toBe('spaced-key');
-  });
-
-  it('clears the stored key', async () => {
-    await saveGeminiApiKey('to-be-removed');
-    await clearGeminiApiKey();
-
-    expect(await loadGeminiApiKey()).toBe('');
+    expect(storage.getItem(STORAGE_KEY)).toBeNull();
+    expect(setItem).not.toHaveBeenCalled();
   });
 });

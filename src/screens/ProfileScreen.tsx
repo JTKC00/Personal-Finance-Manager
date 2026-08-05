@@ -6,20 +6,10 @@ import {useAuth} from '../contexts/AuthContext';
 import {expenseCategories} from '../constants/categories';
 import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authErrors';
 import {ThemeMode, applyThemeMode, getStoredThemeMode} from '../services/appearance';
-import {clearGeminiApiKey, loadGeminiApiKey, saveGeminiApiKey} from '../services/secrets';
 import {daysSinceBackup, getLastBackupAt, markBackupDone} from '../services/backupReminder';
 import {getCurrentMonthKey, loadAccounts, loadAllBudgetMonths, loadBudgetMonth, loadBudgets, loadGoals, loadReceipts, loadSubscriptions, loadTransactions, loadTransfers, saveCurrentMonthBudgets} from '../services/storage';
 import {Receipt} from '../types/finance';
 import styles from './ProfileScreen.module.css';
-
-const STEPS = [
-  {num: '1', title: '打開 Google AI Studio', desc: '點下方按鈕，或在瀏覽器輸入 aistudio.google.com'},
-  {num: '2', title: '登入 Google 帳號', desc: '用平時用的 Gmail 帳號登入即可，不需要信用卡。'},
-  {num: '3', title: '點「Get API key」', desc: '在頁面左側邊欄或首頁找到「Get API key」按鈕，點進去。'},
-  {num: '4', title: '建立新 Key', desc: '點「Create API key」，選擇任意 Google Cloud 專案（或讓系統自動建立一個），再點「Create」。'},
-  {num: '5', title: '複製 Key', desc: '畫面會顯示一串以「AIza」開頭的金鑰，點「複製」圖示。'},
-  {num: '6', title: '貼到下方輸入欄', desc: '回到這個 App，把剛才複製的 Key 貼到「Gemini API Key」欄位，按「儲存 Key」。'},
-];
 
 function validatePasswordStrength(pw: string): string {
   if (pw.length < 8) return '密碼最少 8 個字元';
@@ -32,10 +22,7 @@ function validatePasswordStrength(pw: string): string {
 export function ProfileScreen() {
   const navigate = useNavigate();
   const {user, signOut, linkGoogle, changePassword, authError, clearAuthError} = useAuth();
-  const [keyInput, setKeyInput] = useState('');
-  const [hasKey, setHasKey] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredThemeMode());
-  const [tutorialOpen, setTutorialOpen] = useState(false);
   const [budgetEdits, setBudgetEdits] = useState<Record<string, string>>(() =>
     Object.fromEntries(expenseCategories.map(c => [c, '']))
   );
@@ -57,12 +44,6 @@ export function ProfileScreen() {
     setTimeout(() => setToast(''), 2500);
   }
 
-  const refreshKeyState = useCallback(async () => {
-    const key = await loadGeminiApiKey();
-    setHasKey(Boolean(key));
-    setKeyInput('');
-  }, []);
-
   const refreshBudgets = useCallback(async () => {
     const data = (await loadBudgetMonth(getCurrentMonthKey())) ?? {};
     setBudgetEdits(Object.fromEntries(
@@ -70,7 +51,7 @@ export function ProfileScreen() {
     ));
   }, []);
 
-  useEffect(() => { refreshKeyState(); refreshBudgets(); }, [refreshKeyState, refreshBudgets]);
+  useEffect(() => { refreshBudgets(); }, [refreshBudgets]);
 
   useEffect(() => {
     if (!authError || authError === handledAuthErrorRef.current) return;
@@ -98,25 +79,6 @@ export function ProfileScreen() {
     applyThemeMode(mode);
     setThemeMode(mode);
     showToast(mode === 'dark' ? '已切換至黑色模式。' : '已切換至白色模式。');
-  }
-
-  async function saveKey() {
-    const key = keyInput.trim();
-    if (!key) {
-      showToast('請輸入 Gemini API Key');
-      return;
-    }
-    await saveGeminiApiKey(key);
-    setHasKey(true);
-    setKeyInput('');
-    showToast('Gemini API Key 已安全儲存在本機。');
-  }
-
-  async function clearKey() {
-    await clearGeminiApiKey();
-    setHasKey(false);
-    setKeyInput('');
-    showToast('本機 Gemini API Key 已清除。');
   }
 
   async function saveBudgets() {
@@ -268,7 +230,7 @@ export function ProfileScreen() {
   }
 
   return (
-    <Screen title="我的帳戶" subtitle="帳號、密碼、Gemini Key 與設定">
+    <Screen title="我的帳戶" subtitle="帳號、密碼與設定">
       <Card title="帳號">
         <p className={styles.body}>目前登入：{user?.email}</p>
         {isEmailUser && !hasGoogleLinked ? (
@@ -363,59 +325,6 @@ export function ProfileScreen() {
           <p className={styles.body}>此帳戶目前使用 Google 登入，密碼需在 Google 帳戶中管理。</p>
         </Card>
       )}
-
-      <Card title="如何取得免費 Gemini API Key？">
-        <p className={styles.body}>
-          OCR 功能使用 Google Gemini AI，需要一個免費的 API Key。申請只需 2 分鐘，完全免費，有免費使用額度。
-        </p>
-        <button className={styles.tutorialToggle} onClick={() => setTutorialOpen(v => !v)}>
-          {tutorialOpen ? '▲ 收起教學' : '▼ 展開步驟教學'}
-        </button>
-        {tutorialOpen ? (
-          <div className={styles.steps}>
-            {STEPS.map(step => (
-              <div key={step.num} className={styles.stepRow}>
-                <span className={styles.stepBadge}>{step.num}</span>
-                <div className={styles.stepContent}>
-                  <strong className={styles.stepTitle}>{step.title}</strong>
-                  <p className={styles.stepDesc}>{step.desc}</p>
-                </div>
-              </div>
-            ))}
-            <a
-              href="https://aistudio.google.com/apikey"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.linkBtn}
-            >
-              🔗 前往 Google AI Studio 申請 Key
-            </a>
-            <p className={styles.freeNote}>
-              ✅ 免費方案每天可使用 500 次 Gemini Flash 請求，個人日常記帳完全夠用。
-            </p>
-          </div>
-        ) : null}
-      </Card>
-
-      <Card title="Gemini API Key">
-        <p className={styles.body}>
-          取得 Key 後，貼到下方儲存。Key 會存在你的瀏覽器本機；掃描收據時，App 會把 Key 傳到你設定的 OCR 代理服務用來呼叫 Gemini。
-        </p>
-        <p className={styles.status}>{hasKey ? '狀態：已設定本機 Key ✓' : '狀態：尚未設定本機 Key'}</p>
-        <input
-          autoCapitalize="none"
-          autoCorrect="off"
-          type="password"
-          onChange={e => setKeyInput(e.target.value)}
-          placeholder="貼上自己的 Gemini API Key"
-          className={styles.input}
-          value={keyInput}
-        />
-        <div className={styles.actionRow}>
-          <button className={styles.primaryBtn} onClick={saveKey}>儲存 Key</button>
-          <button className={styles.secondaryBtn} onClick={clearKey}>清除 Key</button>
-        </div>
-      </Card>
 
       <Card title="月預算設定">
         <p className={styles.body}>設定每月各分類的預算，Dashboard 會顯示實際支出與預算的對比進度。</p>

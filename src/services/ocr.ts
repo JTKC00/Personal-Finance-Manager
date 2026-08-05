@@ -42,7 +42,7 @@ export async function loadOcrUsageStatus(): Promise<OcrUsageStatus> {
   return response.json();
 }
 
-export async function scanReceipt(imageBase64: string, mimeType = 'image/jpeg', geminiApiKey = ''): Promise<OcrResult> {
+export async function scanReceipt(imageBase64: string, mimeType = 'image/jpeg'): Promise<OcrResult> {
   const headers = await getAuthHeaders();
   const response = await fetch(OCR_ENDPOINT, {
     method: 'POST',
@@ -53,8 +53,7 @@ export async function scanReceipt(imageBase64: string, mimeType = 'image/jpeg', 
     body: JSON.stringify({
       imageBase64,
       mimeType,
-      today: formatDateKey(new Date()),
-      geminiApiKey
+      today: formatDateKey(new Date())
     })
   });
 

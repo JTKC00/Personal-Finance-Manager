@@ -198,12 +198,6 @@
   margin-bottom: var(--spacing-sm);
 }
 
-.actionRow {
-  display: flex;
-  gap: var(--spacing-sm);
-  margin-top: var(--spacing-sm);
-}
-
 .themeToggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -279,89 +273,6 @@
 
 .dangerBtn:hover {
   background: rgba(176,32,32,0.06);
-}
-
-.tutorialToggle {
-  display: block;
-  background: transparent;
-  border: none;
-  color: var(--color-text-muted);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 4px 0;
-  margin-bottom: var(--spacing-sm);
-}
-
-.steps {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-md);
-}
-
-.stepRow {
-  display: flex;
-  gap: var(--spacing-md);
-  align-items: flex-start;
-}
-
-.stepBadge {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  border-radius: var(--radius-full);
-  background: var(--color-primary);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.stepContent {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.stepTitle {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.stepDesc {
-  font-size: 13px;
-  color: var(--color-text-muted);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.linkBtn {
-  display: block;
-  text-align: center;
-  padding: 10px;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  color: var(--color-text);
-  font-weight: 600;
-  font-size: 14px;
-  text-decoration: none;
-  margin-top: var(--spacing-sm);
-}
-
-.linkBtn:hover {
-  background: var(--color-surface-muted);
-  border-color: var(--color-text-muted);
-}
-
-.freeNote {
-  font-size: 13px;
-  color: var(--color-text-muted);
-  line-height: 1.5;
-  margin: 0;
 }
 
 .toast {

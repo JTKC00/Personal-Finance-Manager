@@ -23,7 +23,7 @@
 
 ### OCR、訂閱與目標
 
-- 收據 OCR：登入後可上傳或拍攝收據圖片，由 Cloud Function 呼叫 Gemini 解析金額、日期、分類和備註。
+- 收據 OCR：登入後可上傳或拍攝收據圖片；前端經 `/api/ocr` backend proxy 呼叫 Cloud Function，再由後端以 Firebase Secret Manager 的 Gemini secret 解析金額、日期、分類和備註。使用者不需要、也不能輸入或傳送 Gemini API key。
 - 訂閱管理：追蹤週期性支出、下一次付款日、試用結束日和提醒天數。
 - 儲蓄目標：建立目標、記錄存入/提取，並可連結支出交易。
 
@@ -32,7 +32,7 @@
 - 帳戶與轉帳：管理現金、銀行、錢包和信用卡帳戶，並記錄帳戶間轉帳。
 - Firebase Authentication：支援 Google 和 Email/Password 登入。
 - Firestore：以登入使用者為單位儲存資料。
-- App Check：可選擇啟用 reCAPTCHA v3 token 驗證以保護 OCR Function。
+- App Check：可選擇啟用 reCAPTCHA v3 token 驗證以保護 OCR Function；後端啟用強制驗證後，沒有有效 token 的請求會被拒絕。
 - PWA：支援 manifest、service worker 和離線快取。
 
 ---
@@ -136,7 +136,7 @@ npm --prefix functions install
 copy .env.example .env
 ```
 
-然後打開 `.env`，填入 Firebase Web App 設定。`.env` 已被 `.gitignore` 排除，不應提交到 Git。
+然後打開 `.env`，填入 Firebase Web App 設定；若要執行本機 OCR proxy，亦需填入供 `server.js` 在後端讀取的 `GEMINI_API_KEY`。`.env` 已被 `.gitignore` 排除，不應提交到 Git。
 
 ---
 
@@ -157,13 +157,15 @@ copy .env.example .env
 | `VITE_FIREBASE_APPCHECK_SITE_KEY` | Firebase App Check reCAPTCHA v3 site key，可選 |
 | `VITE_FIREBASE_APPCHECK_DEBUG_TOKEN` | 本機 App Check debug token，可選；不要提交真實 token |
 
-Functions OCR 使用 Firebase Secret Manager：
+Production OCR 的 Gemini API key 只由 Cloud Function 使用 Firebase Secret Manager 讀取；不要把它放進 `VITE_` 前端環境變數、瀏覽器儲存空間或請求內容。部署 Functions 前，以有 Firebase project 權限的帳戶設定 secret：
 
 ```powershell
 firebase functions:secrets:set GEMINI_API_KEY
 ```
 
-Cloud Function 也支援以下 quota 設定，未設定時會使用預設值：
+輸入 secret 值後，再部署 Functions；前端只會透過 `/api/ocr` backend proxy 呼叫 OCR，不會接觸這個 key。
+
+Cloud Function 也支援以下 OCR 每日配額設定；這些是本專案後端的預設限制，不是 Gemini 的免費額度或服務方案承諾。每日上限同時套用於每位登入使用者及全站，任何一項用完都會拒絕新的 OCR 請求：
 
 | 變數 | 預設 | 說明 |
 |---|---:|---|
@@ -195,10 +197,11 @@ npm run dev
 http://localhost:5173
 ```
 
-本機 OCR 開發有兩種方式：
+本機 OCR 開發有三種方式；三者都需要登入帳戶取得 Firebase ID token，且不能改為由使用者提供 Gemini key：
 
 - 使用已部署的 Cloud Function：在 `.env` 設定 `VITE_OCR_PROXY_URL`。
 - 使用 Firebase Hosting rewrite：部署後 production 會透過 `/api/ocr` 轉發到 Cloud Function。
+- 使用 `npm run prototype` 啟動本地 backend proxy 時，`server.js` 會從未提交的 `.env` 讀取 `GEMINI_API_KEY`；key 仍不會送到瀏覽器。
 
 ---
 
@@ -362,11 +365,11 @@ firebase projects:list
 
 ### OCR 回傳 401
 
-OCR Cloud Function 需要 Firebase ID token。請確認使用者已登入，前端才會把 token 放入 `Authorization: Bearer <token>`。
+OCR Cloud Function 需要 Firebase ID token。請確認使用者已登入，前端才會把 token 放入 `Authorization: Bearer <token>`。如果後端已設定 `REQUIRE_APP_CHECK=true`，也要確認前端已設定有效的 App Check site key，並能送出 `X-Firebase-AppCheck` token。
 
 ### OCR 回傳 429
 
-代表達到每日 quota。預設每人每日 20 次，全站每日 50 次。
+代表已達到後端設定的每日配額：每位使用者和全站配額會同時檢查，任一上限耗盡便不能再掃描，須待下一個每日週期或由維護者調整 Functions 設定。實際上限請以部署中的 `OCR_DAILY_LIMIT_PER_USER` 與 `OCR_DAILY_LIMIT_GLOBAL` 為準。
 
 ### 本機 build 可以，但 deploy 失敗
 
