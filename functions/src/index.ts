@@ -11,7 +11,7 @@ const db = getFirestore();
 // 把 Gemini API Key 存在 Cloud Secret Manager（安全，不會寫死在 code 裡）
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 const GEMINI_FALLBACK_MODELS = parseModelList(process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.1-flash-lite,gemini-2.5-flash')
   .filter(model => model !== GEMINI_MODEL);
 const GEMINI_MODELS = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS];
@@ -48,7 +48,6 @@ type GeminiPayload = {
     >;
   }>;
   generationConfig: {
-    temperature: number;
     response_mime_type: string;
   };
 };
@@ -372,7 +371,6 @@ export const ocr = onRequest(
           ]
         }],
         generationConfig: {
-          temperature: 0,
           response_mime_type: 'application/json',
         },
       };

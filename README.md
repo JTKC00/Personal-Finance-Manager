@@ -172,7 +172,7 @@ Cloud Function 也支援以下 OCR 每日配額設定；這些是本專案後端
 | `OCR_DAILY_LIMIT_PER_USER` | 20 | 每位使用者每日 OCR 次數 |
 | `OCR_DAILY_LIMIT_GLOBAL` | 50 | 全站每日 OCR 次數 |
 | `REQUIRE_APP_CHECK` | `false` | 設為 `true` 時，OCR Function 會強制驗證 `X-Firebase-AppCheck` |
-| `GEMINI_MODEL` | `gemini-3.5-flash` | OCR 主要使用的 Gemini model |
+| `GEMINI_MODEL` | `gemini-3.6-flash` | OCR 主要使用的 Gemini model |
 | `GEMINI_FALLBACK_MODELS` | `gemini-3.1-flash-lite,gemini-2.5-flash` | 主要 model 回 429/5xx 時依序 fallback 的 models |
 | `GEMINI_MAX_ATTEMPTS_PER_MODEL` | 3 | 每個 model 對 transient failure 的重試次數 |
 
