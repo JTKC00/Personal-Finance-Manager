@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {
   buildBudgetRows,
+  calculateAccountBalance,
   calculateBudgetUsage,
   compareBudgetToActual,
   formatDateKey,
@@ -12,12 +13,14 @@ import {
   getNextSubscriptionBillingDate,
   getSubscriptionChargesForMonth,
   normalizeGoal,
+  normalizeCurrency,
   resolveBudgetMonth,
   sumExpensesByCategory,
   sumSubscriptionChargesByCategory,
+  summarizeTransactionsByCurrency,
   type SubscriptionCharge,
 } from './financeLogic';
-import type {Goal, GoalDeposit, Subscription, Transaction} from '../types/finance';
+import type {Account, Goal, GoalDeposit, Subscription, Transaction, Transfer} from '../types/finance';
 
 function makeSubscription(patch: Partial<Subscription> = {}): Subscription {
   return {
@@ -117,6 +120,26 @@ describe('sumExpensesByCategory', () => {
 
     expect(sumExpensesByCategory(transactions.filter(t => t.type === 'expense')))
       .toEqual(sumExpensesByCategory(transactions));
+  });
+});
+
+describe('currency-safe summaries', () => {
+  it('never adds different currencies into the same total', () => {
+    const summaries = summarizeTransactionsByCurrency([
+      makeTransaction({id: 'hkd-expense', amount: 100, currency: 'HKD'}),
+      makeTransaction({id: 'usd-expense', amount: 100, currency: 'USD'}),
+      makeTransaction({id: 'hkd-income', type: 'income', amount: 250, currency: 'hkd'}),
+    ]);
+
+    expect(summaries).toEqual([
+      {currency: 'HKD', income: 250, expense: 100, balance: 150, count: 2},
+      {currency: 'USD', income: 0, expense: 100, balance: -100, count: 1},
+    ]);
+  });
+
+  it('normalizes currency codes and preserves the legacy HKD fallback', () => {
+    expect(normalizeCurrency(' usd ')).toBe('USD');
+    expect(normalizeCurrency('')).toBe('HKD');
   });
 });
 
@@ -315,7 +338,7 @@ describe('goal logic', () => {
     expect(getGoalSavedAmount(goal)).toBe(50);
   });
 
-  it('clamps saved amount to the target amount', () => {
+  it('keeps the ledger balance even when it exceeds the target', () => {
     const goal = getGoalWithSavedAmount(makeGoal({
       targetAmount: 500,
       deposits: [
@@ -324,7 +347,7 @@ describe('goal logic', () => {
       ]
     }));
 
-    expect(goal.savedAmount).toBe(500);
+    expect(goal.savedAmount).toBe(600);
   });
 
   it('rounds the summed amount to avoid floating-point drift', () => {
@@ -336,6 +359,45 @@ describe('goal logic', () => {
     });
 
     expect(getGoalSavedAmount(goal)).toBe(0.3);
+  });
+
+  it('migrates a legacy standalone savedAmount into a deterministic opening entry', () => {
+    const goal = getGoalWithSavedAmount(makeGoal({id: 'legacy', savedAmount: 450, deposits: undefined}));
+
+    expect(goal.savedAmount).toBe(450);
+    expect(goal.deposits).toEqual([expect.objectContaining({
+      id: 'legacy-legacy-opening-balance', amount: 450, type: 'deposit', note: '舊資料期初存款'
+    })]);
+  });
+
+  it('does not resurrect a removed final ledger entry from the derived cache', () => {
+    const goal = getGoalWithSavedAmount(makeGoal({savedAmount: 0, deposits: []}));
+
+    expect(goal.savedAmount).toBe(0);
+    expect(goal.deposits).toEqual([]);
+  });
+
+  it('uses account balance for linked goals and treats savedAmount as a derived cache', () => {
+    const goal = getGoalWithSavedAmount(makeGoal({
+      accountId: 'account-1',
+      savedAmount: 5000,
+      deposits: [{id: 'stale', amount: 5000, date: '2026-01-01', type: 'deposit'}],
+    }), 4500);
+
+    expect(goal.savedAmount).toBe(4500);
+  });
+
+  it('derives account balance from initial balance and transfers', () => {
+    const account: Account = {
+      id: 'account-1', name: 'Savings', type: 'bank', initialBalance: 1000,
+      currency: 'HKD', createdAt: '2026-01-01T00:00:00.000Z'
+    };
+    const transfers: Transfer[] = [
+      {id: 'in', fromAccountId: null, toAccountId: account.id, amount: 500, date: '2026-01-02', createdAt: '2026-01-02T00:00:00.000Z'},
+      {id: 'out', fromAccountId: account.id, toAccountId: null, amount: 125, date: '2026-01-03', createdAt: '2026-01-03T00:00:00.000Z'},
+    ];
+
+    expect(calculateAccountBalance(account, transfers)).toBe(1375);
   });
 });
 

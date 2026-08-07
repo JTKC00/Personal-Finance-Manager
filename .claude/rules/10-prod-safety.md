@@ -33,22 +33,22 @@
 
 規則（全部強制）：
 1. **只加不改**：新需求用「新增可選欄位」解決；不改既有欄位的名稱、型別、語意，不改 id 格式。做不到 → 停下，把「為什麼做不到」帶給 James（全域 20-judgment R3）。
-2. **讀取端防禦**：新欄位在讀取端給 fallback，範本：financeLogic.ts 的 `normalizeGoal`（缺 id 補 id、缺 type 推斷 type）。
+2. **讀取端防禦**：新欄位在讀取端給 fallback，範本：financeLogic.ts 的 `normalizeGoal`（缺 id 補 id、缺 type 推斷 type；舊 standalone goal 只有 savedAmount 時補 deterministic 期初存款 entry）。
 3. **向後相容測試**：用「舊格式的假資料」寫一個 Vitest case，證明新碼讀舊資料不炸、數字正確。
 4. **migration（真的要改既有資料時）**：(a) 先問 James；(b) 先照 §5 做一次備份；(c) 寫唯讀 dry-run 腳本，列出「會改哪些文件、改成什麼」給 James 看；(d) 先跑 James 自己帳號的資料，smoke 過了再處理朋友的帳號；(e) 全程留紀錄。
 
-## §4 storage.ts／Functions／rules 的人工驗證（測試蓋不到的區域）
+## §4 storage.ts／Functions／rules 的驗證
 
-Vitest 不連 Firebase（README「檢查與 Build」節），所以這三處的改動要人工驗證，且要貼證據（做了什麼、看到什麼）——「理論上沒問題」不算（全域 20-judgment R2-b）：
-- **storage.ts**：本機 `npm run dev` + 登入 James 自己的帳號，把被改到的功能各操作一輪（建→讀→改→刪），用 `TEST-` 前綴的資料，做完刪掉。重點：寫入後**重新整理頁面**，資料還在且數字正確（排除只活在記憶體的假象）。
+一般 Vitest 不連 Firebase；`npm run test:integration` 會連本機 Auth／Firestore emulator，現已覆蓋 Account/Transfer、訂閱自動入帳、月度 Budget、Backup Restore。改到這四條時要更新整合測試並貼 emulator 真實執行證據；其他未覆蓋區域仍需補 emulator case 或人工驗證——「理論上沒問題」不算：
+- **storage.ts**：優先用 demo project emulator 做建→讀→改→刪與重新讀回。若改到 emulator 尚未覆蓋的 UI／離線／多裝置行為，再用本機 `npm run dev` 登入 James 自己帳號，以 `TEST-` 前綴人工驗證並清除測試資料。
 - **functions/（OCR）**：需要本機測 OCR 時，請 James 自己在 `.env` 填 `VITE_OCR_PROXY_URL`（只告訴他改哪個欄位，模型不開該檔——專案 CLAUDE.md 硬規則 5）；或部署後在正式站掃一張測試收據。
 - **firestore.rules**：原則上不要動（00-risks）。真要動：問 James → 只用 `--only firestore` 部署 → 立刻在 app 驗證兩人仍可正常讀寫 → git 歷史留著隨時回滾。
 
-## §5 備份／export（目前的最大缺口）
+## §5 備份／Restore
 
-現況（2026-07-05 更新）：app 內已有**手動**匯出——ProfileScreen `exportJsonBackup`/`exportCsv`（JSON 已含 accounts＋transfers），兩人可各自下載自己的資料存檔，選項 (1) 視為完成。但這是**手動、要使用者記得按**，仍無自動/排程備份、也還無「還原/匯入」；在兩人養成定期匯出習慣前，Firestore 實務上仍近乎唯一一份，下面的謹慎不變。
-- 選項（優先序）：(1) ✅ 已完成——app 內「匯出我的資料為 JSON/CSV」（純前端讀自己的資料下載，不碰別人資料、不需新權限，兩人各自可用）；後續強化：還原/匯入（restore，寫 production 屬高危，見 20-repo-map §backlog 待辦）；定期匯出提示已完成（2026-07-13：>30 天未備份 → Dashboard 提醒卡＋Profile 狀態行，backupReminder.ts）；(2) Firebase 官方 Firestore export——需要 GCS bucket，是否需要 Blaze 方案【UNVERIFIED，動手前先查官方文件】；(3) admin SDK 腳本——涉及 service account 金鑰，非必要不走（專案 CLAUDE.md 硬規則 5、6）。
-- 備份存在之前：一切「寫 production 資料」的操作標準自動提高一級——能不寫就不寫。
+現況（2026-08-07 更新）：app 內已有**手動**完整 JSON／CSV 匯出、30 日提醒，以及受控 Restore（schema 驗證 → 日期／數量 → 差異預覽 → 自動下載 pre-restore 現況備份 → 明確確認後取代）。Backup Restore 已有 Auth／Firestore emulator 整合測試；但備份仍是手動下載，沒有自動／排程備份。
+- 選項（優先序）：(1) ✅ 已完成——app 內完整 JSON 匯出與受控 Restore；定期匯出提示已完成；(2) Firebase 官方 Firestore export——需要 GCS bucket，是否需要 Blaze 方案【UNVERIFIED，動手前先查官方文件】；(3) admin SDK 腳本——涉及 service account 金鑰，非必要不走（專案 CLAUDE.md 硬規則 5、6）。
+- 自動／排程備份完成之前，一切「寫 production 資料」的操作仍先確認最近一次完整 JSON 備份可用；能不寫就不寫。
 
 ## §6 出事了怎麼辦（rollback）
 

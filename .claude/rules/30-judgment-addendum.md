@@ -38,7 +38,7 @@
 
 1. **先固定再現**：把出錯的輸入寫成最小 Vitest case（放對應 *.test.ts）。不能再現 → 先懷疑資料而非碼：本機 dev 登入看該筆 Firestore 文件實際長怎樣（欄位缺漏？舊格式？）。
 2. **由下而上定位**：money.ts（單元）→ financeLogic.ts（純邏輯）→ storage.ts（聚合＋IO）→ screen（顯示）。每層用 case 驗過才上一層。
-3. **對照地雷清單**（20-repo-map §地雷）：常見來源是 #4 幣別混加、#5 預算月份的殘餘限制（歷史自 2026-07 起、未儲存月無紀錄）、#6 目標雙重真相；**分類聚合**的裸浮點加總已修復（storage 75cf3f9、screens 2026-07-11；殘存一處純顯示的 AnalysisScreen 日長條裸加，下游取整、影響 ≤1 元，掛在 backlog #4），同型新犯仍是頭號嫌疑——新寫聚合一律先用 financeLogic 現成 helpers。
+3. **對照地雷清單**（20-repo-map §地雷）：常見來源是 #4 幣別混加、#5 預算月份的殘餘限制（歷史自 2026-07 起、未儲存月無紀錄）、#6 Goal canonical cache 被誤當輸入；**分類聚合**的裸浮點加總已修復（storage 75cf3f9、screens 2026-07-11；殘存一處純顯示的 AnalysisScreen 日長條裸加，下游取整、影響 ≤1 元，掛在 backlog），同型新犯仍是頭號嫌疑——新寫聚合一律先用 financeLogic 現成 helpers。
 4. **禁止**在 screen 層用 toFixed／四捨五入蓋掉下層的錯。✅ 正例：Dashboard 顯示 0.30000000000000004 → 往下找到漏用 sumMoney 的聚合處修掉。❌ 反例：在 JSX 裡 `.toFixed(2)` 了事——資料層還是錯的，下一個讀它的功能照樣炸。
 5. 兩種修法都失敗 → 全域 20-judgment R4（換路，禁止第三次原地重試）。
 

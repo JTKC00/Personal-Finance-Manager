@@ -3,6 +3,7 @@ import {Pencil, Trash2, Pause, Play} from 'lucide-react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {expenseCategories, paymentMethods} from '../constants/categories';
+import {useSubscriptionProcessing} from '../contexts/SubscriptionProcessingContext';
 import {
   deleteSubscription,
   getCurrentMonthKey,
@@ -10,11 +11,10 @@ import {
   getTransactionsByMonth,
   loadBudgetRows,
   loadSubscriptions,
-  processDueSubscriptions,
   trackEvent,
   upsertSubscription,
 } from '../services/storage';
-import {sumExpensesByCategory, sumSubscriptionChargesByCategory} from '../services/financeLogic';
+import {formatDateKey, sumExpensesByCategory, sumSubscriptionChargesByCategory} from '../services/financeLogic';
 import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Subscription, SubscriptionFrequency, Transaction} from '../types/finance';
 import styles from './TransactionScreen.module.css';
@@ -39,7 +39,7 @@ const frequencyLabels: Record<SubscriptionFrequency, string> = {
 };
 
 const formatMoney = (value: number) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => formatDateKey(new Date());
 
 function emptyDraft(): Draft {
   return {
@@ -63,6 +63,7 @@ function getDaysUntil(dateKey: string): number {
 
 export function SubscriptionsScreen() {
   const month = getCurrentMonthKey();
+  const {retry: processSubscriptions} = useSubscriptionProcessing();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
@@ -72,7 +73,7 @@ export function SubscriptionsScreen() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const created = await processDueSubscriptions();
+    const created = await processSubscriptions().catch(() => 0);
     const [nextSubscriptions, nextTransactions, nextBudgets] = await Promise.all([
       loadSubscriptions(),
       getTransactionsByMonth(month),
@@ -82,7 +83,7 @@ export function SubscriptionsScreen() {
     setTransactions(nextTransactions);
     setBudgets(nextBudgets);
     if (created > 0) showToast(`已自動補記 ${created} 筆訂閱支出。`);
-  }, [month]);
+  }, [month, processSubscriptions]);
 
   useEffect(() => { refresh(); }, [refresh]);
 

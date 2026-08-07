@@ -1,6 +1,6 @@
 import {getApps, initializeApp} from 'firebase/app';
-import {browserLocalPersistence, getAuth, setPersistence} from 'firebase/auth';
-import {initializeFirestore, persistentLocalCache} from 'firebase/firestore';
+import {browserLocalPersistence, connectAuthEmulator, getAuth, setPersistence} from 'firebase/auth';
+import {connectFirestoreEmulator, initializeFirestore, memoryLocalCache, persistentLocalCache} from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? '',
@@ -12,6 +12,7 @@ const firebaseConfig = {
 };
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+const useFirebaseEmulators = import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true';
 const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
 let appCheckPromise: Promise<import('firebase/app-check').AppCheck | null> | null = null;
 
@@ -19,8 +20,13 @@ export const auth = getAuth(app);
 setPersistence(auth, browserLocalPersistence);
 
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache()
+  localCache: useFirebaseEmulators ? memoryLocalCache() : persistentLocalCache()
 });
+
+if (useFirebaseEmulators) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9199', {disableWarnings: true});
+  connectFirestoreEmulator(db, '127.0.0.1', 8180);
+}
 
 async function loadAppCheck(): Promise<import('firebase/app-check').AppCheck | null> {
   if (!appCheckSiteKey) return null;

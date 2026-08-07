@@ -17,7 +17,7 @@
 
 ### 預算、分析與提醒
 
-- Dashboard 顯示本月收入、支出、餘額、近期交易、分類預算進度和支出提醒。
+- Dashboard 以 HKD 作第一階段基準幣別，顯示本月收入、支出、餘額、分類預算進度和支出提醒；其他 currency 保留原額分開列示，不會混加或作隱含匯率換算。
 - 分析報表以 Recharts 顯示支出分類分佈、趨勢和分類變化。
 - 月預算可按支出分類設定，供 Dashboard 和訂閱頁面計算使用。
 
@@ -25,11 +25,11 @@
 
 - 收據 OCR：登入後可上傳或拍攝收據圖片；前端經 `/api/ocr` backend proxy 呼叫 Cloud Function，再由後端以 Firebase Secret Manager 的 Gemini secret 解析金額、日期、分類和備註。使用者不需要、也不能輸入或傳送 Gemini API key。
 - 訂閱管理：追蹤週期性支出、下一次付款日、試用結束日和提醒天數。
-- 儲蓄目標：建立目標、記錄存入/提取，並可連結支出交易。
+- 儲蓄目標採單一真相規則：未連帳戶時以 `deposits[]` ledger 為準；連結帳戶時以該帳戶的 `initialBalance + transfers` 為準。`savedAmount` 只保留為相容性 derived cache，不能直接編輯。舊目標只有 `savedAmount` 時會轉成確定性的期初存款記錄。
 
 ### 帳戶、安全與 PWA
 
-- 帳戶與轉帳：管理現金、銀行、錢包和信用卡帳戶，並記錄帳戶間轉帳。
+- 帳戶與轉帳：管理現金、銀行、錢包和信用卡帳戶，並記錄帳戶間轉帳；`Account.currency` 是該帳戶的基準幣別，不同 currency 的交易會在寫入前被拒絕。
 - Firebase Authentication：支援 Google 和 Email/Password 登入。
 - Firestore：以登入使用者為單位儲存資料。
 - App Check：可選擇啟用 reCAPTCHA v3 token 驗證以保護 OCR Function；後端啟用強制驗證後，沒有有效 token 的請求會被拒絕。
@@ -243,7 +243,23 @@ Watch 模式：
 npm run test:watch
 ```
 
-目前測試以 Vitest 覆蓋不含副作用的純邏輯，例如訂閱扣款日期、目標金額、預算用量、月份 helper，以及登入錯誤訊息對應（`authErrors`）；測試不會連接 production Firebase、Auth、Cloud Functions、Gemini 或 OCR endpoint。
+Auth／Firestore emulator 整合測試（需要 Java 21 或以上）：
+
+```powershell
+npm run test:integration
+```
+
+整合測試會啟動本機 Firebase Authentication 與 Cloud Firestore emulator，使用 `demo-personal-finance-manager` 隔離專案，實際走 Web SDK、登入狀態、Security Rules、Firestore transaction／batch 與讀回驗證。目前覆蓋：
+
+- 新增 Account 交易並建立／讀回對應 Transfer
+- Dashboard 月度摘要只聚合指定基準幣別，不把 HKD 與 USD 相加
+- 交易 currency 必須與所連結帳戶的基準幣別一致，失敗時不留下半筆交易
+- Goal canonical ledger：舊 savedAmount 遷移、Account/Transfer 入金與扣款、刪除後餘額一致
+- 訂閱到期自動入帳、日期推進及重跑去重
+- 當月 Budget 同步寫入 `meta/budgets` 與 `budgetMonths/{month}`
+- 完整 Backup Restore，包括取代、刪除缺席文件及資料指紋對拍
+
+純邏輯 Vitest 仍不連外；整合測試只連本機 emulator，明確不會接觸 production Firebase。Cloud Functions、Gemini 與 OCR endpoint 的實際行為目前仍未納入自動整合測試。
 
 一次跑完整本機檢查：
 
@@ -251,13 +267,13 @@ npm run test:watch
 npm run verify
 ```
 
-`npm run verify` 會依序執行 typecheck、lint、Vitest 測試、前端 build 和 Functions build。
+`npm run verify` 會依序執行 typecheck、lint、純邏輯 Vitest、Auth／Firestore emulator 整合測試、前端 build 和 Functions build。
 
 Vite build 可能會顯示 chunk size warning。這通常是效能提示，不代表 build 失敗；目前 app 已使用 route lazy loading，若要進一步優化，可再拆分 vendor chunks 或檢查大型依賴的載入時機。
 
 ### 持續整合（CI）
 
-GitHub Actions（`.github/workflows/ci.yml`）會在 pull request 和 push 到 `main` 時自動執行 `npm run verify`。CI 只做驗證，不會部署，也不使用任何 secret、token 或 API key。`main` 已啟用 branch protection，PR 需 `Verify` 檢查通過才可合併。
+GitHub Actions（`.github/workflows/ci.yml`）會在 pull request 和 push 到 `main` 時以 Java 21 執行 `npm run verify`。CI 只啟動本機 emulator 做驗證，不會部署，也不使用任何 secret、token 或 API key。`main` 已啟用 branch protection，PR 需 `Verify` 檢查通過才可合併。
 
 ### 依賴維護（Dependabot）
 

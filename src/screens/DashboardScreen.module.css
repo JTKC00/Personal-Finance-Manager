@@ -5,6 +5,77 @@
   margin-bottom: var(--spacing-md);
 }
 
+.currencyScope,
+.foreignCurrencyNotice {
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 4px;
+  line-height: 1.5;
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.currencyScope {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.currencyScope strong,
+.foreignCurrencyNotice strong {
+  color: var(--color-text);
+}
+
+.foreignCurrencyNotice {
+  background: rgba(146, 87, 12, 0.08);
+  border: 1px solid rgba(146, 87, 12, 0.22);
+  color: var(--color-text-muted);
+}
+
+.subscriptionError {
+  align-items: flex-start;
+  background: rgba(176, 32, 32, 0.08);
+  border: 1px solid rgba(176, 32, 32, 0.28);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+}
+
+.subscriptionErrorTitle {
+  color: var(--color-danger);
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.subscriptionErrorReason {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.retryButton {
+  background: var(--color-danger);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 12px;
+}
+
+.retryButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .metric {
   background: var(--color-surface);
   border: 1px solid var(--color-border);

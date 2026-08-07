@@ -2,6 +2,7 @@
 import {useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
+import {useSubscriptionProcessing} from '../contexts/SubscriptionProcessingContext';
 import {
   getCurrentMonthKey,
   getMonthlySummary,
@@ -11,7 +12,13 @@ import {
   loadGoals,
   loadSubscriptions,
 } from '../services/storage';
-import {sumExpensesByCategory, sumSubscriptionChargesByCategory} from '../services/financeLogic';
+import {
+  formatDateKey,
+  normalizeCurrency,
+  sumExpensesByCategory,
+  sumSubscriptionChargesByCategory,
+  summarizeTransactionsByCurrency,
+} from '../services/financeLogic';
 import {getLastBackupAt, isBackupOverdue} from '../services/backupReminder';
 import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Goal, Subscription, Transaction} from '../types/finance';
@@ -25,12 +32,15 @@ type Summary = {
 };
 
 const emptySummary: Summary = {income: 0, expense: 0, balance: 0, count: 0};
-const formatMoney = (value: number) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+const dashboardBaseCurrency = 'HKD';
+const formatMoney = (value: number, currency = dashboardBaseCurrency) =>
+  `${currency} ${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
 const clampPercent = (value: number) => Math.min(Math.max(value, 0), 1);
 
 export function DashboardScreen() {
   const navigate = useNavigate();
+  const {error: subscriptionProcessingError, processing: subscriptionsProcessing, retry, revision} = useSubscriptionProcessing();
   const [summary, setSummary] = useState<Summary>(emptySummary);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
@@ -43,7 +53,7 @@ export function DashboardScreen() {
     let active = true;
     async function load() {
       const [nextSummary, nextTransactions, nextBudgets, nextGoals, nextSubscriptions] = await Promise.all([
-        getMonthlySummary(month),
+        getMonthlySummary(month, dashboardBaseCurrency),
         getTransactionsByMonth(month),
         loadBudgetRows(),
         loadGoals(),
@@ -63,7 +73,7 @@ export function DashboardScreen() {
     }
     load();
     return () => { active = false; };
-  }, [month]);
+  }, [month, revision]);
 
   const metrics: [string, string][] = [
     ['本月收入', formatMoney(summary.income)],
@@ -71,15 +81,18 @@ export function DashboardScreen() {
     ['結餘', formatMoney(summary.balance)],
     ['交易筆數', String(summary.count)]
   ];
+  const currencySummaries = summarizeTransactionsByCurrency(transactions);
+  const foreignCurrencySummaries = currencySummaries.filter(item => item.currency !== dashboardBaseCurrency);
   const monthlyBudget = sumMoney(budgets.map(item => item.amount));
-  const expenseTransactions = transactions.filter(item => item.type === 'expense');
+  const baseTransactions = transactions.filter(item => normalizeCurrency(item.currency) === dashboardBaseCurrency);
+  const expenseTransactions = baseTransactions.filter(item => item.type === 'expense');
   const upcomingSubscriptionCharges = getSubscriptionChargesForMonth(
     subscriptions,
     month,
     transactions,
-    new Date().toISOString().slice(0, 10),
+    formatDateKey(new Date()),
     true
-  );
+  ).filter(item => normalizeCurrency(item.subscription.currency) === dashboardBaseCurrency);
   const reservedSubscriptionTotal = sumMoney(upcomingSubscriptionCharges.map(item => item.amount));
   const projectedExpense = roundMoney(summary.expense + reservedSubscriptionTotal);
   const budgetProgress = monthlyBudget > 0 ? summary.expense / monthlyBudget : 0;
@@ -98,7 +111,7 @@ export function DashboardScreen() {
     .filter(item => item.targetAmount > 0)
     .sort((a, b) => (b.savedAmount / b.targetAmount) - (a.savedAmount / a.targetAmount))[0];
 
-  const categorySpending = sumExpensesByCategory(transactions);
+  const categorySpending = sumExpensesByCategory(baseTransactions);
   const categoryReserved = sumSubscriptionChargesByCategory(upcomingSubscriptionCharges);
 
   const categoryAlerts = budgets
@@ -131,6 +144,39 @@ export function DashboardScreen() {
           </div>
         ))}
       </div>
+
+      <div className={styles.currencyScope}>
+        <strong>Dashboard 基準幣別：{dashboardBaseCurrency}</strong>
+        <span>所有現金流、預算與提醒只計入 {dashboardBaseCurrency}，不作匯率換算。</span>
+      </div>
+
+      {foreignCurrencySummaries.length ? (
+        <div className={styles.foreignCurrencyNotice} role="status">
+          <strong>其他幣別未計入上述統計</strong>
+          {foreignCurrencySummaries.map(item => (
+            <span key={item.currency}>
+              {item.currency}：收入 {formatMoney(item.income, item.currency)}、支出 {formatMoney(item.expense, item.currency)}、{item.count} 筆
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {subscriptionProcessingError ? (
+        <div className={styles.subscriptionError} role="alert" aria-live="polite">
+          <div>
+            <p className={styles.subscriptionErrorTitle}>部分訂閱未能自動入帳</p>
+            <p className={styles.subscriptionErrorReason}>原因：{subscriptionProcessingError}</p>
+          </div>
+          <button
+            className={styles.retryButton}
+            type="button"
+            disabled={subscriptionsProcessing}
+            onClick={() => void retry().catch(() => undefined)}
+          >
+            {subscriptionsProcessing ? '重試中…' : '安全重試'}
+          </button>
+        </div>
+      ) : null}
 
       {backupOverdue ? (
         <Card title="🛡️ 該做備份了" action={{label: '去備份 ›', onClick: () => navigate('/profile')}}>
@@ -231,7 +277,7 @@ export function DashboardScreen() {
               <span className={styles.rowTitle}>{t.note || t.category}</span>
               <span className={styles.rowMeta}>{t.date} · 高於平均單筆支出</span>
             </div>
-            <span className={[styles.amount, styles.expense].join(' ')}>-{formatMoney(t.amount)}</span>
+            <span className={[styles.amount, styles.expense].join(' ')}>-{formatMoney(t.amount, normalizeCurrency(t.currency))}</span>
           </div>
         )) : largestExpense ? (
           <div className={styles.row}>
@@ -275,7 +321,7 @@ export function DashboardScreen() {
               <span className={styles.rowMeta}>{t.date} · {t.paymentMethod || '未指定付款方式'}</span>
             </div>
             <span className={[styles.amount, t.type === 'income' ? styles.income : styles.expense].join(' ')}>
-              {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
+              {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount, normalizeCurrency(t.currency))}
             </span>
           </div>
         )) : (

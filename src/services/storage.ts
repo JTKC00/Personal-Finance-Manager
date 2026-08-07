@@ -1,16 +1,18 @@
 import {
   buildBudgetRows,
+  calculateAccountBalance,
   formatDateKey,
   getCurrentMonthKey,
-  getGoalSavedAmount,
   getGoalWithSavedAmount,
   getNextMonthKey,
   getNextSubscriptionBillingDate,
   normalizeGoal,
+  normalizeCurrency,
   resolveBudgetMonth,
   sumExpensesByCategory,
 } from './financeLogic';
 import {roundMoney, sumMoney} from './money';
+import {FINANCE_BACKUP_VERSION, type FinanceBackup} from './financeBackup';
 export {
   getCurrentMonthKey,
   getNextSubscriptionBillingDate,
@@ -29,6 +31,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
+import type {DocumentData, DocumentReference} from 'firebase/firestore';
 import {Account, AnalyticsEvent, Budget, Goal, Receipt, Subscription, Transaction, Transfer} from '../types/finance';
 import {clean, db, getUid} from './firebase';
 
@@ -96,12 +99,22 @@ export async function deleteTransaction(id: string): Promise<void> {
   await deleteDoc(docRef(uid, 'transactions', id));
 }
 
+function assertAccountCurrency(transaction: Transaction, account: Account | undefined): asserts account is Account {
+  if (!account) throw new Error('找不到交易所連結的帳戶。');
+  const transactionCurrency = normalizeCurrency(transaction.currency);
+  const accountCurrency = normalizeCurrency(account.currency);
+  if (transactionCurrency !== accountCurrency) {
+    throw new Error(`交易幣別 ${transactionCurrency} 與帳戶基準幣別 ${accountCurrency} 不一致。`);
+  }
+}
+
 export async function saveTransactionWithGoalLink(
   transaction: Transaction,
   previous?: Transaction
 ): Promise<Transaction> {
   const uid = getUid();
   let savedTransaction: Transaction = {...transaction};
+  const accountGoalIdsToSync = new Set<string>();
 
   await runTransaction(db, async firestoreTransaction => {
     let nextTransaction: Transaction = {...transaction};
@@ -110,26 +123,61 @@ export async function saveTransactionWithGoalLink(
     const nextGoalRef = transaction.goalId && transaction.type === 'expense'
       ? docRef(uid, 'goals', transaction.goalId)
       : null;
-
     const previousGoalSnap = previousGoalRef ? await firestoreTransaction.get(previousGoalRef) : null;
     const nextGoalSnap = nextGoalRef ? await firestoreTransaction.get(nextGoalRef) : null;
+    const previousGoal = previousGoalSnap?.exists() ? normalizeGoal(previousGoalSnap.data() as Goal) : undefined;
+    const requestedGoal = nextGoalSnap?.exists() ? normalizeGoal(nextGoalSnap.data() as Goal) : undefined;
+    const targetAccountId = requestedGoal?.accountId || transaction.accountId;
+    const accountRef = targetAccountId ? docRef(uid, 'accounts', targetAccountId) : null;
+    const accountSnap = accountRef ? await firestoreTransaction.get(accountRef) : null;
 
-    if (previousGoalRef && previousGoalSnap?.exists() && previous?.linkedGoalEntryId) {
-      const previousGoal = normalizeGoal(previousGoalSnap.data() as Goal);
-      const previousDeposits = (previousGoal.deposits || []).filter(
-        item => item.id !== previous.linkedGoalEntryId
-      );
-      goalAfterPreviousRemoval = getGoalWithSavedAmount({
-        ...previousGoal,
-        deposits: previousDeposits
-      });
-      firestoreTransaction.set(previousGoalRef, clean(goalAfterPreviousRemoval));
+    if (accountRef) {
+      assertAccountCurrency(transaction, accountSnap?.exists() ? accountSnap.data() as Account : undefined);
+    }
+    if (requestedGoal?.accountId && transaction.accountId && transaction.accountId !== requestedGoal.accountId) {
+      throw new Error('交易帳戶與儲蓄目標連結的帳戶不一致。');
+    }
+
+    const setAccountTransfer = (goalId?: string) => {
+      if (!targetAccountId) return;
+      const transferId = previous?.linkedTransferId || transaction.linkedTransferId || `txn-${transaction.id}`;
+      const transfer: Transfer = {
+        id: transferId,
+        fromAccountId: transaction.type === 'expense' ? targetAccountId : null,
+        toAccountId: transaction.type === 'income' ? targetAccountId : null,
+        amount: Math.abs(transaction.amount),
+        date: transaction.date,
+        note: transaction.note || transaction.category,
+        transactionId: transaction.id,
+        goalId,
+        createdAt: previous?.createdAt || new Date().toISOString(),
+      };
+      nextTransaction = {...nextTransaction, accountId: targetAccountId, linkedTransferId: transferId};
+      firestoreTransaction.set(docRef(uid, 'transfers', transferId), clean(transfer));
+    };
+
+    if (previousGoalRef && previousGoal && previous?.linkedGoalEntryId) {
+      if (previousGoal.accountId) {
+        const previousTransferId = previous.linkedTransferId || previous.linkedGoalEntryId;
+        const nextTransferId = previous.linkedTransferId || transaction.linkedTransferId || `txn-${transaction.id}`;
+        const reusingTransfer = targetAccountId && previousTransferId === nextTransferId;
+        if (!reusingTransfer) firestoreTransaction.delete(docRef(uid, 'transfers', previousTransferId));
+        accountGoalIdsToSync.add(previousGoal.id);
+      } else {
+        const previousDeposits = (previousGoal.deposits || []).filter(
+          item => item.id !== previous.linkedGoalEntryId
+        );
+        goalAfterPreviousRemoval = getGoalWithSavedAmount({...previousGoal, deposits: previousDeposits, savedAmount: 0});
+        firestoreTransaction.set(previousGoalRef, clean(goalAfterPreviousRemoval));
+      }
       nextTransaction.linkedGoalEntryId = undefined;
     }
 
-    if (!nextGoalRef || !nextGoalSnap?.exists()) {
+    if (!nextGoalRef || !requestedGoal) {
       nextTransaction.goalId = undefined;
       nextTransaction.linkedGoalEntryId = undefined;
+      if (targetAccountId) setAccountTransfer();
+      else nextTransaction.linkedTransferId = undefined;
       firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
       savedTransaction = nextTransaction;
       return;
@@ -137,7 +185,17 @@ export async function saveTransactionWithGoalLink(
 
     const nextGoal = previous?.goalId === transaction.goalId && goalAfterPreviousRemoval
       ? goalAfterPreviousRemoval
-      : normalizeGoal(nextGoalSnap.data() as Goal);
+      : requestedGoal;
+
+    if (nextGoal.accountId) {
+      setAccountTransfer(nextGoal.id);
+      nextTransaction.linkedGoalEntryId = nextTransaction.linkedTransferId;
+      firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
+      accountGoalIdsToSync.add(nextGoal.id);
+      savedTransaction = nextTransaction;
+      return;
+    }
+
     const room = nextGoal.savedAmount;
     const appliedAmount = Math.min(Math.abs(transaction.amount), room);
     if (!appliedAmount) {
@@ -160,32 +218,42 @@ export async function saveTransactionWithGoalLink(
 
     firestoreTransaction.set(nextGoalRef, clean(getGoalWithSavedAmount({
       ...nextGoal,
-      deposits: [...(nextGoal.deposits || []), nextEntry],
-      savedAmount: Math.max(0, nextGoal.savedAmount - appliedAmount)
+      deposits: [...(nextGoal.deposits || []), nextEntry]
     })));
+    if (targetAccountId) setAccountTransfer();
     firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
     savedTransaction = nextTransaction;
   });
+
+  for (const goalId of accountGoalIdsToSync) await syncGoalSavedAmount(goalId);
 
   return savedTransaction;
 }
 
 export async function deleteTransactionWithGoalLink(transaction: Transaction): Promise<void> {
   const uid = getUid();
+  let accountGoalId: string | undefined;
   await runTransaction(db, async firestoreTransaction => {
     if (transaction.goalId && transaction.linkedGoalEntryId) {
       const goalRef = docRef(uid, 'goals', transaction.goalId);
       const goalSnap = await firestoreTransaction.get(goalRef);
       if (goalSnap.exists()) {
         const goal = normalizeGoal(goalSnap.data() as Goal);
-        firestoreTransaction.set(goalRef, clean(getGoalWithSavedAmount({
-          ...goal,
-          deposits: (goal.deposits || []).filter(item => item.id !== transaction.linkedGoalEntryId)
-        })));
+        if (goal.accountId) {
+          firestoreTransaction.delete(docRef(uid, 'transfers', transaction.linkedTransferId || transaction.linkedGoalEntryId));
+          accountGoalId = goal.id;
+        } else {
+          firestoreTransaction.set(goalRef, clean(getGoalWithSavedAmount({
+            ...goal,
+            savedAmount: 0,
+            deposits: (goal.deposits || []).filter(item => item.id !== transaction.linkedGoalEntryId)
+          })));
+        }
       }
     }
     firestoreTransaction.delete(docRef(uid, 'transactions', transaction.id));
   });
+  if (accountGoalId) await syncGoalSavedAmount(accountGoalId);
 }
 
 export async function loadSubscriptions(): Promise<Subscription[]> {
@@ -313,16 +381,54 @@ export async function upsertReceipt(receipt: Receipt): Promise<void> {
 }
 
 export async function loadGoals(): Promise<Goal[]> {
-  const goals = await loadCollection<Goal>(getUid(), 'goals');
-  return goals.map(normalizeGoal).map(goal => ({
-    ...goal,
-    savedAmount: getGoalSavedAmount(goal)
-  }));
+  const uid = getUid();
+  const [goals, accounts, transfers] = await Promise.all([
+    loadCollection<Goal>(uid, 'goals'),
+    loadCollection<Account>(uid, 'accounts'),
+    loadCollection<Transfer>(uid, 'transfers'),
+  ]);
+  const accountsById = new Map(accounts.map(account => [account.id, account]));
+
+  return goals.map(rawGoal => {
+    const goal = normalizeGoal(rawGoal);
+    if (!goal.accountId) return getGoalWithSavedAmount(goal);
+
+    const account = accountsById.get(goal.accountId);
+    const accountBalance = account ? calculateAccountBalance(account, transfers) : 0;
+    const transferEntries = transfers
+      .filter(transfer => transfer.goalId === goal.id && (
+        transfer.fromAccountId === goal.accountId || transfer.toAccountId === goal.accountId
+      ))
+      .map(transfer => ({
+        id: transfer.id,
+        amount: transfer.amount,
+        date: transfer.date,
+        type: transfer.toAccountId === goal.accountId ? 'deposit' as const : 'withdraw' as const,
+        note: transfer.note,
+        linkedTransactionId: transfer.transactionId,
+      }));
+    return getGoalWithSavedAmount({...goal, deposits: transferEntries}, accountBalance);
+  });
 }
 
 export async function upsertGoal(goal: Goal): Promise<void> {
   const uid = getUid();
-  await setDoc(docRef(uid, 'goals', goal.id), clean(getGoalWithSavedAmount(goal)));
+  let nextGoal = getGoalWithSavedAmount(goal);
+  if (goal.accountId) {
+    const [accounts, transfers, existingSnap] = await Promise.all([
+      loadAccounts(),
+      loadTransfers(),
+      getDoc(docRef(uid, 'goals', goal.id)),
+    ]);
+    const account = accounts.find(item => item.id === goal.accountId);
+    if (!account) throw new Error('找不到儲蓄目標連結的帳戶。');
+    const rawDeposits = existingSnap.exists() ? (existingSnap.data() as Goal).deposits : goal.deposits;
+    nextGoal = getGoalWithSavedAmount(
+      {...goal, deposits: rawDeposits},
+      calculateAccountBalance(account, transfers)
+    );
+  }
+  await setDoc(docRef(uid, 'goals', goal.id), clean(nextGoal));
 }
 
 export async function deleteGoal(id: string): Promise<void> {
@@ -344,6 +450,28 @@ export async function appendGoalEntry(
   const goal = goals.find(item => item.id === goalId);
   if (!goal) return {};
 
+  if (goal.accountId) {
+    const room = entry.type === 'deposit'
+      ? Math.max(0, goal.targetAmount - goal.savedAmount)
+      : goal.savedAmount;
+    const appliedAmount = Math.min(Math.abs(entry.amount), room);
+    if (!appliedAmount) return {goal};
+    const transfer: Transfer = {
+      id: `goal-${goalId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      fromAccountId: entry.type === 'withdraw' ? goal.accountId : null,
+      toAccountId: entry.type === 'deposit' ? goal.accountId : null,
+      amount: appliedAmount,
+      date: entry.date,
+      note: entry.note,
+      transactionId: entry.linkedTransactionId,
+      goalId,
+      createdAt: new Date().toISOString(),
+    };
+    await upsertTransfer(transfer);
+    const nextGoal = await syncGoalSavedAmount(goalId);
+    return {goal: nextGoal, entryId: transfer.id};
+  }
+
   const room = entry.type === 'deposit'
     ? Math.max(0, goal.targetAmount - goal.savedAmount)
     : goal.savedAmount;
@@ -355,13 +483,10 @@ export async function appendGoalEntry(
     id: `${goalId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     amount: appliedAmount
   };
-  const nextGoal: Goal = {
+  const nextGoal = getGoalWithSavedAmount({
     ...goal,
-    deposits: [...(goal.deposits || []), nextEntry],
-    savedAmount: entry.type === 'deposit'
-      ? goal.savedAmount + appliedAmount
-      : Math.max(0, goal.savedAmount - appliedAmount)
-  };
+    deposits: [...(goal.deposits || []), nextEntry]
+  });
 
   await upsertGoal(nextGoal);
   return {goal: nextGoal, entryId: nextEntry.id};
@@ -372,16 +497,21 @@ export async function removeGoalEntry(goalId: string, entryId: string): Promise<
   const goal = goals.find(item => item.id === goalId);
   if (!goal) return goal;
 
+  if (goal.accountId) {
+    const transfer = (await loadTransfers()).find(item => item.id === entryId && item.goalId === goalId);
+    if (!transfer) return goal;
+    await deleteTransfer(transfer.id);
+    return syncGoalSavedAmount(goalId);
+  }
+
   const targetEntry = (goal.deposits || []).find(item => item.id === entryId);
   if (!targetEntry) return goal;
 
-  const nextGoal: Goal = {
+  const nextGoal = getGoalWithSavedAmount({
     ...goal,
-    deposits: (goal.deposits || []).filter(item => item.id !== entryId),
-    savedAmount: targetEntry.type === 'deposit'
-      ? Math.max(0, goal.savedAmount - targetEntry.amount)
-      : Math.min(goal.targetAmount, goal.savedAmount + targetEntry.amount)
-  };
+    savedAmount: 0,
+    deposits: (goal.deposits || []).filter(item => item.id !== entryId)
+  });
   await upsertGoal(nextGoal);
   return nextGoal;
 }
@@ -435,32 +565,27 @@ export async function getAccountBalance(accountId: string): Promise<number> {
   const account = accounts.find(item => item.id === accountId);
   if (!account) return 0;
 
-  const inflow = sumMoney(
-    transfers.filter(item => item.toAccountId === accountId).map(item => item.amount)
-  );
-  const outflow = sumMoney(
-    transfers.filter(item => item.fromAccountId === accountId).map(item => item.amount)
-  );
-
-  return roundMoney(account.initialBalance + inflow - outflow);
+  return calculateAccountBalance(account, transfers);
 }
 
 export async function syncGoalSavedAmount(goalId: string): Promise<Goal | undefined> {
-  const goals = await loadGoals();
-  const goal = goals.find(item => item.id === goalId);
-  if (!goal || !goal.accountId) return goal;
+  const uid = getUid();
+  const goalSnap = await getDoc(docRef(uid, 'goals', goalId));
+  if (!goalSnap.exists()) return undefined;
+  const rawGoal = normalizeGoal(goalSnap.data() as Goal);
+  if (!rawGoal.accountId) return getGoalWithSavedAmount(rawGoal);
 
-  const balance = await getAccountBalance(goal.accountId);
-  const nextSavedAmount = Math.max(0, Math.min(goal.targetAmount, balance));
-  if (nextSavedAmount === goal.savedAmount) return goal;
+  const balance = await getAccountBalance(rawGoal.accountId);
+  const nextGoal = getGoalWithSavedAmount(rawGoal, balance);
+  if (nextGoal.savedAmount !== rawGoal.savedAmount) {
+    await setDoc(docRef(uid, 'goals', rawGoal.id), clean(nextGoal));
+  }
 
-  const nextGoal = {...goal, savedAmount: nextSavedAmount};
-  await upsertGoal(nextGoal);
-  return nextGoal;
+  return (await loadGoals()).find(item => item.id === goalId) || nextGoal;
 }
 
 export async function syncGoalsForAccount(accountId: string): Promise<void> {
-  const goals = await loadGoals();
+  const goals = await loadCollection<Goal>(getUid(), 'goals');
   const linkedGoals = goals.filter(item => item.accountId === accountId);
   for (const goal of linkedGoals) {
     await syncGoalSavedAmount(goal.id);
@@ -468,7 +593,7 @@ export async function syncGoalsForAccount(accountId: string): Promise<void> {
 }
 
 export async function syncAllGoalsFromAccounts(): Promise<void> {
-  const goals = await loadGoals();
+  const goals = await loadCollection<Goal>(getUid(), 'goals');
   for (const goal of goals) {
     if (goal.accountId) {
       await syncGoalSavedAmount(goal.id);
@@ -492,6 +617,8 @@ export async function syncTransactionTransfer(transaction: Transaction, previous
   }
 
   const accountId = transaction.accountId as string;
+  const accounts = await loadAccounts();
+  assertAccountCurrency(transaction, accounts.find(item => item.id === accountId));
   const transfer: Transfer = {
     id: previousTransferId || transaction.linkedTransferId || `txn-${transaction.id}`,
     fromAccountId: transaction.type === 'expense' ? accountId : null,
@@ -500,6 +627,7 @@ export async function syncTransactionTransfer(transaction: Transaction, previous
     date: transaction.date,
     note: transaction.note || transaction.category,
     transactionId: transaction.id,
+    goalId: transaction.goalId,
     createdAt: previous?.createdAt || new Date().toISOString()
   };
 
@@ -531,21 +659,111 @@ export async function loadEvents(): Promise<AnalyticsEvent[]> {
   return loadEventItems(getUid());
 }
 
+export async function createFinanceBackup(userEmail: string): Promise<FinanceBackup> {
+  const uid = getUid();
+  const [transactions, goals, budgets, receipts, subscriptions, accounts, transfers, budgetMonths] = await Promise.all([
+    loadTransactions(),
+    loadCollection<Goal>(uid, 'goals'),
+    loadBudgets(),
+    loadReceipts(),
+    loadSubscriptions(),
+    loadAccounts(),
+    loadTransfers(),
+    loadAllBudgetMonths(),
+  ]);
+
+  return {
+    version: FINANCE_BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    userEmail,
+    transactions: [...transactions].sort((a, b) => a.date.localeCompare(b.date)),
+    goals: goals
+      .map(goal => goal.accountId ? normalizeGoal(goal) : getGoalWithSavedAmount(goal))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    subscriptions: [...subscriptions].sort((a, b) => a.name.localeCompare(b.name)),
+    budgets,
+    budgetMonths,
+    receipts: [...receipts].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    accounts: [...accounts].sort((a, b) => a.name.localeCompare(b.name)),
+    transfers: [...transfers].sort((a, b) => a.date.localeCompare(b.date)),
+  };
+}
+
+type RestoreWrite =
+  | {kind: 'delete'; ref: DocumentReference<DocumentData>}
+  | {kind: 'set'; ref: DocumentReference<DocumentData>; data: DocumentData};
+
+async function appendCollectionRestoreWrites<T extends {id: string}>(
+  writes: RestoreWrite[],
+  uid: string,
+  name: string,
+  items: T[]
+) {
+  const current = await getDocs(col(uid, name));
+  const targetIds = new Set(items.map(item => item.id));
+  for (const currentDoc of current.docs) {
+    if (!targetIds.has(currentDoc.id)) writes.push({kind: 'delete', ref: currentDoc.ref});
+  }
+  for (const item of items) {
+    writes.push({kind: 'set', ref: docRef(uid, name, item.id), data: clean(item) as DocumentData});
+  }
+}
+
+async function commitRestoreWrites(writes: RestoreWrite[]): Promise<void> {
+  const chunkSize = 400;
+  for (let start = 0; start < writes.length; start += chunkSize) {
+    const batch = writeBatch(db);
+    for (const write of writes.slice(start, start + chunkSize)) {
+      if (write.kind === 'delete') batch.delete(write.ref);
+      else batch.set(write.ref, write.data);
+    }
+    await batch.commit();
+  }
+}
+
+export async function restoreFinanceBackup(backup: FinanceBackup): Promise<void> {
+  const uid = getUid();
+  const writes: RestoreWrite[] = [];
+
+  await Promise.all([
+    appendCollectionRestoreWrites(writes, uid, 'transactions', backup.transactions),
+    appendCollectionRestoreWrites(writes, uid, 'goals', backup.goals),
+    appendCollectionRestoreWrites(writes, uid, 'subscriptions', backup.subscriptions),
+    appendCollectionRestoreWrites(writes, uid, 'receipts', backup.receipts),
+    appendCollectionRestoreWrites(writes, uid, 'accounts', backup.accounts),
+    appendCollectionRestoreWrites(writes, uid, 'transfers', backup.transfers),
+  ]);
+
+  const currentBudgetMonths = await getDocs(col(uid, BUDGET_MONTHS));
+  const targetMonths = new Set(backup.budgetMonths.map(item => item.month));
+  for (const currentDoc of currentBudgetMonths.docs) {
+    if (!targetMonths.has(currentDoc.id)) writes.push({kind: 'delete', ref: currentDoc.ref});
+  }
+  for (const item of backup.budgetMonths) {
+    writes.push({kind: 'set', ref: docRef(uid, BUDGET_MONTHS, item.month), data: clean(item.budgets)});
+  }
+  writes.push({kind: 'set', ref: metaRef(uid, 'budgets'), data: clean(backup.budgets)});
+
+  await commitRestoreWrites(writes);
+}
+
 export async function clearSensitiveCache(): Promise<void> {
   // With Firestore as the data store, calling this function is a no-op.
   // Data lives in the cloud under the user's account.
   // To wipe all data, sign out or delete the account from Firebase Console.
 }
 
-export async function getMonthlySummary(month = getCurrentMonthKey()) {
+export async function getMonthlySummary(month = getCurrentMonthKey(), currency = 'HKD') {
   const transactions = await getTransactionsByMonth(month);
-  const income = sumMoney(transactions.filter(item => item.type === 'income').map(item => item.amount));
-  const expense = sumMoney(transactions.filter(item => item.type === 'expense').map(item => item.amount));
+  const baseCurrency = normalizeCurrency(currency);
+  const matchingTransactions = transactions.filter(item => normalizeCurrency(item.currency) === baseCurrency);
+  const income = sumMoney(matchingTransactions.filter(item => item.type === 'income').map(item => item.amount));
+  const expense = sumMoney(matchingTransactions.filter(item => item.type === 'expense').map(item => item.amount));
   return {
     income,
     expense,
     balance: roundMoney(income - expense),
-    count: transactions.length
+    count: matchingTransactions.length
   };
 }
 

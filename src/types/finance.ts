@@ -33,8 +33,11 @@ export type Goal = {
   name: string;
   targetAmount: number;
   targetDate?: string;
+  /** Compatibility cache only; derive from deposits or the linked account ledger before use. */
   savedAmount: number;
+  /** Canonical ledger only when accountId is absent. */
   deposits?: GoalDeposit[];
+  /** When present, the account balance is canonical and deposits are not. */
   accountId?: string;
 };
 

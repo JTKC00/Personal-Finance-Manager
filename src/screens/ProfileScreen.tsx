@@ -1,13 +1,13 @@
 ﻿import {useCallback, useEffect, useRef, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
+import {BackupRestoreCard} from '../components/BackupRestoreCard';
 import {Screen} from '../components/Screen';
 import {useAuth} from '../contexts/AuthContext';
 import {expenseCategories} from '../constants/categories';
 import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authErrors';
 import {ThemeMode, applyThemeMode, getStoredThemeMode} from '../services/appearance';
-import {daysSinceBackup, getLastBackupAt, markBackupDone} from '../services/backupReminder';
-import {getCurrentMonthKey, loadAccounts, loadAllBudgetMonths, loadBudgetMonth, loadBudgets, loadGoals, loadReceipts, loadSubscriptions, loadTransactions, loadTransfers, saveCurrentMonthBudgets} from '../services/storage';
+import {getCurrentMonthKey, loadBudgetMonth, loadReceipts, loadSubscriptions, loadTransactions, saveCurrentMonthBudgets} from '../services/storage';
 import {Receipt} from '../types/finance';
 import styles from './ProfileScreen.module.css';
 
@@ -36,7 +36,6 @@ export function ProfileScreen() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState('');
   const [toast, setToast] = useState('');
-  const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => getLastBackupAt());
   const handledAuthErrorRef = useRef('');
 
   function showToast(msg: string) {
@@ -127,49 +126,13 @@ export function ProfileScreen() {
     showToast(`已匯出 ${all.length} 筆交易。`);
   }
 
-  async function exportJsonBackup() {
-    const [transactions, goals, budgets, receiptHistory, subscriptions, accounts, transfers, budgetMonths] = await Promise.all([
-      loadTransactions(),
-      loadGoals(),
-      loadBudgets(),
-      loadReceipts(),
-      loadSubscriptions(),
-      loadAccounts(),
-      loadTransfers(),
-      loadAllBudgetMonths()
-    ]);
-    const exportedAt = new Date().toISOString();
-    const backup = {
-      version: 4,
-      exportedAt,
-      userEmail: user?.email || '',
-      transactions: [...transactions].sort((a, b) => a.date.localeCompare(b.date)),
-      goals: [...goals].sort((a, b) => a.name.localeCompare(b.name)),
-      subscriptions: [...subscriptions].sort((a, b) => a.name.localeCompare(b.name)),
-      budgets,
-      budgetMonths,
-      receipts: [...receiptHistory].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-      accounts: [...accounts].sort((a, b) => a.name.localeCompare(b.name)),
-      transfers: [...transfers].sort((a, b) => a.date.localeCompare(b.date))
-    };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `finance-backup-${exportedAt.slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    markBackupDone(exportedAt);
-    setLastBackupAt(exportedAt);
-    showToast('完整 JSON 備份已匯出。');
-  }
-
   const hasGoogleLinked = user?.providerData.some(p => p.providerId === 'google.com') ?? false;
   const isEmailUser = user?.providerData.some(p => p.providerId === 'password') ?? false;
-  const backupDays = daysSinceBackup(lastBackupAt);
-  const backupStatusText = backupDays === null ? '從未備份' : backupDays === 0 ? '今天' : `${backupDays} 天前`;
+
+  async function refreshAfterRestore() {
+    await refreshBudgets();
+    if (receiptsOpen) await loadReceiptHistory();
+  }
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -387,11 +350,11 @@ export function ProfileScreen() {
         ) : null}
       </Card>
 
-      <Card title="資料備份">
-        <p className={styles.body}>匯出完整 JSON 備份，包含交易、目標、預算和 OCR 收據記錄。此功能只負責備份，不會匯入或覆蓋資料。</p>
-        <p className={styles.status}>上次完整備份（此裝置）：{backupStatusText}</p>
-        <button className={styles.primaryBtn} onClick={exportJsonBackup}>匯出完整 JSON 備份</button>
-      </Card>
+      <BackupRestoreCard
+        userEmail={user?.email || ''}
+        onRestoreComplete={refreshAfterRestore}
+        showToast={showToast}
+      />
 
       <Card title="資料與報表">
         <p className={styles.body}>匯出全部交易成 CSV 檔案，可用 Excel 或 Google Sheets 開啟。</p>

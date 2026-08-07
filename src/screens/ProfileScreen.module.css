@@ -160,12 +160,6 @@
   cursor: not-allowed;
 }
 
-.status {
-  font-size: 13px;
-  color: var(--color-text-muted);
-  margin-bottom: var(--spacing-md);
-}
-
 .input {
   width: 100%;
   box-sizing: border-box;

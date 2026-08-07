@@ -1,5 +1,5 @@
 import {roundMoney, sumMoney} from './money';
-import type {Budget, Goal, Subscription, Transaction} from '../types/finance';
+import type {Account, Budget, Goal, Subscription, Transaction, Transfer} from '../types/finance';
 
 export type SubscriptionCharge = {
   subscription: Subscription;
@@ -19,34 +19,90 @@ export type BudgetUsage = {
   status: BudgetUsageStatus;
 };
 
+export type CurrencySummary = {
+  currency: string;
+  income: number;
+  expense: number;
+  balance: number;
+  count: number;
+};
+
+export function normalizeCurrency(currency: string): string {
+  return currency.trim().toUpperCase() || 'HKD';
+}
+
+/** Keeps monetary totals isolated by currency; no FX conversion is implied. */
+export function summarizeTransactionsByCurrency(transactions: Transaction[]): CurrencySummary[] {
+  const groups = new Map<string, Transaction[]>();
+  for (const transaction of transactions) {
+    const currency = normalizeCurrency(transaction.currency);
+    groups.set(currency, [...(groups.get(currency) || []), transaction]);
+  }
+
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([currency, items]) => {
+      const income = sumMoney(items.filter(item => item.type === 'income').map(item => item.amount));
+      const expense = sumMoney(items.filter(item => item.type === 'expense').map(item => item.amount));
+      return {currency, income, expense, balance: roundMoney(income - expense), count: items.length};
+    });
+}
+
 export function normalizeGoal(goal: Goal): Goal {
+  const deposits = (goal.deposits || []).map(entry => ({
+    id: entry.id || `${goal.id}-${entry.date}-${entry.amount}-${entry.type || 'deposit'}`,
+    amount: Math.abs(entry.amount),
+    date: entry.date,
+    type: entry.type || (entry.amount >= 0 ? 'deposit' : 'withdraw'),
+    note: entry.note,
+    linkedTransactionId: entry.linkedTransactionId
+  }));
+
+  // Legacy standalone goals stored only savedAmount. Materialize that value as
+  // a deterministic opening ledger entry so deposits[] becomes canonical.
+  if (!goal.accountId && deposits.length === 0 && goal.savedAmount > 0) {
+    deposits.push({
+      id: `${goal.id}-legacy-opening-balance`,
+      amount: roundMoney(goal.savedAmount),
+      date: '1970-01-01',
+      type: 'deposit',
+      note: '舊資料期初存款',
+      linkedTransactionId: undefined
+    });
+  }
+
   return {
     ...goal,
-    deposits: (goal.deposits || []).map(entry => ({
-      id: entry.id || `${goal.id}-${entry.date}-${entry.amount}-${entry.type || 'deposit'}`,
-      amount: Math.abs(entry.amount),
-      date: entry.date,
-      type: entry.type || (entry.amount >= 0 ? 'deposit' : 'withdraw'),
-      note: entry.note,
-      linkedTransactionId: entry.linkedTransactionId
-    }))
+    deposits
   };
 }
 
 export function getGoalSavedAmount(goal: Goal): number {
-  const deposits = goal.deposits || [];
-  if (!deposits.length) return goal.savedAmount;
+  const deposits = normalizeGoal(goal).deposits || [];
 
   return roundMoney(deposits.reduce((sum, entry) => (
     entry.type === 'deposit' ? sum + entry.amount : Math.max(0, sum - entry.amount)
   ), 0));
 }
 
-export function getGoalWithSavedAmount(goal: Goal): Goal {
+export function calculateAccountBalance(account: Account, transfers: Transfer[]): number {
+  const inflow = sumMoney(
+    transfers.filter(item => item.toAccountId === account.id).map(item => item.amount)
+  );
+  const outflow = sumMoney(
+    transfers.filter(item => item.fromAccountId === account.id).map(item => item.amount)
+  );
+  return roundMoney(account.initialBalance + inflow - outflow);
+}
+
+export function getGoalWithSavedAmount(goal: Goal, accountBalance?: number): Goal {
   const normalizedGoal = normalizeGoal(goal);
+  const savedAmount = normalizedGoal.accountId
+    ? roundMoney(Math.max(0, accountBalance ?? normalizedGoal.savedAmount))
+    : getGoalSavedAmount(normalizedGoal);
   return {
     ...normalizedGoal,
-    savedAmount: Math.min(normalizedGoal.targetAmount, getGoalSavedAmount(normalizedGoal))
+    savedAmount
   };
 }
 

@@ -4,6 +4,7 @@ import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {appendGoalEntry, deleteGoal, loadGoals, removeGoalEntry, upsertGoal, trackEvent} from '../services/storage';
 import {roundMoney} from '../services/money';
+import {formatDateKey} from '../services/financeLogic';
 import {Goal, GoalDeposit} from '../types/finance';
 import styles from './GoalsScreen.module.css';
 
@@ -68,13 +69,21 @@ export function GoalsScreen() {
       return;
     }
     const existing = editingId ? goals.find(g => g.id === editingId) : undefined;
+    const goalId = editingId || Date.now().toString();
+    const openingDeposits: GoalDeposit[] = !existing && saved > 0 ? [{
+      id: `${goalId}-opening-balance`,
+      amount: saved,
+      date: formatDateKey(new Date()),
+      type: 'deposit',
+      note: '期初存款',
+    }] : [];
     const goal: Goal = {
-      id: editingId || Date.now().toString(),
+      id: goalId,
       name: draft.name.trim(),
       targetAmount: target,
-      savedAmount: saved,
+      savedAmount: existing?.savedAmount || 0,
       targetDate: draft.targetDate || undefined,
-      deposits: existing?.deposits,
+      deposits: existing?.deposits || openingDeposits,
       accountId: existing?.accountId,
     };
     await upsertGoal(goal);
@@ -112,7 +121,7 @@ export function GoalsScreen() {
     }
     await appendGoalEntry(goalId, {
       amount,
-      date: new Date().toISOString().slice(0, 10),
+      date: formatDateKey(new Date()),
       type: 'deposit',
       note: depositNote.trim() || '手動入金',
     });
@@ -150,14 +159,21 @@ export function GoalsScreen() {
           value={draft.targetAmount}
           onChange={e => updateDraft({targetAmount: e.target.value})}
         />
-        <input
-          type="number"
-          inputMode="decimal"
-          placeholder="目前存款"
-          className={styles.input}
-          value={draft.savedAmount}
-          onChange={e => updateDraft({savedAmount: e.target.value})}
-        />
+        {!editingId ? (
+          <>
+            <label className={styles.fieldLabel}>期初存款（選填）</label>
+            <input
+              type="number"
+              inputMode="decimal"
+              placeholder="0"
+              className={styles.input}
+              value={draft.savedAmount}
+              onChange={e => updateDraft({savedAmount: e.target.value})}
+            />
+          </>
+        ) : (
+          <p className={styles.hint}>目前存款是帳本衍生值；請使用下方「入金」或記錄移除調整。</p>
+        )}
         <label className={styles.fieldLabel}>截止日期（選填）</label>
         <input
           type="date"
@@ -204,6 +220,9 @@ export function GoalsScreen() {
                   <span className={styles.remaining}>還差 {formatMoney(remaining)}</span>
                   {goal.targetDate ? <span className={styles.deadline}>截止：{goal.targetDate}</span> : null}
                 </div>
+                {goal.accountId ? (
+                  <p className={styles.hint}>此目標以連結帳戶餘額為準；入金與提取會建立帳戶 Transfer。</p>
+                ) : null}
                 <div className={styles.actionRow}>
                   <button className={styles.textBtn} onClick={() => startEdit(goal)}>編輯</button>
                   <button
@@ -269,7 +288,8 @@ export function GoalsScreen() {
                                 {entry.type === 'deposit' ? '+' : '-'}${entry.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                               </span>
                               <span className={styles.entryMeta}>
-                                {entry.date} · {entry.note || (entry.type === 'deposit' ? '入金' : '提取')}
+                                {entry.id.endsWith('-legacy-opening-balance') ? '日期不詳' : entry.date}
+                                {' · '}{entry.note || (entry.type === 'deposit' ? '入金' : '提取')}
                               </span>
                             </div>
                             {!entry.linkedTransactionId ? (

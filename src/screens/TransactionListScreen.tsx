@@ -169,6 +169,8 @@ export function TransactionListScreen() {
       category: draft.category,
       goalId: draft.type === 'expense' ? (draft.goalId || undefined) : undefined,
       linkedGoalEntryId: draft.type === 'expense' ? editingTransaction.linkedGoalEntryId : undefined,
+      accountId: editingTransaction.accountId,
+      linkedTransferId: editingTransaction.linkedTransferId,
       paymentMethod: draft.paymentMethod,
       subscriptionId: editingTransaction.subscriptionId,
       note: draft.note,

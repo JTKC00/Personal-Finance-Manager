@@ -1,6 +1,6 @@
 # Continuous Integration — validation only. This workflow never deploys and
 # uses no secrets, tokens, or API keys. It runs the same `npm run verify`
-# chain (typecheck, lint, Vitest, app build, Functions build) as local dev.
+# chain, including isolated Auth/Firestore emulator integration tests, as local dev.
 name: CI
 
 on:
@@ -32,6 +32,12 @@ jobs:
 
       - name: Install functions dependencies
         run: npm --prefix functions ci
+
+      - name: Setup Java for Firebase emulators
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
 
       - name: Run verification
         run: npm run verify

@@ -1,9 +1,9 @@
-import {lazy, Suspense, useEffect} from 'react';
+import {lazy, Suspense} from 'react';
 import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
 import {useRegisterSW} from 'virtual:pwa-register/react';
 import {AuthProvider, useAuth} from './src/contexts/AuthContext';
+import {SubscriptionProcessingProvider} from './src/contexts/SubscriptionProcessingContext';
 import {BottomNav} from './src/components/BottomNav';
-import {processDueSubscriptions} from './src/services/storage';
 
 const DashboardScreen = lazy(() => import('./src/screens/DashboardScreen').then(module => ({default: module.DashboardScreen})));
 const AnalysisScreen = lazy(() => import('./src/screens/AnalysisScreen').then(module => ({default: module.AnalysisScreen})));
@@ -51,12 +51,6 @@ function UpdateBanner() {
 function AppShell() {
   const {user, loading} = useAuth();
 
-  useEffect(() => {
-    if (user) {
-      processDueSubscriptions().catch(() => undefined);
-    }
-  }, [user]);
-
   if (loading) {
     return <LoadingScreen />;
   }
@@ -70,22 +64,24 @@ function AppShell() {
   }
 
   return (
-    <div style={{minHeight: '100vh', overflowY: 'auto', background: 'var(--color-bg)'}}>
-      <Suspense fallback={<LoadingScreen />}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardScreen />} />
-          <Route path="/analysis" element={<AnalysisScreen />} />
-          <Route path="/transaction" element={<TransactionScreen />} />
-          <Route path="/transactions" element={<TransactionListScreen />} />
-          <Route path="/goals" element={<GoalsScreen />} />
-          <Route path="/subscriptions" element={<SubscriptionsScreen />} />
-          <Route path="/profile" element={<ProfileScreen />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </Suspense>
-      <BottomNav />
-    </div>
+    <SubscriptionProcessingProvider key={user.uid}>
+      <div style={{minHeight: '100vh', overflowY: 'auto', background: 'var(--color-bg)'}}>
+        <Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardScreen />} />
+            <Route path="/analysis" element={<AnalysisScreen />} />
+            <Route path="/transaction" element={<TransactionScreen />} />
+            <Route path="/transactions" element={<TransactionListScreen />} />
+            <Route path="/goals" element={<GoalsScreen />} />
+            <Route path="/subscriptions" element={<SubscriptionsScreen />} />
+            <Route path="/profile" element={<ProfileScreen />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
+        <BottomNav />
+      </div>
+    </SubscriptionProcessingProvider>
   );
 }
 
