@@ -32,14 +32,14 @@ async function loadAppCheck(): Promise<import('firebase/app-check').AppCheck | n
   if (!appCheckSiteKey) return null;
   if (appCheckPromise) return appCheckPromise;
 
-  appCheckPromise = import('firebase/app-check').then(({initializeAppCheck, ReCaptchaV3Provider}) => {
+  appCheckPromise = import('firebase/app-check').then(({initializeAppCheck, ReCaptchaEnterpriseProvider}) => {
     if (import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
       (globalThis as typeof globalThis & {FIREBASE_APPCHECK_DEBUG_TOKEN?: string}).FIREBASE_APPCHECK_DEBUG_TOKEN =
         import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN;
     }
 
     return initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(appCheckSiteKey),
+      provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
       isTokenAutoRefreshEnabled: true,
     });
   });

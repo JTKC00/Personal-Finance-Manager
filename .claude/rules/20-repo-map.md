@@ -17,7 +17,8 @@
 | src/contexts/ | `AuthContext` 管登入狀態；`SubscriptionProcessingContext` 管登入後自動入帳、錯誤狀態與安全重試 |
 | scripts/test-firebase-integration.sh | 以 Java 21 啟動本機 Firebase Emulator 並跑整合測試 |
 | vitest.integration.config.ts | 整合測試專用 Vitest 設定；固定使用 `demo-personal-finance-manager`，禁止指向 production |
-| functions/src/index.ts | OCR Cloud Function（Gemini、每日 quota、App Check；建置 session 未深讀，動它前先自己讀一遍） |
+| functions/src/index.ts | OCR Cloud Function（ID token、Gemini、每日 quota、App Check observe／enforce） |
+| functions/src/appCheckPolicy.ts | App Check 純 policy：`false` observe 不阻擋、`true` enforce 拒絕 missing／invalid；配對 Node tests |
 | server.js | ⚠️ 早期 prototype，非正式後端，勿動勿模仿 |
 
 ## services/ 關鍵檔案
@@ -61,7 +62,7 @@
 - **Firestore 寫入**：一律 `setDoc(ref, clean(obj))`；跨文件連動用 `runTransaction`（範本：saveTransactionWithGoalLink）。
 - **Goal canonical source**：無 `accountId`＝`deposits[]`；有 `accountId`＝Account `initialBalance + transfers`。`savedAmount` 僅是 derived cache，不可直接編輯或單獨加減。linked goal 的畫面歷史由 `goalId` Transfer 投影，原始 Transfer 才是真相。
 - **新頁面**：lazy import + Suspense（照 App.tsx 現有模式）；樣式配 .module.css。
-- **測試**：純邏輯放 `src/services/*.test.ts`；真實 Auth／Firestore SDK 與 Security Rules 流程放 `src/integration/*.integration.ts`，只可經 `vitest.integration.config.ts` 使用 demo project 與本機 Emulator。`npm run verify` 會兩者都跑；Functions／Gemini／OCR 仍未整合測試。
+- **測試**：純邏輯放 `src/services/*.test.ts`；Auth／Firestore 流程放 `src/integration/*.integration.ts`；Functions policy 用 Node test。`npm run verify` 全部會跑；OCR endpoint／Gemini 仍未整合測試。
 
 ## 已知地雷（動到附近先看這裡）
 
@@ -91,7 +92,7 @@
 待辦（依價值排序）：
 1. Analysis／Subscriptions 等非 Dashboard 聚合全面按 currency 隔離；仍不做 FX。
 2. screens 預算計算改用 financeLogic `calculateBudgetUsage`（現全 inline；屬重構，需行為對拍：Dashboard 警示門檻 0.75 vs 函式預設 0.7、ratio 有無 clamp）；順帶把 AnalysisScreen 日長條圖的裸加（barData，:113 附近，純顯示）一併收掉。
-3. Functions／Gemini／OCR 的 Emulator 或 staging 整合測試（現階段整合測試只涵蓋 Auth／Firestore）。
+3. OCR endpoint／Gemini 的 Emulator 或 staging 整合測試（App Check policy 已有 Node tests，但實際 token／endpoint 尚須 deployment 驗證）。
 4. 10-prod-safety §8 的剩餘待驗證（Console rollback 步驟、export 是否需 Blaze）。
 
 ## Changelog
@@ -104,3 +105,4 @@
 - 2026-08-07 同步本地日期、訂閱錯誤／重試、完整 Restore 與 Auth／Firestore Emulator 整合測試現況。
 - 2026-08-07 Dashboard 固定 HKD 基準幣別，其他 currency 分列；新增分幣別聚合慣例及其餘畫面待辦。
 - 2026-08-07 Goal 雙重真相收斂：新增 legacy opening migration、account ledger resolver 與 Transfer-based linked goal history。
+- 2026-08-10 App Check 加入 observe logging／response status、typed boolean parameter、enforce policy tests 與兩階段 rollout gate。

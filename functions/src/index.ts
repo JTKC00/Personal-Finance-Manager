@@ -1,15 +1,17 @@
 import { onRequest } from 'firebase-functions/v2/https';
-import { defineSecret } from 'firebase-functions/params';
+import { defineBoolean, defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
 import { getAppCheck } from 'firebase-admin/app-check';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import {evaluateAppCheckToken} from './appCheckPolicy.js';
 
 initializeApp();
 const db = getFirestore();
 
 // 把 Gemini API Key 存在 Cloud Secret Manager（安全，不會寫死在 code 裡）
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
+const requireAppCheck = defineBoolean('REQUIRE_APP_CHECK', {default: false});
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 const GEMINI_FALLBACK_MODELS = parseModelList(process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.1-flash-lite,gemini-2.5-flash')
@@ -19,7 +21,6 @@ const GEMINI_MAX_ATTEMPTS_PER_MODEL = readPositiveInt('GEMINI_MAX_ATTEMPTS_PER_M
 const MAX_BODY_BYTES = 24 * 1024 * 1024;
 const OCR_DAILY_LIMIT_PER_USER = readPositiveInt('OCR_DAILY_LIMIT_PER_USER', 20);
 const OCR_DAILY_LIMIT_GLOBAL = readPositiveInt('OCR_DAILY_LIMIT_GLOBAL', 50);
-const REQUIRE_APP_CHECK = process.env.REQUIRE_APP_CHECK === 'true';
 
 class QuotaError extends Error {
   constructor(message: string) {
@@ -167,19 +168,19 @@ function logOcrEvent(event: string, data: Record<string, unknown> = {}) {
   }));
 }
 
-async function verifyAppCheckToken(token: string | undefined): Promise<boolean> {
-  if (!REQUIRE_APP_CHECK) return true;
-  if (!token) return false;
-
-  try {
-    await getAppCheck().verifyToken(token);
-    return true;
-  } catch (error) {
-    logOcrEvent('app_check_rejected', {
-      reason: error instanceof Error ? error.message : 'Unknown App Check error',
-    });
-    return false;
-  }
+async function evaluateAppCheckRequest(token: string | undefined) {
+  const enforce = requireAppCheck.value();
+  const evaluation = await evaluateAppCheckToken(
+    token,
+    enforce,
+    value => getAppCheck().verifyToken(value),
+  );
+  logOcrEvent('app_check_evaluated', {
+    mode: enforce ? 'enforce' : 'observe',
+    status: evaluation.status,
+    ...(evaluation.reason ? {reason: evaluation.reason} : {}),
+  });
+  return evaluation;
 }
 
 function getTodayKey(): string {
@@ -280,6 +281,7 @@ export const ocr = onRequest(
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Firebase-AppCheck',
+      'Access-Control-Expose-Headers': 'X-App-Check-Status',
     });
 
     if (req.method === 'OPTIONS') {
@@ -292,8 +294,9 @@ export const ocr = onRequest(
       return;
     }
 
-    const appCheckOk = await verifyAppCheckToken(req.get('x-firebase-appcheck'));
-    if (!appCheckOk) {
+    const appCheck = await evaluateAppCheckRequest(req.get('x-firebase-appcheck'));
+    res.set('X-App-Check-Status', appCheck.status);
+    if (!appCheck.allowed) {
       res.status(401).json({ error: 'App Check verification failed' });
       return;
     }

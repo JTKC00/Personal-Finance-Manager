@@ -32,7 +32,7 @@
 - 帳戶與轉帳：管理現金、銀行、錢包和信用卡帳戶，並記錄帳戶間轉帳；`Account.currency` 是該帳戶的基準幣別，不同 currency 的交易會在寫入前被拒絕。
 - Firebase Authentication：支援 Google 和 Email/Password 登入。
 - Firestore：以登入使用者為單位儲存資料。
-- App Check：可選擇啟用 reCAPTCHA v3 token 驗證以保護 OCR Function；後端啟用強制驗證後，沒有有效 token 的請求會被拒絕。
+- App Check：可選擇啟用 reCAPTCHA Enterprise token 驗證以保護 OCR Function；後端啟用強制驗證後，沒有有效 token 的請求會被拒絕。
 - PWA：支援 manifest、service worker 和離線快取。
 
 ---
@@ -154,7 +154,7 @@ copy .env.example .env
 | `VITE_FIREBASE_APP_ID` | Firebase web app ID |
 | `VITE_FIREBASE_MEASUREMENT_ID` | Firebase measurement ID，可選 |
 | `VITE_OCR_PROXY_URL` | 本機開發時可指定 OCR proxy URL；production 主要使用 `/api/ocr` rewrite |
-| `VITE_FIREBASE_APPCHECK_SITE_KEY` | Firebase App Check reCAPTCHA v3 site key，可選 |
+| `VITE_FIREBASE_APPCHECK_SITE_KEY` | Firebase App Check reCAPTCHA Enterprise 網站金鑰，可選；屬公開的前端 site key，不是 secret |
 | `VITE_FIREBASE_APPCHECK_DEBUG_TOKEN` | 本機 App Check debug token，可選；不要提交真實 token |
 
 Production OCR 的 Gemini API key 只由 Cloud Function 使用 Firebase Secret Manager 讀取；不要把它放進 `VITE_` 前端環境變數、瀏覽器儲存空間或請求內容。部署 Functions 前，以有 Firebase project 權限的帳戶設定 secret：
@@ -171,15 +171,17 @@ Cloud Function 也支援以下 OCR 每日配額設定；這些是本專案後端
 |---|---:|---|
 | `OCR_DAILY_LIMIT_PER_USER` | 20 | 每位使用者每日 OCR 次數 |
 | `OCR_DAILY_LIMIT_GLOBAL` | 50 | 全站每日 OCR 次數 |
-| `REQUIRE_APP_CHECK` | `false` | 設為 `true` 時，OCR Function 會強制驗證 `X-Firebase-AppCheck` |
+| `REQUIRE_APP_CHECK` | `false` | `false`＝observe：仍驗證並記錄 `valid`／`missing`／`invalid`，但不阻擋；`true`＝enforce：拒絕缺失或無效 token |
 | `GEMINI_MODEL` | `gemini-3.6-flash` | OCR 主要使用的 Gemini model |
 | `GEMINI_FALLBACK_MODELS` | `gemini-3.1-flash-lite,gemini-2.5-flash` | 主要 model 回 429/5xx 時依序 fallback 的 models |
 | `GEMINI_MAX_ATTEMPTS_PER_MODEL` | 3 | 每個 model 對 transient failure 的重試次數 |
 
-App Check 建議分兩步啟用：
+App Check 必須分兩步啟用：
 
-1. 先在 Firebase Console 建立 Web App Check provider，將 site key 填入 `.env` 的 `VITE_FIREBASE_APPCHECK_SITE_KEY`，部署後觀察是否正常送出 token。
-2. 確認正常後，再將 Functions 環境變數 `REQUIRE_APP_CHECK=true`，讓 OCR 後端強制拒絕沒有 App Check token 的請求。
+1. **Observe**：先在 Firebase Console 以 reCAPTCHA Enterprise 註冊 Web App Check provider，將 Enterprise 網站金鑰填入未提交的 `.env` 的 `VITE_FIREBASE_APPCHECK_SITE_KEY`，保持 `REQUIRE_APP_CHECK=false` 並部署前端與 OCR Function。登入後載入 OCR 用量（GET 不耗掃描 quota），在 Browser Network 確認 response header `X-App-Check-Status: valid`；Function log 亦應出現 `app_check_evaluated`、`mode=observe`、`status=valid`。兩台實際裝置都確認，不可只測開發機。
+2. **Enforce**：只有 Observe 證據正常後，才在未提交的 `functions/.env.personal-finance-manager-8e8b4` 設定 `REQUIRE_APP_CHECK=true` 並重新部署 OCR Function。部署後確認正常 App 仍成功、移除 token 的測試請求得到 `401 App Check verification failed`，且 response header 是 `missing` 或 `invalid`。
+
+`X-App-Check-Status` 只回傳驗證分類，不包含 token。後端 log 也不得寫入 token 本身。若合法裝置出現 `missing`／`invalid`，維持 observe，先修 provider、site key、PWA 舊版或 debug token；不要直接 enforce。
 
 ---
 
@@ -267,7 +269,7 @@ npm run test:integration
 npm run verify
 ```
 
-`npm run verify` 會依序執行 typecheck、lint、純邏輯 Vitest、Auth／Firestore emulator 整合測試、前端 build 和 Functions build。
+`npm run verify` 會依序執行 typecheck、lint、純邏輯 Vitest、Auth／Firestore emulator 整合測試、前端 build，以及 Functions build＋App Check policy tests。
 
 Vite build 可能會顯示 chunk size warning。這通常是效能提示，不代表 build 失敗；目前 app 已使用 route lazy loading，若要進一步優化，可再拆分 vendor chunks 或檢查大型依賴的載入時機。
 
