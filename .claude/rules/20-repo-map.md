@@ -18,6 +18,8 @@
 | scripts/test-firebase-integration.sh | 以 Java 21 啟動本機 Firebase Emulator 並跑整合測試 |
 | vitest.integration.config.ts | 整合測試專用 Vitest 設定；固定使用 `demo-personal-finance-manager`，禁止指向 production |
 | functions/src/index.ts | OCR Cloud Function（ID token、Gemini、每日 quota、App Check observe／enforce） |
+| functions/src/ocrContract.ts | OCR schema v3、香港付款 evidence、prompt、runtime validation |
+| functions/src/geminiClient.ts | Gemini REST request、transient retry 與 model fallback；不得記錄 payload |
 | functions/src/appCheckPolicy.ts | App Check 純 policy：`false` observe 不阻擋、`true` enforce 拒絕 missing／invalid；配對 Node tests |
 | server.js | ⚠️ 早期 prototype，非正式後端，勿動勿模仿 |
 
@@ -62,7 +64,7 @@
 - **Firestore 寫入**：一律 `setDoc(ref, clean(obj))`；跨文件連動用 `runTransaction`（範本：saveTransactionWithGoalLink）。
 - **Goal canonical source**：無 `accountId`＝`deposits[]`；有 `accountId`＝Account `initialBalance + transfers`。`savedAmount` 僅是 derived cache，不可直接編輯或單獨加減。linked goal 的畫面歷史由 `goalId` Transfer 投影，原始 Transfer 才是真相。
 - **新頁面**：lazy import + Suspense（照 App.tsx 現有模式）；樣式配 .module.css。
-- **測試**：純邏輯放 `src/services/*.test.ts`；Auth／Firestore 流程放 `src/integration/*.integration.ts`；Functions policy 用 Node test。`npm run verify` 全部會跑；OCR endpoint／Gemini 仍未整合測試。
+- **測試**：純邏輯放 `src/services/*.test.ts`；Auth／Firestore 流程放 `src/integration/*.integration.ts`；Functions policy 用 Node test。`npm run verify` 全部會跑；Live Gemini 由 `functions/src/ocrEval.ts` 使用私有測試集明確執行，不進 CI。
 
 ## 已知地雷（動到附近先看這裡）
 
@@ -92,7 +94,7 @@
 待辦（依價值排序）：
 1. Analysis／Subscriptions 等非 Dashboard 聚合全面按 currency 隔離；仍不做 FX。
 2. screens 預算計算改用 financeLogic `calculateBudgetUsage`（現全 inline；屬重構，需行為對拍：Dashboard 警示門檻 0.75 vs 函式預設 0.7、ratio 有無 clamp）；順帶把 AnalysisScreen 日長條圖的裸加（barData，:113 附近，純顯示）一併收掉。
-3. OCR endpoint／Gemini 的 Emulator 或 staging 整合測試（App Check policy 已有 Node tests，但實際 token／endpoint 尚須 deployment 驗證）。
+3. OCR endpoint／App Check 實際 token 尚須 deployment 驗證；Gemini 準確度改由私有香港收據 baseline 評估，不在 CI 讀取真實圖片或 secret。
 4. 10-prod-safety §8 的剩餘待驗證（Console rollback 步驟、export 是否需 Blaze）。
 
 ## Changelog

@@ -8,7 +8,7 @@
 - 本 app 已上線，James 與一位好友日常使用，資料是兩人的真實財務紀錄。【James】
 - 資料唯一存放處是 Firestore（`users/{uid}/...`，每人一棵子樹，互相隔離）。app 內有手動完整 JSON／CSV export、30 日提醒及受控 Restore；**自動／排程備份仍無**，兩人是否定期匯出【UNVERIFIED】。
 - 部署純手動（`firebase deploy`，James 執行）；CI 只驗證不部署；線上版本 2026-07-05 時＝最新 main。【James】
-- 測試分三層：一般 Vitest 覆蓋純邏輯；`npm run test:integration` 會連本機 Auth／Firestore emulator；Functions 有 App Check observe／enforce policy tests。**OCR endpoint／Gemini 實際行為仍未有自動整合測試**。【實測：src/integration/storage.integration.ts、functions/src/appCheckPolicy.test.ts＋README】
+- 測試分四層：一般 Vitest 覆蓋純邏輯；`npm run test:integration` 會連本機 Auth／Firestore emulator；Functions 有 App Check 與 OCR schema policy tests；Live Gemini 只由 gitignored 香港收據集手動評估。**真實圖片、逐案例 ground truth、Gemini key 與原始結果不得提交或寫入 log**。【實測：src/integration/storage.integration.ts、functions/src/ocrContract.test.ts、README】
 
 ## 最容易把線上弄壞的前三名
 
@@ -60,3 +60,4 @@ Goal 的唯一規則是：無 `accountId` 時 `deposits[]` ledger 為真相；�
 - 2026-08-07 Dashboard 第一階段固定 HKD 基準幣別，外幣分列且不納入預算／現金流聚合；保留 Analysis 後續隔離缺口。
 - 2026-08-07 Goal 收斂 canonical source：standalone=`deposits[]`、linked=Account/Transfer；`savedAmount` 降為 derived cache。
 - 2026-08-10 App Check 新增 observe／enforce policy 與測試；production enforcement 仍須先取得合法裝置 `valid` 證據。
+- 2026-08-10 OCR schema v3 保存 AI 原值／首次人工確認差異，Receipt 與 Transaction 原子連結；付款 evidence 支援無卡組織品牌的一般 `card`；香港真實收據集只准放 gitignored 私有目錄。

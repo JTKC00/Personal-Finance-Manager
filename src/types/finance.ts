@@ -16,6 +16,7 @@ export type Transaction = {
   subscriptionId?: string;
   note?: string;
   receiptUrl?: string;
+  receiptId?: string;
   createdAt: string;
 };
 
@@ -41,11 +42,47 @@ export type Goal = {
   accountId?: string;
 };
 
+export type OcrConfidence = 'high' | 'medium' | 'low';
+export type OcrPaymentMethod = '信用卡' | '現金' | '電子錢包';
+export type OcrPaymentEvidence =
+  | 'card' | 'visa' | 'mastercard' | 'unionpay' | 'cash' | 'octopus' | 'fps' | 'payme'
+  | 'alipayhk' | 'wechat_pay_hk' | 'apple_pay' | 'google_pay' | 'other_wallet';
+
+export type OcrPaymentMethodCandidate = {
+  method: OcrPaymentMethod;
+  evidence: OcrPaymentEvidence;
+  modelConfidence: OcrConfidence;
+};
+
 export type OcrResult = {
+  amount: number | null;
+  merchant: string | null;
+  category: string;
+  note: string;
+  date: string | null;
+  paymentMethodCandidates: OcrPaymentMethodCandidate[];
+  modelConfidence: {
+    amount: OcrConfidence;
+    merchant: OcrConfidence;
+    date: OcrConfidence;
+    category: OcrConfidence;
+    paymentMethod: OcrConfidence;
+  };
+};
+
+export type OcrReviewValues = {
   amount: number;
+  merchant: string;
   category: string;
   note: string;
   date: string;
+  paymentMethod: string;
+};
+
+export type ReceiptDuplicateCandidate = {
+  transactionId: string;
+  risk: 'high' | 'possible';
+  reasons: string[];
 };
 
 export type Receipt = {
@@ -58,6 +95,23 @@ export type Receipt = {
   date?: string;
   lowFields?: string[];
   needsConfirm?: boolean;
+  ai?: {
+    rawJson: string;
+    parsed: OcrResult;
+    model: string;
+    promptVersion: string;
+    schemaVersion: number;
+    completedAt: string;
+  };
+  review?: {
+    final: OcrReviewValues;
+    changedFields: Array<keyof OcrReviewValues>;
+    confirmedAt: string;
+    duplicateDecision: 'none' | 'proceeded';
+    duplicateTransactionIds: string[];
+  };
+  duplicateCandidates?: ReceiptDuplicateCandidate[];
+  transactionId?: string;
   createdAt: string;
 };
 

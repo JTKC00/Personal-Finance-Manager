@@ -23,7 +23,7 @@
 
 ### OCR、訂閱與目標
 
-- 收據 OCR：登入後可上傳或拍攝收據圖片；前端經 `/api/ocr` backend proxy 呼叫 Cloud Function，再由後端以 Firebase Secret Manager 的 Gemini secret 解析金額、日期、分類和備註。使用者不需要、也不能輸入或傳送 Gemini API key。
+- 收據 OCR：登入後可上傳或拍攝收據圖片；前端經 `/api/ocr` backend proxy 呼叫 Cloud Function，再由後端以 Firebase Secret Manager 的 Gemini secret 解析金額、商戶、日期、分類、付款候選與逐欄模型信心度。圖片不會寫入 Firestore；AI 原始 JSON 與首次人工確認差異會存入擁有者的 Receipt audit。
 - 訂閱管理：追蹤週期性支出、下一次付款日、試用結束日和提醒天數。
 - 儲蓄目標採單一真相規則：未連帳戶時以 `deposits[]` ledger 為準；連結帳戶時以該帳戶的 `initialBalance + transfers` 為準。`savedAmount` 只保留為相容性 derived cache，不能直接編輯。舊目標只有 `savedAmount` 時會轉成確定性的期初存款記錄。
 
@@ -183,6 +183,21 @@ App Check 必須分兩步啟用：
 
 `X-App-Check-Status` 只回傳驗證分類，不包含 token。後端 log 也不得寫入 token 本身。若合法裝置出現 `missing`／`invalid`，維持 observe，先修 provider、site key、PWA 舊版或 debug token；不要直接 enforce。
 
+OCR 使用 schema version 3 與 prompt `hk-receipt-v2.1`。Gemini 看不清 amount、merchant 或 date 時必須回傳 `null`，前端會要求人工確認；不能以今天或其他猜測值代替。付款方式只保存「信用卡／現金／電子錢包」三大類，`card`、Visa、八達通、FPS、PayMe、AlipayHK 等只作為受控 evidence code，不保存卡號或自由文字付款資料。
+
+### 私有香港收據評估
+
+真實收據圖片、逐案例 ground truth 及每次完整結果只能放在 gitignored 的 `ocr-eval-private/`。先把 `ocr-eval.manifest.example.json` 複製為 `ocr-eval-private/manifest.json`，再把圖片放入 manifest 指定的相對路徑。建議先收集 30 張，再逐步增加到 50 張，覆蓋中英雙語、不同商戶類型、反光／傾斜／褪色、折扣／服務費、多日期及香港常見付款方式。
+
+Runner 使用 Google Cloud Application Default Credentials 從 Secret Manager 將 `GEMINI_API_KEY` 讀入記憶體，不會輸出或寫入 key：
+
+```powershell
+gcloud auth application-default login
+npm --prefix functions run eval:ocr -- --dataset ../ocr-eval-private --project personal-finance-manager-8e8b4 --model gemini-3.6-flash
+```
+
+Runner 以同一 model 比較 `legacy-v1` 與 `candidate-v2`，私有完整結果（逐案例預測、正誤與聚合指標）寫入 `ocr-eval-private/results/`；診斷時可加 `--profile candidate-v2` 只跑新版，減少不必要用量。如要在 repo 保存基線，只提交不含圖片、商戶、金額或逐案例資料的聚合摘要，格式參考 `DOC/ocr-eval-summary.example.json`。此命令會實際呼叫 Gemini 並產生用量，不納入一般 `npm run verify`。
+
 ---
 
 ## 本機開發
@@ -269,7 +284,7 @@ npm run test:integration
 npm run verify
 ```
 
-`npm run verify` 會依序執行 typecheck、lint、純邏輯 Vitest、Auth／Firestore emulator 整合測試、前端 build，以及 Functions build＋App Check policy tests。
+`npm run verify` 會依序執行 typecheck、lint、純邏輯 Vitest、Auth／Firestore emulator 整合測試、前端 build，以及 Functions build＋App Check／OCR schema policy tests。Live Gemini 評估因需要私有圖片、ADC 與實際用量，必須用 `eval:ocr` 明確執行。
 
 Vite build 可能會顯示 chunk size warning。這通常是效能提示，不代表 build 失敗；目前 app 已使用 route lazy loading，若要進一步優化，可再拆分 vendor chunks 或檢查大型依賴的載入時機。
 

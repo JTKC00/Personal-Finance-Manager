@@ -112,6 +112,29 @@
   flex-shrink: 0;
 }
 
+.receiptAudit {
+  margin-top: 6px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.receiptAudit summary {
+  cursor: pointer;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.receiptAudit pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
 .lowFieldsBadge {
   font-size: 11px;
   color: var(--color-warning);

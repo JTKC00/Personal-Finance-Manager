@@ -6,7 +6,7 @@
 ## 速覽
 - 技術棧：React 19 + TypeScript + Vite 6 + Firebase（Auth / Firestore / Functions v2 / Hosting）+ PWA。細節見 README.md。
 - 資料流：screens → src/services/storage.ts → Firestore `users/{uid}/...`（兩位使用者各自隔離）。金錢計算集中在 src/services/money.ts + financeLogic.ts；型別唯一來源 src/types/finance.ts。地圖：`.claude/rules/20-repo-map.md`。
-- 驗證鏈：`npm run verify`（typecheck + lint + 純邏輯 Vitest + Auth／Firestore emulator 整合測試 + build + Functions build／App Check policy tests）。OCR endpoint／Gemini 實際行為仍未有自動整合測試。
+- 驗證鏈：`npm run verify`（typecheck + lint + 純邏輯 Vitest + Auth／Firestore emulator 整合測試 + build + Functions build／App Check 與 OCR schema policy tests）。Live Gemini 準確度以 gitignored 香港收據集及 `npm --prefix functions run eval:ocr` 手動評估，不可放入一般 CI 或提交逐案例資料。
 - 流程：開 branch → PR → CI Verify 綠 → merge main。**merge ≠ 上線**；部署一律 James 手動 `firebase deploy`。
 
 ## 硬規則（無條件適用）

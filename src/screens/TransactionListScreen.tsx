@@ -20,6 +20,7 @@ type Draft = {
   type: 'income' | 'expense';
   amount: string;
   category: string;
+  merchant: string;
   note: string;
   date: string;
   paymentMethod: string;
@@ -99,6 +100,7 @@ export function TransactionListScreen() {
       if (!query) return true;
 
       const searchableText = [
+        item.merchant || '',
         item.note || '',
         item.category,
         item.paymentMethod || '',
@@ -129,9 +131,10 @@ export function TransactionListScreen() {
       type: transaction.type,
       amount: String(transaction.amount),
       category: transaction.category,
+      merchant: transaction.merchant || '',
       note: transaction.note || '',
       date: transaction.date,
-      paymentMethod: transaction.paymentMethod || paymentMethods[0],
+      paymentMethod: transaction.paymentMethod || '',
       goalId: transaction.goalId || ''
     });
   }
@@ -143,8 +146,9 @@ export function TransactionListScreen() {
           type: transaction.type,
           amount: transaction.amount,
           category: transaction.category,
+          merchant: transaction.merchant || '',
           note: transaction.note || '',
-          paymentMethod: transaction.paymentMethod || paymentMethods[0],
+          paymentMethod: transaction.paymentMethod || '',
           goalId: transaction.goalId || ''
         }
       }
@@ -171,9 +175,12 @@ export function TransactionListScreen() {
       linkedGoalEntryId: draft.type === 'expense' ? editingTransaction.linkedGoalEntryId : undefined,
       accountId: editingTransaction.accountId,
       linkedTransferId: editingTransaction.linkedTransferId,
-      paymentMethod: draft.paymentMethod,
+      merchant: draft.merchant.trim() || undefined,
+      paymentMethod: draft.paymentMethod || undefined,
       subscriptionId: editingTransaction.subscriptionId,
       note: draft.note,
+      receiptUrl: editingTransaction.receiptUrl,
+      receiptId: editingTransaction.receiptId,
       createdAt: editingTransaction.createdAt
     };
 
@@ -224,7 +231,14 @@ export function TransactionListScreen() {
           />
           <input
             type="text"
-            placeholder="備註或商戶"
+            placeholder="商戶（選填）"
+            className={styles.input}
+            value={draft.merchant}
+            onChange={e => updateDraft({merchant: e.target.value})}
+          />
+          <input
+            type="text"
+            placeholder="備註（選填）"
             className={styles.input}
             value={draft.note}
             onChange={e => updateDraft({note: e.target.value})}
@@ -252,6 +266,11 @@ export function TransactionListScreen() {
 
           <p className={styles.sectionLabel}>付款方式</p>
           <div className={styles.chips}>
+            <button
+              type="button"
+              onClick={() => updateDraft({paymentMethod: ''})}
+              className={[styles.chip, !draft.paymentMethod ? styles.activeChip : ''].join(' ')}
+            >未指定</button>
             {paymentMethods.map(item => (
               <button
                 key={item}
@@ -318,7 +337,7 @@ export function TransactionListScreen() {
         </div>
         <input
           type="search"
-          placeholder="搜尋備註、分類、付款方式或金額"
+          placeholder="搜尋商戶、備註、分類、付款方式或金額"
           className={styles.input}
           value={searchText}
           onChange={e => setSearchText(e.target.value)}
@@ -367,7 +386,7 @@ export function TransactionListScreen() {
         {transactions.length ? filteredTransactions.length ? filteredTransactions.map(t => (
           <div key={t.id} className={styles.txRow}>
             <div className={styles.txMain}>
-              <span className={styles.txTitle}>{t.note || t.category}</span>
+              <span className={styles.txTitle}>{t.merchant || t.note || t.category}</span>
               <span className={styles.txMeta}>
                 {t.date} · {t.category} · {t.paymentMethod || '未填付款方式'}
               </span>

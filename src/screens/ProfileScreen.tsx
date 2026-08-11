@@ -335,11 +335,26 @@ export function ProfileScreen() {
                     : r.status === 'failed' ? styles.statusFailed
                     : styles.statusProcessing
                   ].join(' ')}>
-                    {r.status === 'done' ? '成功' : r.status === 'failed' ? '失敗' : '處理中'}
+                    {r.status === 'done' ? (r.review ? '已確認' : '待確認') : r.status === 'failed' ? '失敗' : '處理中'}
                   </span>
                   <span className={styles.receiptName}>{r.imageUri || '未知檔案'}</span>
-                  {r.amount ? <span className={styles.receiptAmt}>${r.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} · {r.category}</span> : null}
+                  {(r.review?.final.amount || r.amount) ? (
+                    <span className={styles.receiptAmt}>
+                      ${(r.review?.final.amount || r.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                      {' · '}{r.review?.final.category || r.category}
+                      {(r.review?.final.merchant || r.ai?.parsed.merchant) ? ` · ${r.review?.final.merchant || r.ai?.parsed.merchant}` : ''}
+                    </span>
+                  ) : null}
                   <span className={styles.receiptDate}>{r.createdAt.slice(0, 10)}</span>
+                  {r.review ? (
+                    <details className={styles.receiptAudit}>
+                      <summary>查看 AI 與人工確認紀錄</summary>
+                      <div>模型：{r.ai?.model || '未知'} · Prompt：{r.ai?.promptVersion || 'legacy'} · Schema：{r.ai?.schemaVersion || 1}</div>
+                      <div>人工修改：{r.review.changedFields.length ? r.review.changedFields.join('、') : '沒有'}</div>
+                      <div>重複交易決定：{r.review.duplicateDecision === 'proceeded' ? '已確認仍然新增' : '沒有警告'}</div>
+                      {r.ai?.rawJson ? <pre>{r.ai.rawJson}</pre> : null}
+                    </details>
+                  ) : null}
                 </div>
                 {(r.lowFields || []).length > 0 ? (
                   <span className={styles.lowFieldsBadge}>低信心：{(r.lowFields || []).join('、')}</span>

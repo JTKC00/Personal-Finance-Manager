@@ -5,6 +5,14 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import {evaluateAppCheckToken} from './appCheckPolicy.js';
+import {GeminiRequestError, requestGeminiWithFallback} from './geminiClient.js';
+import {
+  OCR_PROMPT_VERSION,
+  OCR_SCHEMA_VERSION,
+  OcrSchemaError,
+  createOcrV2Payload,
+  parseGeminiOcrResponse,
+} from './ocrContract.js';
 
 initializeApp();
 const db = getFirestore();
@@ -29,30 +37,6 @@ class QuotaError extends Error {
   }
 }
 
-class GeminiRequestError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-    public readonly model: string,
-    public readonly detail: Record<string, unknown>,
-  ) {
-    super(message);
-    this.name = 'GeminiRequestError';
-  }
-}
-
-type GeminiPayload = {
-  contents: Array<{
-    parts: Array<
-      { inline_data: { mime_type: string; data: string } } |
-      { text: string }
-    >;
-  }>;
-  generationConfig: {
-    response_mime_type: string;
-  };
-};
-
 function readPositiveInt(name: string, fallback: number): number {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
@@ -60,98 +44,6 @@ function readPositiveInt(name: string, fallback: number): number {
 
 function parseModelList(value: string): string[] {
   return [...new Set(value.split(',').map(model => model.trim()).filter(Boolean))];
-}
-
-function parseGeminiJsonResponse(data: Record<string, unknown>): unknown {
-  const candidates = data.candidates as Array<{content?: {parts?: Array<{text?: string}>}}> || [];
-  const text = candidates
-    .flatMap(c => c.content?.parts || [])
-    .map(p => p.text || '')
-    .join('')
-    .trim();
-  if (!text) throw new Error('Gemini response did not include text');
-  return JSON.parse(text.replace(/```json|```/g, '').trim());
-}
-
-function getGeminiErrorMessage(data: Record<string, unknown>): string {
-  const error = data.error as {message?: unknown; status?: unknown; code?: unknown} | undefined;
-  const message = typeof error?.message === 'string' ? error.message : '';
-  const status = typeof error?.status === 'string' ? error.status : '';
-  const code = typeof error?.code === 'number' || typeof error?.code === 'string' ? String(error.code) : '';
-  return [message, status && `status=${status}`, code && `code=${code}`].filter(Boolean).join(' ');
-}
-
-function isTransientGeminiStatus(status: number): boolean {
-  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function requestGeminiModel(model: string, apiKey: string, payload: GeminiPayload): Promise<Record<string, unknown>> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify(payload),
-    }
-  );
-
-  const data = await response.json().catch(async () => ({
-    error: {message: await response.text().catch(() => 'Unable to read Gemini error response')},
-  })) as Record<string, unknown>;
-
-  if (!response.ok) {
-    const detailMessage = getGeminiErrorMessage(data);
-    throw new GeminiRequestError(
-      detailMessage || `Gemini request failed with HTTP ${response.status}`,
-      response.status,
-      model,
-      data,
-    );
-  }
-
-  return data;
-}
-
-async function requestGeminiWithFallback(apiKey: string, payload: GeminiPayload) {
-  let lastError: GeminiRequestError | null = null;
-
-  for (const model of GEMINI_MODELS) {
-    for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS_PER_MODEL; attempt += 1) {
-      try {
-        const data = await requestGeminiModel(model, apiKey, payload);
-        return {
-          data,
-          model,
-          attempts: attempt,
-          fallbackUsed: model !== GEMINI_MODEL,
-        };
-      } catch (error) {
-        if (!(error instanceof GeminiRequestError)) throw error;
-
-        lastError = error;
-        logOcrEvent('gemini_attempt_failed', {
-          model,
-          attempt,
-          status: error.status,
-          reason: 'Gemini request failed',
-        });
-
-        if (!isTransientGeminiStatus(error.status)) throw error;
-        if (attempt < GEMINI_MAX_ATTEMPTS_PER_MODEL) {
-          await sleep(400 * attempt);
-        }
-      }
-    }
-  }
-
-  throw lastError || new Error('Gemini request failed');
 }
 
 function getBearerToken(authorizationHeader: string | undefined): string {
@@ -350,7 +242,7 @@ export const ocr = onRequest(
         return;
       }
 
-      const { imageBase64, mimeType = 'image/jpeg', today = new Date().toISOString().slice(0, 10) } = body;
+      const {imageBase64, mimeType = 'image/jpeg'} = body;
       const apiKey = geminiApiKey.value().trim();
 
       if (!apiKey) {
@@ -366,18 +258,19 @@ export const ocr = onRequest(
 
       const usage = await reserveOcrQuota(uid);
 
-      const payload: GeminiPayload = {
-        contents: [{
-          parts: [
-            { inline_data: { mime_type: mimeType, data: imageBase64 } },
-            { text: `分析這張收據/發票，僅回傳 JSON。格式必須符合：{"amount": 數字金額, "category": "餐飲/交通/購物/娛樂/醫療/居住/金融支出/學習/禮物/旅遊/保險/家庭/其他 其中之一", "note": "商戶或簡短描述", "date": "YYYY-MM-DD；若看不出則用今天 ${today}"}。不要加 Markdown，不要加解釋。` }
-          ]
-        }],
-        generationConfig: {
-          response_mime_type: 'application/json',
+      const gemini = await requestGeminiWithFallback(
+        apiKey,
+        createOcrV2Payload(imageBase64, mimeType),
+        {
+          models: GEMINI_MODELS,
+          maxAttemptsPerModel: GEMINI_MAX_ATTEMPTS_PER_MODEL,
+          onAttemptFailed: detail => logOcrEvent('gemini_attempt_failed', {
+            ...detail,
+            reason: 'Gemini request failed',
+          }),
         },
-      };
-      const gemini = await requestGeminiWithFallback(apiKey, payload);
+      );
+      const parsed = parseGeminiOcrResponse(gemini.data);
 
       logOcrEvent('scan_completed', {
         uid,
@@ -387,7 +280,14 @@ export const ocr = onRequest(
         usageRemaining: usage.remaining,
         durationMs: Date.now() - startedAt,
       });
-      res.json({ result: parseGeminiJsonResponse(gemini.data), model: gemini.model, usage });
+      res.json({
+        result: parsed.result,
+        rawJson: parsed.rawJson,
+        model: gemini.model,
+        promptVersion: OCR_PROMPT_VERSION,
+        schemaVersion: OCR_SCHEMA_VERSION,
+        usage,
+      });
     } catch (error) {
       if (error instanceof QuotaError) {
         logOcrEvent('quota_exceeded', {
@@ -409,6 +309,15 @@ export const ocr = onRequest(
         res.status(error.status).json({
           error: 'Gemini request failed',
         });
+        return;
+      }
+      if (error instanceof OcrSchemaError) {
+        logOcrEvent('schema_validation_failed', {
+          uid,
+          issueCount: error.issues.length,
+          durationMs: Date.now() - startedAt,
+        });
+        res.status(502).json({error: 'OCR result validation failed'});
         return;
       }
       const msg = error instanceof Error ? error.message : 'OCR failed';

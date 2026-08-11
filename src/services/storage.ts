@@ -110,7 +110,8 @@ function assertAccountCurrency(transaction: Transaction, account: Account | unde
 
 export async function saveTransactionWithGoalLink(
   transaction: Transaction,
-  previous?: Transaction
+  previous?: Transaction,
+  confirmedReceipt?: Receipt,
 ): Promise<Transaction> {
   const uid = getUid();
   let savedTransaction: Transaction = {...transaction};
@@ -130,6 +131,19 @@ export async function saveTransactionWithGoalLink(
     const targetAccountId = requestedGoal?.accountId || transaction.accountId;
     const accountRef = targetAccountId ? docRef(uid, 'accounts', targetAccountId) : null;
     const accountSnap = accountRef ? await firestoreTransaction.get(accountRef) : null;
+
+    const persistTransactionAndReceipt = () => {
+      if (confirmedReceipt) {
+        nextTransaction.receiptId = confirmedReceipt.id;
+        firestoreTransaction.set(docRef(uid, 'receipts', confirmedReceipt.id), clean({
+          ...confirmedReceipt,
+          transactionId: transaction.id,
+          needsConfirm: false,
+        }));
+      }
+      firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
+      savedTransaction = nextTransaction;
+    };
 
     if (accountRef) {
       assertAccountCurrency(transaction, accountSnap?.exists() ? accountSnap.data() as Account : undefined);
@@ -178,8 +192,7 @@ export async function saveTransactionWithGoalLink(
       nextTransaction.linkedGoalEntryId = undefined;
       if (targetAccountId) setAccountTransfer();
       else nextTransaction.linkedTransferId = undefined;
-      firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
-      savedTransaction = nextTransaction;
+      persistTransactionAndReceipt();
       return;
     }
 
@@ -190,9 +203,8 @@ export async function saveTransactionWithGoalLink(
     if (nextGoal.accountId) {
       setAccountTransfer(nextGoal.id);
       nextTransaction.linkedGoalEntryId = nextTransaction.linkedTransferId;
-      firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
+      persistTransactionAndReceipt();
       accountGoalIdsToSync.add(nextGoal.id);
-      savedTransaction = nextTransaction;
       return;
     }
 
@@ -201,8 +213,7 @@ export async function saveTransactionWithGoalLink(
     if (!appliedAmount) {
       nextTransaction.goalId = undefined;
       nextTransaction.linkedGoalEntryId = undefined;
-      firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
-      savedTransaction = nextTransaction;
+      persistTransactionAndReceipt();
       return;
     }
 
@@ -221,8 +232,7 @@ export async function saveTransactionWithGoalLink(
       deposits: [...(nextGoal.deposits || []), nextEntry]
     })));
     if (targetAccountId) setAccountTransfer();
-    firestoreTransaction.set(docRef(uid, 'transactions', transaction.id), clean(nextTransaction));
-    savedTransaction = nextTransaction;
+    persistTransactionAndReceipt();
   });
 
   for (const goalId of accountGoalIdsToSync) await syncGoalSavedAmount(goalId);

@@ -27,7 +27,7 @@ import {
   upsertSubscription,
   upsertTransaction,
 } from '../services/storage';
-import type {Account, Goal, Subscription, Transaction} from '../types/finance';
+import type {Account, Goal, Receipt, Subscription, Transaction} from '../types/finance';
 
 const projectId = 'demo-personal-finance-manager';
 
@@ -106,6 +106,54 @@ describe('Firestore storage integration', () => {
     await expect(saveTransactionWithGoalLink(mismatched))
       .rejects.toThrow('交易幣別 USD 與帳戶基準幣別 HKD 不一致。');
     expect((await getDoc(userDoc('transactions', mismatched.id))).exists()).toBe(false);
+  });
+
+  it('atomically links an OCR transaction and its immutable review audit', async () => {
+    const receipt: Receipt = {
+      id: 'receipt-atomic',
+      imageUri: 'private-receipt.jpg',
+      status: 'done',
+      needsConfirm: true,
+      createdAt: '2026-08-10T12:00:00.000Z',
+      ai: {
+        rawJson: '{"amount":88}',
+        parsed: {
+          amount: 88,
+          merchant: '茶記',
+          category: '餐飲',
+          note: '午餐',
+          date: '2026-08-10',
+          paymentMethodCandidates: [],
+          modelConfidence: {amount: 'high', merchant: 'high', date: 'high', category: 'high', paymentMethod: 'low'},
+        },
+        model: 'gemini-test',
+        promptVersion: 'hk-receipt-v2',
+        schemaVersion: 2,
+        completedAt: '2026-08-10T12:00:01.000Z',
+      },
+      review: {
+        final: {amount: 90, merchant: '茶記', category: '餐飲', note: '午餐', date: '2026-08-10', paymentMethod: ''},
+        changedFields: ['amount'],
+        confirmedAt: '2026-08-10T12:01:00.000Z',
+        duplicateDecision: 'none',
+        duplicateTransactionIds: [],
+      },
+    };
+    const saved = await saveTransactionWithGoalLink(
+      makeTransaction({id: 'ocr-transaction', amount: 90, merchant: '茶記'}),
+      undefined,
+      receipt,
+    );
+
+    const [transactionDoc, receiptDoc] = await Promise.all([
+      getDoc(userDoc('transactions', 'ocr-transaction')),
+      getDoc(userDoc('receipts', receipt.id)),
+    ]);
+    expect(saved.receiptId).toBe(receipt.id);
+    expect(transactionDoc.data()).toMatchObject({receiptId: receipt.id, amount: 90});
+    expect(receiptDoc.data()).toMatchObject({transactionId: 'ocr-transaction', needsConfirm: false});
+    expect(receiptDoc.data()?.ai.rawJson).toBe('{"amount":88}');
+    expect(receiptDoc.data()?.review.changedFields).toEqual(['amount']);
   });
 
   it('derives a linked goal from its account ledger across deposits and transactions', async () => {

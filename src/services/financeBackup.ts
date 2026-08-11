@@ -1,6 +1,6 @@
 import type {Account, Goal, Receipt, Subscription, Transaction, Transfer} from '../types/finance';
 
-export const FINANCE_BACKUP_VERSION = 4;
+export const FINANCE_BACKUP_VERSION = 5;
 
 export type BudgetMonthBackup = {
   month: string;
@@ -45,7 +45,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[], path: string, errors: string[]) {
   const allowedSet = new Set(allowed);
   for (const key of Object.keys(value)) {
-    if (!allowedSet.has(key)) errors.push(`${path}.${key} 不是 version ${FINANCE_BACKUP_VERSION} 支援的欄位`);
+    if (!allowedSet.has(key)) errors.push(`${path}.${key} 是不受支援的欄位`);
   }
 }
 
@@ -117,7 +117,7 @@ function validateBudgetRecord(value: unknown, path: string, errors: string[]): v
   return true;
 }
 
-function validateTransactions(value: unknown, errors: string[]): value is Transaction[] {
+function validateTransactions(value: unknown, errors: string[], version = FINANCE_BACKUP_VERSION): value is Transaction[] {
   if (!Array.isArray(value)) {
     errors.push('transactions 必須是陣列');
     return false;
@@ -126,14 +126,18 @@ function validateTransactions(value: unknown, errors: string[]): value is Transa
   value.forEach((item, index) => {
     const path = `transactions[${index}]`;
     if (!isRecord(item)) return errors.push(`${path} 必須是物件`);
-    hasOnlyKeys(item, ['id', 'type', 'amount', 'currency', 'date', 'category', 'goalId', 'linkedGoalEntryId', 'accountId', 'linkedTransferId', 'merchant', 'paymentMethod', 'subscriptionId', 'note', 'receiptUrl', 'createdAt'], path, errors);
+    hasOnlyKeys(item, [
+      'id', 'type', 'amount', 'currency', 'date', 'category', 'goalId', 'linkedGoalEntryId',
+      'accountId', 'linkedTransferId', 'merchant', 'paymentMethod', 'subscriptionId', 'note',
+      'receiptUrl', ...(version >= 5 ? ['receiptId'] : []), 'createdAt',
+    ], path, errors);
     validateId(item, path, errors);
     if (item.type !== 'income' && item.type !== 'expense') errors.push(`${path}.type 必須是 income 或 expense`);
     requireNumber(item, 'amount', path, errors);
     requireString(item, 'currency', path, errors);
     requireDateKey(item, 'date', path, errors);
     requireString(item, 'category', path, errors);
-    ['goalId', 'linkedGoalEntryId', 'accountId', 'linkedTransferId', 'merchant', 'paymentMethod', 'subscriptionId', 'note', 'receiptUrl'].forEach(key => optionalString(item, key, path, errors));
+    ['goalId', 'linkedGoalEntryId', 'accountId', 'linkedTransferId', 'merchant', 'paymentMethod', 'subscriptionId', 'note', 'receiptUrl', ...(version >= 5 ? ['receiptId'] : [])].forEach(key => optionalString(item, key, path, errors));
     requireIsoDate(item, 'createdAt', path, errors);
     if (typeof item.id === 'string') {
       if (ids.has(item.id)) errors.push(`${path}.id 重複`);
@@ -221,7 +225,96 @@ function validateSubscriptions(value: unknown, errors: string[]): value is Subsc
   return true;
 }
 
-function validateReceipts(value: unknown, errors: string[]): value is Receipt[] {
+const ocrConfidenceLevels = ['high', 'medium', 'low'];
+const ocrPaymentMethods = ['信用卡', '現金', '電子錢包'];
+const ocrPaymentEvidence = [
+  'card', 'visa', 'mastercard', 'unionpay', 'cash', 'octopus', 'fps', 'payme', 'alipayhk',
+  'wechat_pay_hk', 'apple_pay', 'google_pay', 'other_wallet',
+];
+const ocrReviewFields = ['amount', 'merchant', 'category', 'note', 'date', 'paymentMethod'];
+
+function validateOcrConfidence(value: unknown, path: string, errors: string[]) {
+  if (!isRecord(value)) return errors.push(`${path} 必須是物件`);
+  const keys = ['amount', 'merchant', 'date', 'category', 'paymentMethod'];
+  hasOnlyKeys(value, keys, path, errors);
+  keys.forEach(key => {
+    if (!ocrConfidenceLevels.includes(String(value[key]))) errors.push(`${path}.${key} 無效`);
+  });
+}
+
+function validateOcrParsed(value: unknown, path: string, errors: string[]) {
+  if (!isRecord(value)) return errors.push(`${path} 必須是物件`);
+  hasOnlyKeys(value, ['amount', 'merchant', 'category', 'note', 'date', 'paymentMethodCandidates', 'modelConfidence'], path, errors);
+  if (value.amount !== null) requireNumber(value, 'amount', path, errors, 0.01);
+  if (value.merchant !== null) requireString(value, 'merchant', path, errors);
+  requireString(value, 'category', path, errors);
+  requireString(value, 'note', path, errors, true);
+  if (value.date !== null) requireDateKey(value, 'date', path, errors);
+  if (!Array.isArray(value.paymentMethodCandidates) || value.paymentMethodCandidates.length > 3) {
+    errors.push(`${path}.paymentMethodCandidates 必須是最多三項的陣列`);
+  } else {
+    value.paymentMethodCandidates.forEach((candidate, index) => {
+      const candidatePath = `${path}.paymentMethodCandidates[${index}]`;
+      if (!isRecord(candidate)) return errors.push(`${candidatePath} 必須是物件`);
+      hasOnlyKeys(candidate, ['method', 'evidence', 'modelConfidence'], candidatePath, errors);
+      if (!ocrPaymentMethods.includes(String(candidate.method))) errors.push(`${candidatePath}.method 無效`);
+      if (!ocrPaymentEvidence.includes(String(candidate.evidence))) errors.push(`${candidatePath}.evidence 無效`);
+      if (!ocrConfidenceLevels.includes(String(candidate.modelConfidence))) errors.push(`${candidatePath}.modelConfidence 無效`);
+    });
+  }
+  validateOcrConfidence(value.modelConfidence, `${path}.modelConfidence`, errors);
+}
+
+function validateReceiptAi(value: unknown, path: string, errors: string[]) {
+  if (!isRecord(value)) return errors.push(`${path} 必須是物件`);
+  hasOnlyKeys(value, ['rawJson', 'parsed', 'model', 'promptVersion', 'schemaVersion', 'completedAt'], path, errors);
+  requireString(value, 'rawJson', path, errors);
+  validateOcrParsed(value.parsed, `${path}.parsed`, errors);
+  requireString(value, 'model', path, errors);
+  requireString(value, 'promptVersion', path, errors);
+  requireNumber(value, 'schemaVersion', path, errors, 1);
+  requireIsoDate(value, 'completedAt', path, errors);
+}
+
+function validateReceiptReview(value: unknown, path: string, errors: string[]) {
+  if (!isRecord(value)) return errors.push(`${path} 必須是物件`);
+  hasOnlyKeys(value, ['final', 'changedFields', 'confirmedAt', 'duplicateDecision', 'duplicateTransactionIds'], path, errors);
+  if (!isRecord(value.final)) {
+    errors.push(`${path}.final 必須是物件`);
+  } else {
+    hasOnlyKeys(value.final, ocrReviewFields, `${path}.final`, errors);
+    requireNumber(value.final, 'amount', `${path}.final`, errors, 0.01);
+    requireString(value.final, 'merchant', `${path}.final`, errors, true);
+    requireString(value.final, 'category', `${path}.final`, errors);
+    requireString(value.final, 'note', `${path}.final`, errors, true);
+    requireDateKey(value.final, 'date', `${path}.final`, errors);
+    requireString(value.final, 'paymentMethod', `${path}.final`, errors, true);
+  }
+  if (!Array.isArray(value.changedFields) || value.changedFields.some(field => !ocrReviewFields.includes(String(field)))) {
+    errors.push(`${path}.changedFields 無效`);
+  }
+  requireIsoDate(value, 'confirmedAt', path, errors);
+  if (!['none', 'proceeded'].includes(String(value.duplicateDecision))) errors.push(`${path}.duplicateDecision 無效`);
+  if (!Array.isArray(value.duplicateTransactionIds) || value.duplicateTransactionIds.some(id => typeof id !== 'string')) {
+    errors.push(`${path}.duplicateTransactionIds 必須是文字陣列`);
+  }
+}
+
+function validateDuplicateCandidates(value: unknown, path: string, errors: string[]) {
+  if (!Array.isArray(value)) return errors.push(`${path} 必須是陣列`);
+  value.forEach((candidate, index) => {
+    const candidatePath = `${path}[${index}]`;
+    if (!isRecord(candidate)) return errors.push(`${candidatePath} 必須是物件`);
+    hasOnlyKeys(candidate, ['transactionId', 'risk', 'reasons'], candidatePath, errors);
+    requireString(candidate, 'transactionId', candidatePath, errors);
+    if (!['high', 'possible'].includes(String(candidate.risk))) errors.push(`${candidatePath}.risk 無效`);
+    if (!Array.isArray(candidate.reasons) || candidate.reasons.some(reason => typeof reason !== 'string')) {
+      errors.push(`${candidatePath}.reasons 必須是文字陣列`);
+    }
+  });
+}
+
+function validateReceipts(value: unknown, errors: string[], version = FINANCE_BACKUP_VERSION): value is Receipt[] {
   if (!Array.isArray(value)) {
     errors.push('receipts 必須是陣列');
     return false;
@@ -230,7 +323,11 @@ function validateReceipts(value: unknown, errors: string[]): value is Receipt[] 
   value.forEach((item, index) => {
     const path = `receipts[${index}]`;
     if (!isRecord(item)) return errors.push(`${path} 必須是物件`);
-    hasOnlyKeys(item, ['id', 'imageUri', 'status', 'amount', 'category', 'note', 'date', 'lowFields', 'needsConfirm', 'createdAt'], path, errors);
+    hasOnlyKeys(item, [
+      'id', 'imageUri', 'status', 'amount', 'category', 'note', 'date', 'lowFields', 'needsConfirm',
+      ...(version >= 5 ? ['ai', 'review', 'duplicateCandidates', 'transactionId'] : []),
+      'createdAt',
+    ], path, errors);
     validateId(item, path, errors);
     optionalString(item, 'imageUri', path, errors);
     if (!['processing', 'done', 'failed'].includes(String(item.status))) errors.push(`${path}.status 無效`);
@@ -240,6 +337,12 @@ function validateReceipts(value: unknown, errors: string[]): value is Receipt[] 
     optionalDateKey(item, 'date', path, errors);
     if (item.lowFields !== undefined && (!Array.isArray(item.lowFields) || item.lowFields.some(field => typeof field !== 'string'))) errors.push(`${path}.lowFields 必須是文字陣列`);
     if (item.needsConfirm !== undefined && typeof item.needsConfirm !== 'boolean') errors.push(`${path}.needsConfirm 必須是 true 或 false`);
+    if (version >= 5) {
+      if (item.ai !== undefined) validateReceiptAi(item.ai, `${path}.ai`, errors);
+      if (item.review !== undefined) validateReceiptReview(item.review, `${path}.review`, errors);
+      if (item.duplicateCandidates !== undefined) validateDuplicateCandidates(item.duplicateCandidates, `${path}.duplicateCandidates`, errors);
+      optionalString(item, 'transactionId', path, errors);
+    }
     requireIsoDate(item, 'createdAt', path, errors);
     if (typeof item.id === 'string') {
       if (ids.has(item.id)) errors.push(`${path}.id 重複`);
@@ -330,19 +433,25 @@ export function validateFinanceBackup(value: unknown): BackupValidationResult {
   if (!isRecord(value)) return {ok: false, errors: ['備份檔案頂層必須是物件']};
 
   hasOnlyKeys(value, ['version', 'exportedAt', 'userEmail', 'transactions', 'goals', 'subscriptions', 'budgets', 'budgetMonths', 'receipts', 'accounts', 'transfers'], 'backup', errors);
-  if (value.version !== FINANCE_BACKUP_VERSION) errors.push(`只支援 version ${FINANCE_BACKUP_VERSION} 備份`);
+  const sourceVersion = value.version === 4 ? 4 : value.version === 5 ? 5 : null;
+  if (sourceVersion === null) errors.push('只支援 version 4 或 5 備份');
+  const validationVersion = sourceVersion || FINANCE_BACKUP_VERSION;
   requireIsoDate(value, 'exportedAt', 'backup', errors);
   requireString(value, 'userEmail', 'backup', errors, true);
-  validateTransactions(value.transactions, errors);
+  validateTransactions(value.transactions, errors, validationVersion);
   validateGoals(value.goals, errors);
   validateSubscriptions(value.subscriptions, errors);
   validateBudgetRecord(value.budgets, 'budgets', errors);
   validateBudgetMonths(value.budgetMonths, errors);
-  validateReceipts(value.receipts, errors);
+  validateReceipts(value.receipts, errors, validationVersion);
   validateAccounts(value.accounts, errors);
   validateTransfers(value.transfers, errors);
 
-  return errors.length ? {ok: false, errors} : {ok: true, backup: value as FinanceBackup};
+  if (errors.length) return {ok: false, errors};
+  return {
+    ok: true,
+    backup: (sourceVersion === 4 ? {...value, version: FINANCE_BACKUP_VERSION} : value) as FinanceBackup,
+  };
 }
 
 function stableValue(value: unknown): unknown {

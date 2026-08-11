@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "hk-example-001",
+      "image": "images/hk-example-001.jpg",
+      "mimeType": "image/jpeg",
+      "tags": ["bilingual", "restaurant", "octopus", "clear"],
+      "expected": {
+        "amount": 88,
+        "merchant": "示例商戶",
+        "category": "餐飲",
+        "date": "2026-08-10",
+        "paymentMethod": "電子錢包"
+      }
+    }
+  ]
+}

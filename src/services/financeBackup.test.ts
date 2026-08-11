@@ -3,7 +3,7 @@ import {countFinanceBackupItems, diffFinanceBackups, financeBackupDataFingerprin
 
 function makeBackup(patch: Partial<FinanceBackup> = {}): FinanceBackup {
   return {
-    version: 4,
+    version: 5,
     exportedAt: '2026-08-07T12:00:00.000Z',
     userEmail: 'owner@example.com',
     transactions: [],
@@ -24,7 +24,7 @@ const transaction = {
 };
 
 describe('finance backup validation', () => {
-  it('accepts a valid version 4 backup', () => {
+  it('accepts a valid version 5 backup', () => {
     const result = validateFinanceBackup(makeBackup({
       transactions: [{...transaction, accountId: 'account-1', linkedTransferId: 'transfer-1'}],
       goals: [{
@@ -59,10 +59,45 @@ describe('finance backup validation', () => {
     const result = validateFinanceBackup(invalid);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors.join('\n')).toContain('只支援 version 4');
-    expect(result.errors.join('\n')).toContain('不是 version 4 支援的欄位');
+    expect(result.errors.join('\n')).toContain('只支援 version 4 或 5');
+    expect(result.errors.join('\n')).toContain('不受支援的欄位');
     expect(result.errors.join('\n')).toContain('transactions[1].amount');
     expect(result.errors.join('\n')).toContain('transactions[1].id 重複');
+  });
+
+  it('validates and migrates a version 4 backup to version 5', () => {
+    const legacy = {...makeBackup(), version: 4};
+    const result = validateFinanceBackup(legacy);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.backup.version).toBe(5);
+  });
+
+  it('round-trips OCR audit and transaction receipt links in version 5', () => {
+    const audited = makeBackup({
+      transactions: [{...transaction, receiptId: 'receipt-1'}],
+      receipts: [{
+        id: 'receipt-1', status: 'done', amount: 20, needsConfirm: false,
+        createdAt: '2026-08-07T12:00:00.000Z', transactionId: 'txn-1',
+        ai: {
+          rawJson: '{"amount":20}',
+          parsed: {
+            amount: 20, merchant: '商戶', category: '購物', note: '', date: '2026-08-07',
+            paymentMethodCandidates: [{method: '信用卡', evidence: 'visa', modelConfidence: 'high'}],
+            modelConfidence: {amount: 'high', merchant: 'high', date: 'high', category: 'medium', paymentMethod: 'high'},
+          },
+          model: 'gemini-test', promptVersion: 'hk-receipt-v2', schemaVersion: 2,
+          completedAt: '2026-08-07T12:00:01.000Z',
+        },
+        review: {
+          final: {amount: 20, merchant: '商戶', category: '購物', note: '', date: '2026-08-07', paymentMethod: '信用卡'},
+          changedFields: [], confirmedAt: '2026-08-07T12:01:00.000Z',
+          duplicateDecision: 'none', duplicateTransactionIds: [],
+        },
+        duplicateCandidates: [],
+      }],
+    });
+    const result = validateFinanceBackup(audited);
+    expect(result).toEqual({ok: true, backup: audited});
   });
 
   it('rejects calendar dates that only resemble date keys', () => {

@@ -30,3 +30,6 @@ node_modules
 
 #  Vite 標準
 dist/
+
+# Private, user-owned OCR evaluation receipts and per-case results
+ocr-eval-private/
