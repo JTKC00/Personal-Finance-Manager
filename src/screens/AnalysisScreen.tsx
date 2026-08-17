@@ -1,13 +1,46 @@
-﻿import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {
   Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {getCurrentMonthKey, getTransactionsByMonth, loadBudgetRowsForMonth} from '../services/storage';
-import {compareBudgetToActual, sumExpensesByCategory} from '../services/financeLogic';
+import {buildAnalysisInsights} from '../services/analysisInsights';
+import {buildBudgetPaces} from '../services/budgetPace';
+import {
+  COMPARISON_MODE_LABELS,
+  analyzeCategoryContribution,
+  buildComparisonTotals,
+  buildPeriodTotals,
+  compareKpis,
+  daysInMonthKey,
+  getMonthLabel,
+  getShortMonthLabel,
+  listMonthRange,
+  monthsNeededForAnalysis,
+  shiftMonthKey,
+  type ComparisonMode,
+  type KpiComparison,
+  type SpendGroupComparison,
+} from '../services/comparisonEngine';
+import {sumExpensesByCategory} from '../services/financeLogic';
+import {compareMerchants} from '../services/merchantIdentity';
 import {roundMoney, sumMoney} from '../services/money';
-import {Budget, Transaction} from '../types/finance';
+import {
+  compareAccounts,
+  comparePaymentInstruments,
+  comparePaymentTypes,
+  compareSubscriptions,
+} from '../services/paymentInstrument';
+import {
+  getCurrentMonthKey,
+  getTransactionsByMonth,
+  loadAccounts,
+  loadBudgetRowsForMonth,
+  loadMerchants,
+  loadPaymentInstruments,
+  loadSubscriptions,
+} from '../services/storage';
+import type {Account, Budget, Merchant, PaymentInstrument, Subscription, Transaction} from '../types/finance';
 import styles from './AnalysisScreen.module.css';
 
 const CATEGORY_COLORS = [
@@ -15,278 +48,241 @@ const CATEGORY_COLORS = [
   '#D97706', '#DC2626', '#DB2777', '#0891B2'
 ];
 
-const formatMoney = (v: number) => `$${v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-const formatPercent = (v: number) => `${Math.round(v * 100)}%`;
-const formatDelta = (v: number) => `${v >= 0 ? '+' : '-'}${formatMoney(Math.abs(v))}`;
+const COMPARISON_OPTIONS: ComparisonMode[] = [
+  'previous_month', 'same_month_last_year', 'avg_3m', 'avg_6m', 'avg_12m', 'none',
+];
 
-function shiftMonth(monthKey: string, delta: number): string {
-  const [year, month] = monthKey.split('-').map(Number);
-  const d = new Date(year, month - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+type DeepTab = 'category' | 'merchant' | 'payment' | 'account' | 'subscription';
+
+const formatMoney = (value: number) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
+const formatSignedMoney = (value: number) => `${value >= 0 ? '+' : '-'}${formatMoney(Math.abs(value))}`;
+
+function kpiDeltaText(kpi: KpiComparison, mode: ComparisonMode) {
+  if (mode === 'none' || kpi.absoluteDelta === null) return null;
+  const amount = kpi.deltaKind === 'percentage_points'
+    ? `${kpi.absoluteDelta >= 0 ? '+' : '-'}${Math.abs(kpi.absoluteDelta * 100).toFixed(1)} 個百分點`
+    : `${kpi.direction === 'up' ? '↑' : kpi.direction === 'down' ? '↓' : '→'} ${formatSignedMoney(kpi.absoluteDelta)}`;
+  const percent = kpi.deltaKind === 'relative' && kpi.percentageDelta !== null
+    ? ` / ${kpi.percentageDelta >= 0 ? '+' : '-'}${formatPercent(Math.abs(kpi.percentageDelta))}`
+    : kpi.deltaKind === 'relative' && kpi.comparison === 0 && (kpi.current || 0) > 0
+      ? ' / 比較期為 0'
+      : '';
+  return `${amount}${percent}`;
 }
 
-function getMonthLabel(monthKey: string): string {
-  const [year, month] = monthKey.split('-').map(Number);
-  return `${year} 年 ${month} 月`;
-}
-
-function getShortMonthLabel(monthKey: string): string {
-  const [, month] = monthKey.split('-').map(Number);
-  return `${month}月`;
-}
-
-function getDaysInMonth(monthKey: string): number {
-  const [year, month] = monthKey.split('-').map(Number);
-  return new Date(year, month, 0).getDate();
-}
-
-function getMonthRange(endMonth: string, count: number): string[] {
-  return Array.from({length: count}, (_, index) => shiftMonth(endMonth, index - count + 1));
-}
-
-function getTotals(data: Transaction[]) {
-  const income = sumMoney(data.filter(t => t.type === 'income').map(t => t.amount));
-  const expense = sumMoney(data.filter(t => t.type === 'expense').map(t => t.amount));
-  return {income, expense, balance: roundMoney(income - expense)};
+function GroupList({rows, empty, vsLabel}: {rows: SpendGroupComparison[]; empty: string; vsLabel: string}) {
+  if (!rows.length) return <p className={styles.empty}>{empty}</p>;
+  return (
+    <div className={styles.changeList}>
+      {rows.map(item => (
+        <div key={item.key} className={styles.changeRow}>
+          <div className={styles.changeMain}>
+            <span className={styles.changeTitle}>{item.label}</span>
+            <span className={styles.changeMeta}>
+              本月 {formatMoney(item.currentAmount)} · {item.currentCount} 次
+              {item.currentAverage !== null ? ` · 平均 ${formatMoney(item.currentAverage)}` : ''}
+              {item.comparisonAmount > 0 || item.comparisonCount > 0 ? ` · ${vsLabel} ${formatMoney(item.comparisonAmount)}` : ''}
+            </span>
+          </div>
+          <span className={[styles.changeDelta, item.delta >= 0 ? styles.deltaUp : styles.deltaDown].join(' ')}>
+            {formatSignedMoney(item.delta)}
+            {item.percentageDelta !== null ? ` · ${item.percentageDelta >= 0 ? '+' : '-'}${formatPercent(Math.abs(item.percentageDelta))}` : ''}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function AnalysisScreen() {
   const currentMonth = getCurrentMonthKey();
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [mode, setMode] = useState<ComparisonMode>('previous_month');
+  const [deepTab, setDeepTab] = useState<DeepTab>('category');
   const [monthlyTransactions, setMonthlyTransactions] = useState<Record<string, Transaction[]>>({});
-  // undefined＝該月尚未載入完成（初始或切換月份中，避免瞬間顯示上一個月的預算資料）
   const [budgets, setBudgets] = useState<Budget[] | null | undefined>(undefined);
+  const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [instruments, setInstruments] = useState<PaymentInstrument[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
 
   useEffect(() => {
     let active = true;
     setBudgets(undefined);
-    loadBudgetRowsForMonth(selectedMonth).then(data => {
-      if (active) setBudgets(data);
+    Promise.all([
+      loadBudgetRowsForMonth(selectedMonth),
+      loadMerchants(),
+      loadPaymentInstruments(),
+      loadAccounts(),
+      loadSubscriptions(),
+    ]).then(([nextBudgets, nextMerchants, nextInstruments, nextAccounts, nextSubscriptions]) => {
+      if (!active) return;
+      setBudgets(nextBudgets);
+      setMerchants(nextMerchants);
+      setInstruments(nextInstruments);
+      setAccounts(nextAccounts);
+      setSubscriptions(nextSubscriptions);
     });
     return () => { active = false; };
   }, [selectedMonth]);
 
   useEffect(() => {
     let active = true;
-    const months = getMonthRange(selectedMonth, 6);
+    const months = monthsNeededForAnalysis(selectedMonth, mode, 6);
     Promise.all(months.map(month => getTransactionsByMonth(month))).then(results => {
       if (!active) return;
-      const monthMap = Object.fromEntries(
-        months.map((month, index) => [month, results[index]])
-      );
-      setMonthlyTransactions(monthMap);
-      setTransactions(monthMap[selectedMonth] || []);
+      setMonthlyTransactions(Object.fromEntries(months.map((month, index) => [month, results[index]])));
     });
     return () => { active = false; };
-  }, [selectedMonth]);
+  }, [mode, selectedMonth]);
 
-  const income = useMemo(
-    () => sumMoney(transactions.filter(t => t.type === 'income').map(t => t.amount)),
-    [transactions]
+  const transactions = monthlyTransactions[selectedMonth] || [];
+  const today = useMemo(() => new Date(), []);
+  const currentTotals = useMemo(
+    () => buildPeriodTotals(transactions, {month: selectedMonth, currentMonth, today}),
+    [currentMonth, selectedMonth, today, transactions]
   );
-  const expense = useMemo(
-    () => sumMoney(transactions.filter(t => t.type === 'expense').map(t => t.amount)),
-    [transactions]
+  const comparisonTotals = useMemo(
+    () => buildComparisonTotals(selectedMonth, mode, monthlyTransactions, {currentMonth, today}),
+    [currentMonth, mode, monthlyTransactions, selectedMonth, today]
   );
-  const savingsRate = income > 0 ? Math.max(0, (income - expense) / income) : 0;
-  const daysInMonth = getDaysInMonth(selectedMonth);
-  const activeDays = selectedMonth === currentMonth ? new Date().getDate() : daysInMonth;
-  const avgDailyExpense = roundMoney(expense / (activeDays || 1));
-  const monthlyBudget = sumMoney((budgets ?? []).map(item => item.amount));
-  const projectedExpense = selectedMonth === currentMonth
-    ? roundMoney((expense / (activeDays || 1)) * daysInMonth)
-    : expense;
-
+  const kpis = useMemo(() => compareKpis(currentTotals, comparisonTotals), [comparisonTotals, currentTotals]);
   const categoryMap = useMemo(() => sumExpensesByCategory(transactions), [transactions]);
+  const contributions = useMemo(
+    () => mode === 'none' ? [] : analyzeCategoryContribution(transactions, comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions)),
+    [mode, monthlyTransactions, selectedMonth, transactions]
+  );
+  const merchantRows = useMemo(
+    () => compareMerchants(transactions, comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions), merchants),
+    [merchants, mode, monthlyTransactions, selectedMonth, transactions]
+  );
+  const paymentTypes = useMemo(
+    () => comparePaymentTypes(transactions, comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions), instruments),
+    [instruments, mode, monthlyTransactions, selectedMonth, transactions]
+  );
+  const paymentInstruments = useMemo(
+    () => comparePaymentInstruments(transactions, comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions), instruments),
+    [instruments, mode, monthlyTransactions, selectedMonth, transactions]
+  );
+  const accountRows = useMemo(
+    () => compareAccounts(transactions, comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions), accounts),
+    [accounts, mode, monthlyTransactions, selectedMonth, transactions]
+  );
+  const subscriptionRows = useMemo(
+    () => compareSubscriptions(
+      transactions,
+      comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions),
+      Object.fromEntries(subscriptions.map(item => [item.id, item.name]))
+    ),
+    [mode, monthlyTransactions, selectedMonth, subscriptions, transactions]
+  );
+
+  const daysInMonth = daysInMonthKey(selectedMonth);
+  const elapsedDays = selectedMonth === currentMonth ? today.getDate() : daysInMonth;
+  const budgetPaces = useMemo(
+    () => (budgets && budgets.length
+      ? buildBudgetPaces(budgets, categoryMap, {
+        daysInMonth,
+        elapsedDays,
+        isCurrentMonth: selectedMonth === currentMonth,
+      })
+      : []),
+    [budgets, categoryMap, currentMonth, daysInMonth, elapsedDays, selectedMonth]
+  );
+  const insights = useMemo(() => buildAnalysisInsights({
+    mode,
+    hasComparisonData: mode === 'none' ? false : Boolean(comparisonTotals),
+    expense: kpis.expense,
+    savingsRate: kpis.savingsRate,
+    contributions,
+    budgetPaces,
+    transactionCount: currentTotals.transactionCount,
+  }), [comparisonTotals, contributions, currentTotals.transactionCount, budgetPaces, kpis.expense, kpis.savingsRate, mode]);
 
   const pieData = useMemo(
     () => Object.entries(categoryMap)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value], i) => ({name, value, color: CATEGORY_COLORS[i % CATEGORY_COLORS.length]})),
+      .sort((left, right) => right[1] - left[1])
+      .map(([name, value], index) => ({name, value, color: CATEGORY_COLORS[index % CATEGORY_COLORS.length]})),
     [categoryMap]
   );
-
-  const budgetComparison = useMemo(
-    () => (budgets && budgets.length ? compareBudgetToActual(budgets, categoryMap) : null),
-    [budgets, categoryMap]
-  );
-
-  const barDays = selectedMonth === currentMonth ? new Date().getDate() : daysInMonth;
+  const trendData = useMemo(() => listMonthRange(selectedMonth, 6).map(month => {
+    const totals = buildPeriodTotals(monthlyTransactions[month] || [], {month, currentMonth, today});
+    return {
+      month,
+      label: getShortMonthLabel(month),
+      income: Math.round(totals.income),
+      expense: Math.round(totals.expense),
+      balance: Math.round(totals.balance),
+    };
+  }), [currentMonth, monthlyTransactions, selectedMonth, today]);
+  const barDays = selectedMonth === currentMonth ? today.getDate() : daysInMonth;
   const barData = useMemo(() => {
-    const arr = Array(barDays).fill(0);
-    transactions.filter(t => t.type === 'expense').forEach(t => {
-      const day = parseInt(t.date.split('-')[2], 10) - 1;
-      if (day >= 0 && day < barDays) arr[day] += t.amount;
+    const amounts = Array.from({length: barDays}, () => 0);
+    transactions.filter(item => item.type === 'expense').forEach(item => {
+      const day = parseInt(item.date.split('-')[2], 10) - 1;
+      if (day >= 0 && day < barDays) amounts[day] = sumMoney([amounts[day], item.amount]);
     });
-    return arr.map((amount, i) => ({day: String(i + 1), amount: Math.round(amount)}));
-  }, [transactions, barDays]);
+    return amounts.map((amount, index) => ({day: String(index + 1), amount: roundMoney(amount)}));
+  }, [barDays, transactions]);
 
-  const hasBarData = barData.some(d => d.amount > 0);
-
-  const trendData = useMemo(() => {
-    return getMonthRange(selectedMonth, 6).map(month => {
-      const totals = getTotals(monthlyTransactions[month] || []);
-      return {
-        month,
-        label: getShortMonthLabel(month),
-        income: Math.round(totals.income),
-        expense: Math.round(totals.expense),
-        balance: Math.round(totals.balance)
-      };
-    });
-  }, [monthlyTransactions, selectedMonth]);
-  const hasTrendData = trendData.some(item => item.income || item.expense);
-
-  const previousMonth = shiftMonth(selectedMonth, -1);
-  const previousTransactions = monthlyTransactions[previousMonth] || [];
-  const previousTotals = useMemo(() => getTotals(previousTransactions), [previousTransactions]);
-  const previousSavingsRate = previousTotals.income > 0
-    ? Math.max(0, previousTotals.balance / previousTotals.income)
-    : null;
-  const previousCategoryMap = useMemo(() => sumExpensesByCategory(previousTransactions), [previousTransactions]);
-
-  const categoryChanges = useMemo(() => {
-    const categories = new Set([...Object.keys(categoryMap), ...Object.keys(previousCategoryMap)]);
-    return [...categories]
-      .map(category => {
-        const current = categoryMap[category] || 0;
-        const previous = previousCategoryMap[category] || 0;
-        return {category, current, previous, delta: roundMoney(current - previous)};
-      })
-      .filter(item => item.current > 0 || item.previous > 0)
-      .sort((a, b) => b.delta - a.delta || b.current - a.current)
-      .slice(0, 5);
-  }, [categoryMap, previousCategoryMap]);
-
-  const insights = useMemo(() => {
-    const next: {title: string; detail: string; tone: 'danger' | 'warning' | 'safe'}[] = [];
-
-    if (selectedMonth === currentMonth && monthlyBudget > 0 && projectedExpense > monthlyBudget) {
-      next.push({
-        title: '月底可能超出預算',
-        detail: `按目前日均支出推算，月底約 ${formatMoney(projectedExpense)}，比預算多 ${formatMoney(projectedExpense - monthlyBudget)}。`,
-        tone: 'danger'
-      });
-    }
-
-    if (previousSavingsRate !== null && previousTotals.income > 0 && savingsRate < previousSavingsRate) {
-      next.push({
-        title: '儲蓄率比上月下降',
-        detail: `本月儲蓄率 ${formatPercent(savingsRate)}，比上月低 ${formatPercent(previousSavingsRate - savingsRate)}。`,
-        tone: 'warning'
-      });
-    }
-
-    const biggestIncrease = categoryChanges.find(item => item.delta > 0);
-    if (biggestIncrease) {
-      next.push({
-        title: `${biggestIncrease.category} 支出增加最多`,
-        detail: biggestIncrease.previous > 0
-          ? `本月比上月多 ${formatMoney(biggestIncrease.delta)}，目前為 ${formatMoney(biggestIncrease.current)}。`
-          : `上月沒有此分類支出，本月已花 ${formatMoney(biggestIncrease.current)}。`,
-        tone: 'warning'
-      });
-    }
-
-    if (!next.length && transactions.length > 0) {
-      next.push({
-        title: '本月暫時平穩',
-        detail: '目前未看到明顯超支或分類支出急升，繼續保持記錄。',
-        tone: 'safe'
-      });
-    }
-
-    return next.slice(0, 3);
-  }, [
-    categoryChanges,
-    currentMonth,
-    monthlyBudget,
-    previousSavingsRate,
-    previousTotals.income,
-    projectedExpense,
-    savingsRate,
-    selectedMonth,
-    transactions.length
-  ]);
+  const vsLabel = COMPARISON_MODE_LABELS[mode];
+  const kpiCards: Array<{label: string; kpi: KpiComparison; color: string; format: (value: number | null) => string}> = [
+    {label: '總收入', kpi: kpis.income, color: 'var(--color-success)', format: value => formatMoney(value || 0)},
+    {label: '總支出', kpi: kpis.expense, color: 'var(--color-danger)', format: value => formatMoney(value || 0)},
+    {label: '結餘', kpi: kpis.balance, color: 'var(--color-text)', format: value => formatMoney(value || 0)},
+    {label: '儲蓄率', kpi: kpis.savingsRate, color: 'var(--color-text)', format: value => value === null ? '—' : formatPercent(value)},
+    {label: '日均支出', kpi: kpis.dailyExpense, color: 'var(--color-text)', format: value => formatMoney(value || 0)},
+    {label: '交易次數', kpi: kpis.transactionCount, color: 'var(--color-text)', format: value => String(value ?? 0)},
+    {label: '平均每筆支出', kpi: kpis.averageExpense, color: 'var(--color-text)', format: value => value === null ? '—' : formatMoney(value)},
+  ];
 
   return (
     <Screen title="分析" subtitle={getMonthLabel(selectedMonth)}>
-      <div className={styles.monthNav}>
-        <button className={styles.navBtn} onClick={() => setSelectedMonth(m => shiftMonth(m, -1))}>
-          ‹ 上月
-        </button>
-        <span className={styles.monthLabel}>{getMonthLabel(selectedMonth)}</span>
-        <button
-          className={styles.navBtn}
-          disabled={selectedMonth >= currentMonth}
-          onClick={() => setSelectedMonth(m => shiftMonth(m, 1))}
-        >
-          下月 ›
-        </button>
+      <div className={styles.periodCard}>
+        <div className={styles.periodBlock}>
+          <span className={styles.periodLabel}>分析期間</span>
+          <div className={styles.monthNav}>
+            <button className={styles.navBtn} onClick={() => setSelectedMonth(month => shiftMonthKey(month, -1))}>‹ 上月</button>
+            <span className={styles.monthLabel}>{getMonthLabel(selectedMonth)}</span>
+            <button
+              className={styles.navBtn}
+              disabled={selectedMonth >= currentMonth}
+              onClick={() => setSelectedMonth(month => shiftMonthKey(month, 1))}
+            >
+              下月 ›
+            </button>
+          </div>
+        </div>
+        <label className={styles.periodBlock}>
+          <span className={styles.periodLabel}>比較</span>
+          <select className={styles.select} value={mode} onChange={event => setMode(event.target.value as ComparisonMode)}>
+            {COMPARISON_OPTIONS.map(option => (
+              <option key={option} value={option}>{COMPARISON_MODE_LABELS[option]}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className={styles.grid}>
-        {([
-          ['總收入', formatMoney(income), 'var(--color-success)'],
-          ['總支出', formatMoney(expense), 'var(--color-danger)'],
-          ['儲蓄率', formatPercent(savingsRate), 'var(--color-text)'],
-          ['日均支出', formatMoney(avgDailyExpense), 'var(--color-text)']
-        ] as [string, string, string][]).map(([label, value, color]) => (
-          <div key={label} className={styles.metric}>
-            <span className={styles.metricLabel}>{label}</span>
-            <span className={styles.metricValue} style={{color}}>{value}</span>
-          </div>
-        ))}
+        {kpiCards.map(card => {
+          const delta = kpiDeltaText(card.kpi, mode);
+          return (
+            <div key={card.label} className={styles.metric}>
+              <span className={styles.metricLabel}>{card.label}</span>
+              <span className={styles.metricValue} style={{color: card.color}}>{card.format(card.kpi.current)}</span>
+              {delta ? <span className={[styles.metricDelta, card.kpi.direction === 'up' ? styles.deltaUp : card.kpi.direction === 'down' ? styles.deltaDown : ''].join(' ')}>{delta}</span> : null}
+              {mode !== 'none' ? <span className={styles.metricVs}>vs {vsLabel}</span> : null}
+            </div>
+          );
+        })}
       </div>
 
-      {selectedMonth < currentMonth ? (
-        <Card title="預算 vs 實際">
-          {budgets === undefined ? (
-            <p className={styles.empty}>載入中…</p>
-          ) : budgets === null ? (
-            <p className={styles.empty}>該月無預算紀錄（歷史從啟用月度預算後開始累積）。</p>
-          ) : !budgetComparison ? (
-            <p className={styles.empty}>該月未設定預算。</p>
-          ) : (
-            <div className={styles.changeList}>
-              <div className={styles.changeRow}>
-                <div className={styles.changeMain}>
-                  <span className={styles.changeTitle}>總計</span>
-                  <span className={styles.changeMeta}>
-                    預算 {formatMoney(budgetComparison.totalBudget)} · 實際 {formatMoney(budgetComparison.totalSpent)}
-                  </span>
-                </div>
-                <span className={[styles.changeDelta, budgetComparison.delta >= 0 ? styles.deltaDown : styles.deltaUp].join(' ')}>
-                  {budgetComparison.delta >= 0
-                    ? `省下 ${formatMoney(budgetComparison.delta)}`
-                    : `超支 ${formatMoney(Math.abs(budgetComparison.delta))}`}
-                </span>
-              </div>
-              {budgetComparison.overCategories.map(item => (
-                <div key={item.category} className={styles.changeRow}>
-                  <div className={styles.changeMain}>
-                    <span className={styles.changeTitle}>{item.category}</span>
-                    <span className={styles.changeMeta}>
-                      {formatMoney(item.spent)} / 預算 {formatMoney(item.budget)}
-                    </span>
-                  </div>
-                  <span className={[styles.changeDelta, styles.deltaUp].join(' ')}>超 {formatMoney(item.over)}</span>
-                </div>
-              ))}
-              {budgetComparison.overCategories.length === 0 ? (
-                <p className={styles.empty}>所有分類都在預算內。</p>
-              ) : null}
-            </div>
-          )}
-        </Card>
-      ) : null}
-
-      <Card title="本月洞察">
+      <Card title="發生了甚麼？">
         {insights.length ? (
           <div className={styles.insightList}>
             {insights.map(item => (
-              <div key={item.title} className={[styles.insightRow, styles[item.tone]].join(' ')}>
+              <div key={item.id} className={[styles.insightRow, styles[item.tone] || ''].join(' ')}>
                 <span className={styles.insightTitle}>{item.title}</span>
                 <span className={styles.insightDetail}>{item.detail}</span>
               </div>
@@ -297,39 +293,71 @@ export function AnalysisScreen() {
         )}
       </Card>
 
-      <Card title="6 個月收支趨勢">
-        {hasTrendData ? (
+      <Card title="預算 vs 實際">
+        {budgets === undefined ? (
+          <p className={styles.empty}>載入中…</p>
+        ) : budgets === null ? (
+          <p className={styles.empty}>該月無預算紀錄（歷史從啟用月度預算後開始累積）。</p>
+        ) : !budgetPaces.length ? (
+          <p className={styles.empty}>該月未設定預算。</p>
+        ) : (
+          <div className={styles.changeList}>
+            {budgetPaces.map(item => (
+              <div key={item.category} className={styles.budgetBlock}>
+                <div className={styles.changeRow}>
+                  <div className={styles.changeMain}>
+                    <span className={styles.changeTitle}>{item.category}預算</span>
+                    <span className={styles.changeMeta}>
+                      {formatMoney(item.spent)} / {formatMoney(item.budgetAmount)} · 已使用 {item.usedPercentage}%
+                    </span>
+                  </div>
+                  <span className={styles.changeMeta}>月份已過 {item.monthProgressPercentage}%</span>
+                </div>
+                {item.isCurrentMonth ? (
+                  <p className={styles.budgetDetail}>
+                    {item.status === 'ahead' || item.status === 'over' ? '目前支出速度偏快。' : item.status === 'behind' ? '目前進度較預算慢。' : '支出速度大致跟月份進度一致。'}
+                    按目前速度月底約 {formatMoney(item.projectedSpend)}
+                    {item.projectedDelta > 0 ? `，預計超支 ${formatMoney(item.projectedDelta)}` : item.projectedDelta < 0 ? `，預計尚餘 ${formatMoney(Math.abs(item.projectedDelta))}` : ''}。
+                    {item.safeDailySpend !== null ? ` 剩餘每日建議：≤ ${formatMoney(item.safeDailySpend)}` : ''}
+                  </p>
+                ) : (
+                  <p className={styles.budgetDetail}>
+                    {item.remainingBudget >= 0 ? `該月省下 ${formatMoney(item.remainingBudget)}` : `該月超支 ${formatMoney(Math.abs(item.remainingBudget))}`}。
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card title="概覽">
+        {trendData.some(item => item.income || item.expense) ? (
           <div className={styles.chartWrap}>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={trendData} margin={{top: 8, right: 0, left: -20, bottom: 0}}>
                 <XAxis dataKey="label" tick={{fontSize: 10}} />
                 <YAxis tick={{fontSize: 10}} />
-                <Tooltip formatter={(v: number) => formatMoney(v)} labelFormatter={(_, payload) => (
+                <Tooltip formatter={(value: number) => formatMoney(value)} labelFormatter={(_, payload) => (
                   payload?.[0]?.payload?.month ? getMonthLabel(payload[0].payload.month) : ''
                 )} />
-                <Bar dataKey="income" name="收入" fill="var(--color-success)" radius={[2,2,0,0]} />
-                <Bar dataKey="expense" name="支出" fill="var(--color-danger)" radius={[2,2,0,0]} />
-                <Bar dataKey="balance" name="結餘" fill="var(--color-text-muted)" radius={[2,2,0,0]} />
+                <Bar dataKey="income" name="收入" fill="var(--color-success)" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="expense" name="支出" fill="var(--color-danger)" radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         ) : (
           <p className={styles.empty}>暫無跨月交易資料。</p>
         )}
-      </Card>
-
-      <Card title="支出分類分佈">
-        {pieData.length > 0 ? (
+        {pieData.length ? (
           <>
             <div className={styles.chartWrap}>
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={180}>
                 <PieChart>
-                  <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}>
-                    {pieData.map(entry => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
+                  <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70}>
+                    {pieData.map(entry => <Cell key={entry.name} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip formatter={(v: number) => formatMoney(v)} />
+                  <Tooltip formatter={(value: number) => formatMoney(value)} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -340,59 +368,130 @@ export function AnalysisScreen() {
                   <span className={styles.legendLabel}>{item.name}</span>
                   <span className={styles.legendValue}>{formatMoney(item.value)}</span>
                   <span className={styles.legendPct}>
-                    {expense > 0 ? `${Math.round((item.value / expense) * 100)}%` : ''}
+                    {currentTotals.expense > 0 ? `${Math.round((item.value / currentTotals.expense) * 100)}%` : ''}
                   </span>
                 </div>
               ))}
             </div>
           </>
-        ) : (
-          <p className={styles.empty}>本月尚無支出資料。</p>
-        )}
-      </Card>
-
-      <Card title="分類變化">
-        {categoryChanges.length ? (
-          <div className={styles.changeList}>
-            {categoryChanges.map(item => (
-              <div key={item.category} className={styles.changeRow}>
-                <div className={styles.changeMain}>
-                  <span className={styles.changeTitle}>{item.category}</span>
-                  <span className={styles.changeMeta}>
-                    本月 {formatMoney(item.current)}
-                    {item.previous > 0 ? ` · 上月 ${formatMoney(item.previous)}` : ' · 上月無資料'}
-                  </span>
-                </div>
-                <span className={[
-                  styles.changeDelta,
-                  item.delta >= 0 ? styles.deltaUp : styles.deltaDown
-                ].join(' ')}>
-                  {formatDelta(item.delta)}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className={styles.empty}>本月尚無分類支出可比較。</p>
-        )}
-      </Card>
-
-      <Card title="每日支出趨勢">
-        {hasBarData ? (
+        ) : null}
+        {barData.some(item => item.amount > 0) ? (
           <div className={styles.chartWrap}>
-            <ResponsiveContainer width="100%" height={160}>
+            <ResponsiveContainer width="100%" height={140}>
               <BarChart data={barData} margin={{top: 4, right: 0, left: -20, bottom: 0}}>
                 <XAxis dataKey="day" tick={{fontSize: 10}} interval={4} />
                 <YAxis tick={{fontSize: 10}} />
-                <Tooltip formatter={(v: number) => formatMoney(v)} />
-                <Bar dataKey="amount" fill="var(--color-danger)" radius={[2,2,0,0]} />
+                <Tooltip formatter={(value: number) => formatMoney(value)} />
+                <Bar dataKey="amount" fill="var(--color-danger)" radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        ) : (
-          <p className={styles.empty}>本月尚無支出資料。</p>
-        )}
+        ) : null}
+      </Card>
+
+      <Card title="深入分析">
+        <div className={styles.tabs}>
+          {([
+            ['category', '分類'],
+            ['merchant', '商戶'],
+            ['payment', '付款方式'],
+            ['account', '帳戶'],
+            ['subscription', '訂閱'],
+          ] as [DeepTab, string][]).map(([value, label]) => (
+            <button
+              key={value}
+              className={[styles.tab, deepTab === value ? styles.activeTab : ''].join(' ')}
+              onClick={() => setDeepTab(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {deepTab === 'category' ? (
+          contributions.length ? (
+            <div className={styles.changeList}>
+              {contributions.map(item => (
+                <div key={item.category} className={styles.changeRow}>
+                  <div className={styles.changeMain}>
+                    <span className={styles.changeTitle}>{item.category}</span>
+                    <span className={styles.changeMeta}>
+                      本月 {formatMoney(item.currentAmount)} · 佔 {formatPercent(item.currentShare)}
+                      {mode !== 'none' ? ` · ${vsLabel} ${formatMoney(item.comparisonAmount)}` : ''}
+                    </span>
+                  </div>
+                  <span className={[styles.changeDelta, item.delta >= 0 ? styles.deltaUp : styles.deltaDown].join(' ')}>
+                    {formatSignedMoney(item.delta)}
+                    {mode !== 'none' && item.role !== 'neutral' ? ` · ${item.role === 'offset' ? '抵銷' : '貢獻'} ${formatPercent(Math.abs(item.contribution))}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.empty}>本月尚無分類支出可比較。</p>
+          )
+        ) : null}
+
+        {deepTab === 'merchant' ? (
+          <>
+            <GroupList rows={merchantRows.linked} empty="還沒有已歸戶的商戶分析。記帳時確認商戶身份後才會出現在這裡。" vsLabel={vsLabel} />
+            {merchantRows.unlinked.length ? (
+              <>
+                <p className={styles.unlinkedNote}>以下是尚未歸戶的原始商戶文字，不應視為精確的獨立商戶。</p>
+                <GroupList rows={merchantRows.unlinked} empty="" vsLabel={vsLabel} />
+              </>
+            ) : null}
+          </>
+        ) : null}
+
+        {deepTab === 'payment' ? (
+          <>
+            <p className={styles.sectionLabel}>付款類型</p>
+            <GroupList rows={paymentTypes} empty="本月沒有付款資料。" vsLabel={vsLabel} />
+            <p className={styles.sectionLabel}>具體付款工具</p>
+            <GroupList rows={paymentInstruments.linked} empty="還沒有具體付款工具。新增信用卡或電子錢包後才會出現在這裡。" vsLabel={vsLabel} />
+            {paymentInstruments.unlinked.length ? (
+              <>
+                <p className={styles.unlinkedNote}>只有大類、尚未指定具體工具的交易：</p>
+                <GroupList rows={paymentInstruments.unlinked} empty="" vsLabel={vsLabel} />
+              </>
+            ) : null}
+          </>
+        ) : null}
+
+        {deepTab === 'account' ? (
+          <GroupList rows={accountRows} empty="本月沒有帳戶連結交易。" vsLabel={vsLabel} />
+        ) : null}
+
+        {deepTab === 'subscription' ? (
+          <GroupList rows={subscriptionRows} empty="本月沒有訂閱入帳。" vsLabel={vsLabel} />
+        ) : null}
       </Card>
     </Screen>
   );
+}
+
+function comparisonTransactionsForContribution(
+  mode: ComparisonMode,
+  selectedMonth: string,
+  monthlyTransactions: Record<string, Transaction[]>
+): Transaction[] {
+  if (mode === 'none') return [];
+  if (mode === 'previous_month') return monthlyTransactions[shiftMonthKey(selectedMonth, -1)] || [];
+  if (mode === 'same_month_last_year') return monthlyTransactions[shiftMonthKey(selectedMonth, -12)] || [];
+  const months = mode === 'avg_3m' ? 3 : mode === 'avg_6m' ? 6 : 12;
+  const combined: Transaction[] = [];
+  for (let index = 1; index <= months; index += 1) {
+    combined.push(...(monthlyTransactions[shiftMonthKey(selectedMonth, -index)] || []));
+  }
+  return scaleTransactionsAsAverage(combined, months);
+}
+
+function scaleTransactionsAsAverage(transactions: Transaction[], monthCount: number): Transaction[] {
+  if (monthCount <= 1) return transactions;
+  return transactions.map((item, index) => ({
+    ...item,
+    id: `${item.id}-avg-${index}`,
+    amount: roundMoney(item.amount / monthCount),
+  }));
 }

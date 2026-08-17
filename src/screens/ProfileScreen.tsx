@@ -101,12 +101,13 @@ export function ProfileScreen() {
     const [all, subscriptions] = await Promise.all([loadTransactions(), loadSubscriptions()]);
     const subscriptionMap = Object.fromEntries(subscriptions.map(item => [item.id, item.name]));
     all.sort((a, b) => a.date.localeCompare(b.date));
-    const header = ['日期', '類型', '金額', '分類', '備註', '付款方式', '訂閱'];
+    const header = ['日期', '類型', '金額', '分類', '商戶', '備註', '付款方式', '訂閱'];
     const rows = all.map(t => [
       t.date,
       t.type === 'income' ? '收入' : '支出',
       t.amount,
       t.category,
+      t.merchantText || t.merchant || '',
       t.note || '',
       t.paymentMethod || '',
       t.subscriptionId ? (subscriptionMap[t.subscriptionId] || t.subscriptionId) : '',
@@ -218,6 +219,10 @@ export function ProfileScreen() {
         </button>
         <button className={styles.navLinkBtn} onClick={() => navigate('/subscriptions')}>
           <span>🔄 訂閱管理</span>
+          <span className={styles.navLinkArrow}>›</span>
+        </button>
+        <button className={styles.navLinkBtn} onClick={() => navigate('/directory')}>
+          <span>🏪 商戶與付款工具</span>
           <span className={styles.navLinkArrow}>›</span>
         </button>
       </Card>

@@ -3,17 +3,26 @@ import {useNavigate} from 'react-router-dom';
 import {Copy, Pencil, Trash2} from 'lucide-react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {expenseCategories, incomeCategories, paymentMethods} from '../constants/categories';
+import {MerchantField} from '../components/MerchantField';
+import {PaymentInstrumentField} from '../components/PaymentInstrumentField';
+import {expenseCategories, incomeCategories} from '../constants/categories';
+import {planMerchantSave, resolveTransactionMerchantDisplay} from '../services/merchantIdentity';
+import {formatInstrumentLabel, paymentMethodFromType, paymentTypeFromMethod} from '../services/paymentInstrument';
 import {
   deleteTransactionWithGoalLink,
   getCurrentMonthKey,
   getTransactionsByMonth,
+  loadAccounts,
   loadGoals,
+  loadMerchants,
+  loadPaymentInstruments,
   loadSubscriptions,
   saveTransactionWithGoalLink,
   trackEvent,
+  upsertMerchant,
+  upsertPaymentInstrument,
 } from '../services/storage';
-import {Goal, Subscription, Transaction} from '../types/finance';
+import {Account, Goal, Merchant, PaymentInstrument, PaymentInstrumentType, Subscription, Transaction} from '../types/finance';
 import styles from './TransactionScreen.module.css';
 
 type Draft = {
@@ -21,9 +30,12 @@ type Draft = {
   amount: string;
   category: string;
   merchant: string;
+  merchantId?: string;
+  createNewMerchant: boolean;
   note: string;
   date: string;
-  paymentMethod: string;
+  paymentType: PaymentInstrumentType | '';
+  paymentInstrumentId?: string;
   goalId: string;
 };
 
@@ -49,6 +61,9 @@ export function TransactionListScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [instruments, setInstruments] = useState<PaymentInstrument[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [searchText, setSearchText] = useState('');
@@ -62,16 +77,22 @@ export function TransactionListScreen() {
   }, [draft]);
 
   const refreshScreen = useCallback(async () => {
-    const [next, nextGoals, nextSubscriptions] = await Promise.all([
+    const [next, nextGoals, nextSubscriptions, nextMerchants, nextInstruments, nextAccounts] = await Promise.all([
       getTransactionsByMonth(selectedMonth),
       loadGoals(),
-      loadSubscriptions()
+      loadSubscriptions(),
+      loadMerchants(),
+      loadPaymentInstruments(),
+      loadAccounts(),
     ]);
     setTransactions(
       [...next].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
     );
     setGoals(nextGoals);
     setSubscriptions(nextSubscriptions);
+    setMerchants(nextMerchants);
+    setInstruments(nextInstruments);
+    setAccounts(nextAccounts);
   }, [selectedMonth]);
 
   useEffect(() => { refreshScreen(); }, [refreshScreen]);
@@ -101,6 +122,7 @@ export function TransactionListScreen() {
 
       const searchableText = [
         item.merchant || '',
+        item.merchantText || '',
         item.note || '',
         item.category,
         item.paymentMethod || '',
@@ -131,10 +153,15 @@ export function TransactionListScreen() {
       type: transaction.type,
       amount: String(transaction.amount),
       category: transaction.category,
-      merchant: transaction.merchant || '',
+      merchant: transaction.merchantText || transaction.merchant || '',
+      merchantId: transaction.merchantId,
+      createNewMerchant: false,
       note: transaction.note || '',
       date: transaction.date,
-      paymentMethod: transaction.paymentMethod || '',
+      paymentType: instruments.find(item => item.id === transaction.paymentInstrumentId)?.type
+        || paymentTypeFromMethod(transaction.paymentMethod)
+        || '',
+      paymentInstrumentId: transaction.paymentInstrumentId,
       goalId: transaction.goalId || ''
     });
   }
@@ -146,9 +173,12 @@ export function TransactionListScreen() {
           type: transaction.type,
           amount: transaction.amount,
           category: transaction.category,
-          merchant: transaction.merchant || '',
+          merchant: transaction.merchantText || transaction.merchant || '',
+          merchantId: transaction.merchantId,
+          merchantText: transaction.merchantText,
           note: transaction.note || '',
           paymentMethod: transaction.paymentMethod || '',
+          paymentInstrumentId: transaction.paymentInstrumentId,
           goalId: transaction.goalId || ''
         }
       }
@@ -164,6 +194,12 @@ export function TransactionListScreen() {
       return;
     }
 
+    const plannedMerchant = planMerchantSave(draft.merchant, draft.merchantId, draft.createNewMerchant, merchants);
+    if (plannedMerchant.upsert) {
+      await upsertMerchant(plannedMerchant.upsert);
+      setMerchants(current => [...current.filter(item => item.id !== plannedMerchant.upsert?.id), plannedMerchant.upsert!]);
+    }
+
     const transaction: Transaction = {
       id: editingTransaction.id,
       type: draft.type,
@@ -175,8 +211,11 @@ export function TransactionListScreen() {
       linkedGoalEntryId: draft.type === 'expense' ? editingTransaction.linkedGoalEntryId : undefined,
       accountId: editingTransaction.accountId,
       linkedTransferId: editingTransaction.linkedTransferId,
-      merchant: draft.merchant.trim() || undefined,
-      paymentMethod: draft.paymentMethod || undefined,
+      merchant: plannedMerchant.merchant,
+      merchantId: plannedMerchant.merchantId,
+      merchantText: plannedMerchant.merchantText,
+      paymentMethod: draft.paymentType ? paymentMethodFromType(draft.paymentType) : undefined,
+      paymentInstrumentId: draft.paymentInstrumentId,
       subscriptionId: editingTransaction.subscriptionId,
       note: draft.note,
       receiptUrl: editingTransaction.receiptUrl,
@@ -229,12 +268,16 @@ export function TransactionListScreen() {
             value={draft.amount}
             onChange={e => updateDraft({amount: e.target.value})}
           />
-          <input
-            type="text"
-            placeholder="商戶（選填）"
-            className={styles.input}
-            value={draft.merchant}
-            onChange={e => updateDraft({merchant: e.target.value})}
+          <MerchantField
+            merchants={merchants}
+            text={draft.merchant}
+            merchantId={draft.merchantId}
+            createNew={draft.createNewMerchant}
+            onChange={next => updateDraft({
+              merchant: next.text,
+              merchantId: next.merchantId,
+              createNewMerchant: next.createNew,
+            })}
           />
           <input
             type="text"
@@ -265,23 +308,17 @@ export function TransactionListScreen() {
           </div>
 
           <p className={styles.sectionLabel}>付款方式</p>
-          <div className={styles.chips}>
-            <button
-              type="button"
-              onClick={() => updateDraft({paymentMethod: ''})}
-              className={[styles.chip, !draft.paymentMethod ? styles.activeChip : ''].join(' ')}
-            >未指定</button>
-            {paymentMethods.map(item => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => updateDraft({paymentMethod: item})}
-                className={[styles.chip, item === draft.paymentMethod ? styles.activeChip : ''].join(' ')}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
+          <PaymentInstrumentField
+            instruments={instruments}
+            accounts={accounts}
+            type={draft.paymentType}
+            instrumentId={draft.paymentInstrumentId}
+            onChange={next => updateDraft({paymentType: next.type, paymentInstrumentId: next.instrumentId})}
+            onCreate={async instrument => {
+              await upsertPaymentInstrument(instrument);
+              setInstruments(current => [...current.filter(item => item.id !== instrument.id), instrument]);
+            }}
+          />
 
           {goals.length > 0 && draft.type === 'expense' ? (
             <>
@@ -386,9 +423,11 @@ export function TransactionListScreen() {
         {transactions.length ? filteredTransactions.length ? filteredTransactions.map(t => (
           <div key={t.id} className={styles.txRow}>
             <div className={styles.txMain}>
-              <span className={styles.txTitle}>{t.merchant || t.note || t.category}</span>
+              <span className={styles.txTitle}>{resolveTransactionMerchantDisplay(t, merchants) || t.note || t.category}</span>
               <span className={styles.txMeta}>
-                {t.date} · {t.category} · {t.paymentMethod || '未填付款方式'}
+                {t.date} · {t.category} · {t.paymentInstrumentId
+                  ? formatInstrumentLabel(instruments.find(item => item.id === t.paymentInstrumentId) || {id: '', name: t.paymentMethod || '付款工具', type: 'other', active: true, createdAt: ''})
+                  : (t.paymentMethod || '未填付款方式')}
               </span>
               {t.goalId && t.type === 'expense' ? (
                 <span className={styles.goalMeta}>

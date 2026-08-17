@@ -24,10 +24,15 @@ import {
   syncTransactionTransfer,
   upsertAccount,
   upsertGoal,
+  upsertMerchant,
+  upsertPaymentInstrument,
   upsertSubscription,
   upsertTransaction,
+  loadMerchants,
+  loadPaymentInstruments,
+  mergeMerchants,
 } from '../services/storage';
-import type {Account, Goal, Receipt, Subscription, Transaction} from '../types/finance';
+import type {Account, Goal, Merchant, PaymentInstrument, Receipt, Subscription, Transaction} from '../types/finance';
 
 const projectId = 'demo-personal-finance-manager';
 
@@ -283,6 +288,77 @@ describe('Firestore storage integration', () => {
     expect(transactions).toEqual([restoredTransaction]);
     expect(budgetMonths).toEqual([{month: '2025-12', budgets: {'交通': 600}}]);
     expect(financeBackupDataFingerprint(current)).toBe(financeBackupDataFingerprint(target));
+  });
+
+  it('merges merchants, relinks transactions, and preserves merchantText', async () => {
+    const target: Merchant = {
+      id: 'merch-target', name: '麥當勞', aliases: ["McDonald's"], createdAt: '2026-08-01T00:00:00.000Z',
+    };
+    const source: Merchant = {
+      id: 'merch-source', name: 'M記', aliases: ['麥記'], createdAt: '2026-08-02T00:00:00.000Z',
+    };
+    await upsertMerchant(target);
+    await upsertMerchant(source);
+    await upsertTransaction(makeTransaction({
+      id: 'linked-source',
+      merchant: 'M記',
+      merchantId: 'merch-source',
+      merchantText: 'M記',
+    }));
+
+    const merged = await mergeMerchants('merch-source', 'merch-target');
+    const [merchants, transaction] = await Promise.all([
+      loadMerchants(),
+      getDoc(userDoc('transactions', 'linked-source')),
+    ]);
+
+    expect(merged.aliases).toEqual(["McDonald's", '麥記', 'M記']);
+    expect(merchants.map(item => item.id)).toEqual(['merch-target']);
+    expect(transaction.data()).toMatchObject({
+      merchantId: 'merch-target',
+      merchantText: 'M記',
+      merchant: 'M記',
+    });
+  });
+
+  it('stores a payment instrument without a full card number and restores identity collections', async () => {
+    const instrument: PaymentInstrument = {
+      id: 'pay-1',
+      name: 'HSBC Red Card',
+      type: 'credit_card',
+      last4: '1234',
+      accountId: 'account-1',
+      active: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+    };
+    await upsertAccount({
+      id: 'account-1', name: 'HSBC', type: 'credit', initialBalance: 0,
+      currency: 'HKD', createdAt: '2026-08-01T00:00:00.000Z',
+    });
+    await upsertMerchant({
+      id: 'merch-1', name: '茶記', aliases: [], createdAt: '2026-08-01T00:00:00.000Z',
+    });
+    await upsertPaymentInstrument(instrument);
+    await upsertTransaction(makeTransaction({
+      merchantId: 'merch-1',
+      merchantText: '茶記',
+      paymentInstrumentId: 'pay-1',
+      paymentMethod: '信用卡',
+    }));
+
+    const backup = await createFinanceBackup('integration@example.com');
+    expect(backup.version).toBe(6);
+    expect(backup.paymentInstruments[0].last4).toBe('1234');
+    expect(JSON.stringify(backup)).not.toContain('1234567890123456');
+
+    await restoreFinanceBackup({
+      ...backup,
+      merchants: [],
+      paymentInstruments: [{...instrument, active: false, name: '舊卡'}],
+    });
+    const [merchants, instruments] = await Promise.all([loadMerchants(), loadPaymentInstruments()]);
+    expect(merchants).toEqual([]);
+    expect(instruments).toMatchObject([{id: 'pay-1', name: '舊卡', active: false, last4: '1234'}]);
   });
 });
 

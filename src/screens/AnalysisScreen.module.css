@@ -1,8 +1,40 @@
+.periodCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.periodBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.periodLabel {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
 .monthNav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--spacing-md);
 }
 
 .navBtn {
@@ -62,6 +94,16 @@
   margin-top: 4px;
 }
 
+.metricDelta {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.metricVs {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
 .chartWrap {
   margin: 0 -4px;
 }
@@ -93,6 +135,59 @@
 
 .insightRow.danger {
   border-left-color: var(--color-danger);
+}
+
+.insightRow.info {
+  border-left-color: var(--color-text-muted);
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--spacing-md);
+}
+
+.tab {
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.activeTab {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.sectionLabel {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: var(--spacing-md) 0 var(--spacing-sm);
+}
+
+.unlinkedNote,
+.budgetDetail {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 var(--spacing-sm);
+}
+
+.budgetBlock {
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.budgetBlock:last-child {
+  border-bottom: none;
 }
 
 .insightTitle {

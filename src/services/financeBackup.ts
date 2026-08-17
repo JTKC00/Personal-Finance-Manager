@@ -1,6 +1,8 @@
-import type {Account, Goal, Receipt, Subscription, Transaction, Transfer} from '../types/finance';
+import type {
+  Account, Goal, Merchant, PaymentInstrument, PaymentInstrumentType, Receipt, Subscription, Transaction, Transfer,
+} from '../types/finance';
 
-export const FINANCE_BACKUP_VERSION = 5;
+export const FINANCE_BACKUP_VERSION = 6;
 
 export type BudgetMonthBackup = {
   month: string;
@@ -19,6 +21,8 @@ export type FinanceBackup = {
   receipts: Receipt[];
   accounts: Account[];
   transfers: Transfer[];
+  merchants: Merchant[];
+  paymentInstruments: PaymentInstrument[];
 };
 
 export type BackupValidationResult =
@@ -26,7 +30,7 @@ export type BackupValidationResult =
   | {ok: false; errors: string[]};
 
 export type BackupDiffRow = {
-  key: keyof Pick<FinanceBackup, 'transactions' | 'goals' | 'subscriptions' | 'budgets' | 'budgetMonths' | 'receipts' | 'accounts' | 'transfers'>;
+  key: keyof Pick<FinanceBackup, 'transactions' | 'goals' | 'subscriptions' | 'budgets' | 'budgetMonths' | 'receipts' | 'accounts' | 'transfers' | 'merchants' | 'paymentInstruments'>;
   label: string;
   backupCount: number;
   currentCount: number;
@@ -34,6 +38,10 @@ export type BackupDiffRow = {
   updated: number;
   removed: number;
 };
+
+const PAYMENT_INSTRUMENT_TYPES: PaymentInstrumentType[] = [
+  'credit_card', 'debit_card', 'e_wallet', 'cash', 'bank', 'other',
+];
 
 const dateKeyPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 const monthKeyPattern = /^(\d{4})-(\d{2})$/;
@@ -129,7 +137,9 @@ function validateTransactions(value: unknown, errors: string[], version = FINANC
     hasOnlyKeys(item, [
       'id', 'type', 'amount', 'currency', 'date', 'category', 'goalId', 'linkedGoalEntryId',
       'accountId', 'linkedTransferId', 'merchant', 'paymentMethod', 'subscriptionId', 'note',
-      'receiptUrl', ...(version >= 5 ? ['receiptId'] : []), 'createdAt',
+      'receiptUrl', ...(version >= 5 ? ['receiptId'] : []),
+      ...(version >= 6 ? ['merchantId', 'merchantText', 'paymentInstrumentId'] : []),
+      'createdAt',
     ], path, errors);
     validateId(item, path, errors);
     if (item.type !== 'income' && item.type !== 'expense') errors.push(`${path}.type 必須是 income 或 expense`);
@@ -137,7 +147,11 @@ function validateTransactions(value: unknown, errors: string[], version = FINANC
     requireString(item, 'currency', path, errors);
     requireDateKey(item, 'date', path, errors);
     requireString(item, 'category', path, errors);
-    ['goalId', 'linkedGoalEntryId', 'accountId', 'linkedTransferId', 'merchant', 'paymentMethod', 'subscriptionId', 'note', 'receiptUrl', ...(version >= 5 ? ['receiptId'] : [])].forEach(key => optionalString(item, key, path, errors));
+    [
+      'goalId', 'linkedGoalEntryId', 'accountId', 'linkedTransferId', 'merchant', 'paymentMethod', 'subscriptionId', 'note', 'receiptUrl',
+      ...(version >= 5 ? ['receiptId'] : []),
+      ...(version >= 6 ? ['merchantId', 'merchantText', 'paymentInstrumentId'] : []),
+    ].forEach(key => optionalString(item, key, path, errors));
     requireIsoDate(item, 'createdAt', path, errors);
     if (typeof item.id === 'string') {
       if (ids.has(item.id)) errors.push(`${path}.id 重複`);
@@ -428,13 +442,72 @@ function validateBudgetMonths(value: unknown, errors: string[]): value is Budget
   return true;
 }
 
+function validateMerchants(value: unknown, errors: string[]): value is Merchant[] {
+  if (!Array.isArray(value)) {
+    errors.push('merchants 必須是陣列');
+    return false;
+  }
+  const ids = new Set<string>();
+  value.forEach((item, index) => {
+    const path = `merchants[${index}]`;
+    if (!isRecord(item)) return errors.push(`${path} 必須是物件`);
+    hasOnlyKeys(item, ['id', 'name', 'aliases', 'createdAt'], path, errors);
+    validateId(item, path, errors);
+    requireString(item, 'name', path, errors);
+    requireIsoDate(item, 'createdAt', path, errors);
+    if (!Array.isArray(item.aliases) || item.aliases.some(alias => typeof alias !== 'string')) {
+      errors.push(`${path}.aliases 必須是文字陣列`);
+    }
+    if (typeof item.id === 'string') {
+      if (ids.has(item.id)) errors.push(`${path}.id 重複`);
+      ids.add(item.id);
+    }
+  });
+  return true;
+}
+
+function validatePaymentInstruments(value: unknown, errors: string[]): value is PaymentInstrument[] {
+  if (!Array.isArray(value)) {
+    errors.push('paymentInstruments 必須是陣列');
+    return false;
+  }
+  const ids = new Set<string>();
+  value.forEach((item, index) => {
+    const path = `paymentInstruments[${index}]`;
+    if (!isRecord(item)) return errors.push(`${path} 必須是物件`);
+    hasOnlyKeys(item, ['id', 'name', 'type', 'provider', 'last4', 'accountId', 'active', 'createdAt'], path, errors);
+    validateId(item, path, errors);
+    requireString(item, 'name', path, errors);
+    if (!PAYMENT_INSTRUMENT_TYPES.includes(item.type as PaymentInstrumentType)) {
+      errors.push(`${path}.type 無效`);
+    }
+    optionalString(item, 'provider', path, errors);
+    optionalString(item, 'last4', path, errors);
+    if (typeof item.last4 === 'string' && !/^\d{4}$/.test(item.last4)) {
+      errors.push(`${path}.last4 只能是 4 位數字`);
+    }
+    optionalString(item, 'accountId', path, errors);
+    if (typeof item.active !== 'boolean') errors.push(`${path}.active 必須是 true 或 false`);
+    requireIsoDate(item, 'createdAt', path, errors);
+    if (typeof item.id === 'string') {
+      if (ids.has(item.id)) errors.push(`${path}.id 重複`);
+      ids.add(item.id);
+    }
+  });
+  return true;
+}
+
 export function validateFinanceBackup(value: unknown): BackupValidationResult {
   const errors: string[] = [];
   if (!isRecord(value)) return {ok: false, errors: ['備份檔案頂層必須是物件']};
 
-  hasOnlyKeys(value, ['version', 'exportedAt', 'userEmail', 'transactions', 'goals', 'subscriptions', 'budgets', 'budgetMonths', 'receipts', 'accounts', 'transfers'], 'backup', errors);
-  const sourceVersion = value.version === 4 ? 4 : value.version === 5 ? 5 : null;
-  if (sourceVersion === null) errors.push('只支援 version 4 或 5 備份');
+  const sourceVersion = value.version === 4 ? 4 : value.version === 5 ? 5 : value.version === 6 ? 6 : null;
+  hasOnlyKeys(value, [
+    'version', 'exportedAt', 'userEmail', 'transactions', 'goals', 'subscriptions', 'budgets', 'budgetMonths',
+    'receipts', 'accounts', 'transfers',
+    ...(sourceVersion === 6 ? ['merchants', 'paymentInstruments'] : []),
+  ], 'backup', errors);
+  if (sourceVersion === null) errors.push('只支援 version 4、5 或 6 備份');
   const validationVersion = sourceVersion || FINANCE_BACKUP_VERSION;
   requireIsoDate(value, 'exportedAt', 'backup', errors);
   requireString(value, 'userEmail', 'backup', errors, true);
@@ -446,11 +519,20 @@ export function validateFinanceBackup(value: unknown): BackupValidationResult {
   validateReceipts(value.receipts, errors, validationVersion);
   validateAccounts(value.accounts, errors);
   validateTransfers(value.transfers, errors);
+  const merchants = sourceVersion === 6 ? value.merchants : [];
+  const paymentInstruments = sourceVersion === 6 ? value.paymentInstruments : [];
+  if (sourceVersion === 6 || merchants !== undefined) validateMerchants(merchants, errors);
+  if (sourceVersion === 6 || paymentInstruments !== undefined) validatePaymentInstruments(paymentInstruments, errors);
 
   if (errors.length) return {ok: false, errors};
   return {
     ok: true,
-    backup: (sourceVersion === 4 ? {...value, version: FINANCE_BACKUP_VERSION} : value) as FinanceBackup,
+    backup: {
+      ...value,
+      version: FINANCE_BACKUP_VERSION,
+      merchants: Array.isArray(merchants) ? merchants : [],
+      paymentInstruments: Array.isArray(paymentInstruments) ? paymentInstruments : [],
+    } as FinanceBackup,
   };
 }
 
@@ -488,6 +570,8 @@ export function diffFinanceBackups(current: FinanceBackup, backup: FinanceBackup
     {key: 'receipts', label: '收據', ...keyedDiff(current.receipts, backup.receipts, item => item.id)},
     {key: 'accounts', label: '帳戶', ...keyedDiff(current.accounts, backup.accounts, item => item.id)},
     {key: 'transfers', label: '轉帳', ...keyedDiff(current.transfers, backup.transfers, item => item.id)},
+    {key: 'merchants', label: '商戶', ...keyedDiff(current.merchants, backup.merchants, item => item.id)},
+    {key: 'paymentInstruments', label: '付款工具', ...keyedDiff(current.paymentInstruments, backup.paymentInstruments, item => item.id)},
   ];
   return rows;
 }
@@ -495,7 +579,8 @@ export function diffFinanceBackups(current: FinanceBackup, backup: FinanceBackup
 export function countFinanceBackupItems(backup: FinanceBackup): number {
   return backup.transactions.length + backup.goals.length + backup.subscriptions.length +
     Object.keys(backup.budgets).length + backup.budgetMonths.length + backup.receipts.length +
-    backup.accounts.length + backup.transfers.length;
+    backup.accounts.length + backup.transfers.length +
+    backup.merchants.length + backup.paymentInstruments.length;
 }
 
 export function financeBackupDataFingerprint(backup: FinanceBackup): string {
@@ -508,5 +593,7 @@ export function financeBackupDataFingerprint(backup: FinanceBackup): string {
     receipts: [...backup.receipts].sort((a, b) => a.id.localeCompare(b.id)),
     accounts: [...backup.accounts].sort((a, b) => a.id.localeCompare(b.id)),
     transfers: [...backup.transfers].sort((a, b) => a.id.localeCompare(b.id)),
+    merchants: [...backup.merchants].sort((a, b) => a.id.localeCompare(b.id)),
+    paymentInstruments: [...backup.paymentInstruments].sort((a, b) => a.id.localeCompare(b.id)),
   });
 }

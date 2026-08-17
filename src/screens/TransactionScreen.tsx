@@ -2,7 +2,11 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {expenseCategories, incomeCategories, paymentMethods} from '../constants/categories';
+import {MerchantField} from '../components/MerchantField';
+import {PaymentInstrumentField} from '../components/PaymentInstrumentField';
+import {expenseCategories, incomeCategories} from '../constants/categories';
+import {planMerchantSave} from '../services/merchantIdentity';
+import {paymentMethodFromType, paymentTypeFromMethod} from '../services/paymentInstrument';
 import {OcrScanResult, OcrUsageStatus, loadOcrUsageStatus, scanReceipt} from '../services/ocr';
 import {
   buildOcrChangedFields,
@@ -13,13 +17,21 @@ import {
   paymentEvidenceLabels,
 } from '../services/ocrLogic';
 import {
+  loadAccounts,
   loadGoals,
+  loadMerchants,
+  loadPaymentInstruments,
   loadTransactions,
   saveTransactionWithGoalLink,
   trackEvent,
+  upsertMerchant,
+  upsertPaymentInstrument,
   upsertReceipt,
 } from '../services/storage';
-import {Goal, OcrConfidence, Receipt, ReceiptDuplicateCandidate, Transaction} from '../types/finance';
+import {
+  Account, Goal, Merchant, OcrConfidence, PaymentInstrument, PaymentInstrumentType,
+  Receipt, ReceiptDuplicateCandidate, Transaction,
+} from '../types/finance';
 import styles from './TransactionScreen.module.css';
 
 type Draft = {
@@ -27,13 +39,16 @@ type Draft = {
   amount: string;
   category: string;
   merchant: string;
+  merchantId?: string;
+  createNewMerchant: boolean;
   note: string;
   date: string;
-  paymentMethod: string;
+  paymentType: PaymentInstrumentType | '';
+  paymentInstrumentId?: string;
   goalId: string;
 };
 
-type PrefillTransaction = Pick<Transaction, 'type' | 'amount' | 'category' | 'merchant' | 'note' | 'paymentMethod' | 'goalId'>;
+type PrefillTransaction = Pick<Transaction, 'type' | 'amount' | 'category' | 'merchant' | 'merchantId' | 'merchantText' | 'note' | 'paymentMethod' | 'paymentInstrumentId' | 'goalId'>;
 
 type TransactionLocationState = {
   prefillTransaction?: PrefillTransaction;
@@ -53,9 +68,12 @@ const emptyDraft = (): Draft => ({
   amount: '',
   category: expenseCategories[0],
   merchant: '',
+  merchantId: undefined,
+  createNewMerchant: false,
   note: '',
   date: today(),
-  paymentMethod: '',
+  paymentType: '',
+  paymentInstrumentId: undefined,
   goalId: ''
 });
 
@@ -75,6 +93,9 @@ export function TransactionScreen() {
   const navigate = useNavigate();
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [instruments, setInstruments] = useState<PaymentInstrument[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [scanning, setScanning] = useState(false);
   const [ocrPreview, setOcrPreview] = useState<OcrSession | null>(null);
   const [ocrUsage, setOcrUsage] = useState<OcrUsageStatus | null>(null);
@@ -87,7 +108,19 @@ export function TransactionScreen() {
     setGoals(await loadGoals());
   }, []);
 
+  const refreshIdentity = useCallback(async () => {
+    const [nextMerchants, nextInstruments, nextAccounts] = await Promise.all([
+      loadMerchants(),
+      loadPaymentInstruments(),
+      loadAccounts(),
+    ]);
+    setMerchants(nextMerchants);
+    setInstruments(nextInstruments);
+    setAccounts(nextAccounts);
+  }, []);
+
   useEffect(() => { refreshGoals(); }, [refreshGoals]);
+  useEffect(() => { refreshIdentity(); }, [refreshIdentity]);
 
   const refreshOcrUsage = useCallback(async () => {
     try {
@@ -108,10 +141,13 @@ export function TransactionScreen() {
       type: prefillTransaction.type,
       amount: String(prefillTransaction.amount),
       category: prefillTransaction.category,
-      merchant: prefillTransaction.merchant || '',
+      merchant: prefillTransaction.merchantText || prefillTransaction.merchant || '',
+      merchantId: prefillTransaction.merchantId,
+      createNewMerchant: false,
       note: prefillTransaction.note || '',
       date: today(),
-      paymentMethod: prefillTransaction.paymentMethod || '',
+      paymentType: paymentTypeFromMethod(prefillTransaction.paymentMethod) || '',
+      paymentInstrumentId: prefillTransaction.paymentInstrumentId,
       goalId: prefillTransaction.type === 'expense' ? (prefillTransaction.goalId || '') : ''
     });
     setOcrPreview(null);
@@ -143,6 +179,15 @@ export function TransactionScreen() {
       return;
     }
 
+    const plannedMerchant = planMerchantSave(draft.merchant, draft.merchantId, draft.createNewMerchant, merchants);
+    if (plannedMerchant.upsert) {
+      await upsertMerchant(plannedMerchant.upsert);
+      setMerchants(current => {
+        const remaining = current.filter(item => item.id !== plannedMerchant.upsert?.id);
+        return [...remaining, plannedMerchant.upsert!];
+      });
+    }
+
     const transaction: Transaction = {
       id: Date.now().toString(),
       type: draft.type,
@@ -150,9 +195,12 @@ export function TransactionScreen() {
       currency: 'HKD',
       date: draft.date,
       category: draft.category,
-      merchant: draft.merchant.trim() || undefined,
+      merchant: plannedMerchant.merchant,
+      merchantId: plannedMerchant.merchantId,
+      merchantText: plannedMerchant.merchantText,
       goalId: draft.type === 'expense' ? (draft.goalId || undefined) : undefined,
-      paymentMethod: draft.paymentMethod || undefined,
+      paymentMethod: draft.paymentType ? paymentMethodFromType(draft.paymentType) : undefined,
+      paymentInstrumentId: draft.paymentInstrumentId,
       note: draft.note,
       receiptId: ocrPreview?.receipt.id,
       createdAt: new Date().toISOString()
@@ -160,11 +208,11 @@ export function TransactionScreen() {
 
     const finalValues = {
       amount: value,
-      merchant: draft.merchant.trim(),
+      merchant: plannedMerchant.merchantText || '',
       category: draft.category,
       note: draft.note,
       date: draft.date,
-      paymentMethod: draft.paymentMethod,
+      paymentMethod: transaction.paymentMethod || '',
     };
     const confirmedReceipt = ocrPreview ? {
       ...ocrPreview.receipt,
@@ -224,9 +272,12 @@ export function TransactionScreen() {
         amount: result.amount ? String(result.amount) : '',
         category: expenseCategories.includes(result.category) ? result.category : '其他',
         merchant: result.merchant || '',
+        merchantId: undefined,
+        createNewMerchant: false,
         note: result.note || '',
         date: result.date && /^\d{4}-\d{2}-\d{2}$/.test(result.date) ? result.date : '',
-        paymentMethod: suggestedPaymentMethod,
+        paymentType: paymentTypeFromMethod(suggestedPaymentMethod) || '',
+        paymentInstrumentId: undefined,
       });
       const receipt: Receipt = {
         id, imageUri: filename, status: 'done', amount: result.amount ?? undefined,
@@ -377,12 +428,16 @@ export function TransactionScreen() {
           value={draft.amount}
           onChange={e => updateDraft({amount: e.target.value})}
         />
-        <input
-          type="text"
-          placeholder="商戶名稱"
-          className={styles.input}
-          value={draft.merchant}
-          onChange={e => updateDraft({merchant: e.target.value})}
+        <MerchantField
+          merchants={merchants}
+          text={draft.merchant}
+          merchantId={draft.merchantId}
+          createNew={draft.createNewMerchant}
+          onChange={next => updateDraft({
+            merchant: next.text,
+            merchantId: next.merchantId,
+            createNewMerchant: next.createNew,
+          })}
         />
         <input
           type="text"
@@ -413,23 +468,17 @@ export function TransactionScreen() {
         </div>
 
         <p className={styles.sectionLabel}>付款方式</p>
-        <div className={styles.chips}>
-          <button
-            type="button"
-            onClick={() => updateDraft({paymentMethod: ''})}
-            className={[styles.chip, !draft.paymentMethod ? styles.activeChip : ''].join(' ')}
-          >未指定</button>
-          {paymentMethods.map(item => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => updateDraft({paymentMethod: item})}
-              className={[styles.chip, item === draft.paymentMethod ? styles.activeChip : ''].join(' ')}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
+        <PaymentInstrumentField
+          instruments={instruments}
+          accounts={accounts}
+          type={draft.paymentType}
+          instrumentId={draft.paymentInstrumentId}
+          onChange={next => updateDraft({paymentType: next.type, paymentInstrumentId: next.instrumentId})}
+          onCreate={async instrument => {
+            await upsertPaymentInstrument(instrument);
+            setInstruments(current => [...current.filter(item => item.id !== instrument.id), instrument]);
+          }}
+        />
 
         {goals.length > 0 && draft.type === 'expense' ? (
           <>

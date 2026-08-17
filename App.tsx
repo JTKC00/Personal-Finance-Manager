@@ -12,6 +12,7 @@ const TransactionListScreen = lazy(() => import('./src/screens/TransactionListSc
 const GoalsScreen = lazy(() => import('./src/screens/GoalsScreen').then(module => ({default: module.GoalsScreen})));
 const SubscriptionsScreen = lazy(() => import('./src/screens/SubscriptionsScreen').then(module => ({default: module.SubscriptionsScreen})));
 const ProfileScreen = lazy(() => import('./src/screens/ProfileScreen').then(module => ({default: module.ProfileScreen})));
+const DirectoryScreen = lazy(() => import('./src/screens/DirectoryScreen').then(module => ({default: module.DirectoryScreen})));
 const LoginScreen = lazy(() => import('./src/screens/LoginScreen').then(module => ({default: module.LoginScreen})));
 
 function LoadingScreen() {
@@ -76,6 +77,7 @@ function AppShell() {
             <Route path="/goals" element={<GoalsScreen />} />
             <Route path="/subscriptions" element={<SubscriptionsScreen />} />
             <Route path="/profile" element={<ProfileScreen />} />
+            <Route path="/directory" element={<DirectoryScreen />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Suspense>

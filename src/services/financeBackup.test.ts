@@ -3,7 +3,7 @@ import {countFinanceBackupItems, diffFinanceBackups, financeBackupDataFingerprin
 
 function makeBackup(patch: Partial<FinanceBackup> = {}): FinanceBackup {
   return {
-    version: 5,
+    version: 6,
     exportedAt: '2026-08-07T12:00:00.000Z',
     userEmail: 'owner@example.com',
     transactions: [],
@@ -14,6 +14,8 @@ function makeBackup(patch: Partial<FinanceBackup> = {}): FinanceBackup {
     receipts: [],
     accounts: [],
     transfers: [],
+    merchants: [],
+    paymentInstruments: [],
     ...patch,
   };
 }
@@ -24,9 +26,18 @@ const transaction = {
 };
 
 describe('finance backup validation', () => {
-  it('accepts a valid version 5 backup', () => {
+  it('accepts a valid version 6 backup with merchant and payment instrument identity', () => {
     const result = validateFinanceBackup(makeBackup({
-      transactions: [{...transaction, accountId: 'account-1', linkedTransferId: 'transfer-1'}],
+      transactions: [{
+        ...transaction,
+        accountId: 'account-1',
+        linkedTransferId: 'transfer-1',
+        merchantId: 'merch-1',
+        merchantText: 'M記',
+        merchant: '麥當勞',
+        paymentInstrumentId: 'pay-1',
+        paymentMethod: '信用卡',
+      }],
       goals: [{
         id: 'goal-1', name: '緊急基金', targetAmount: 10000, savedAmount: 500,
         deposits: [{id: 'deposit-1', amount: 500, date: '2026-08-01', type: 'deposit'}],
@@ -45,6 +56,11 @@ describe('finance backup validation', () => {
         id: 'transfer-1', fromAccountId: 'account-1', toAccountId: null, amount: 20,
         date: '2026-08-07', transactionId: 'txn-1', createdAt: '2026-08-07T12:00:00.000Z'
       }],
+      merchants: [{id: 'merch-1', name: '麥當勞', aliases: ['M記'], createdAt: '2026-08-01T00:00:00.000Z'}],
+      paymentInstruments: [{
+        id: 'pay-1', name: 'HSBC Red Card', type: 'credit_card', last4: '1234',
+        active: true, createdAt: '2026-08-01T00:00:00.000Z'
+      }],
     }));
     expect(result.ok).toBe(true);
   });
@@ -59,17 +75,56 @@ describe('finance backup validation', () => {
     const result = validateFinanceBackup(invalid);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors.join('\n')).toContain('只支援 version 4 或 5');
+    expect(result.errors.join('\n')).toContain('只支援 version 4、5 或 6 備份');
     expect(result.errors.join('\n')).toContain('不受支援的欄位');
     expect(result.errors.join('\n')).toContain('transactions[1].amount');
     expect(result.errors.join('\n')).toContain('transactions[1].id 重複');
   });
 
-  it('validates and migrates a version 4 backup to version 5', () => {
-    const legacy = {...makeBackup(), version: 4};
-    const result = validateFinanceBackup(legacy);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.backup.version).toBe(5);
+  it('validates and migrates version 4 and 5 backups to version 6', () => {
+    const v4 = {...makeBackup(), version: 4};
+    delete (v4 as {merchants?: unknown}).merchants;
+    delete (v4 as {paymentInstruments?: unknown}).paymentInstruments;
+    const v4Result = validateFinanceBackup(v4);
+    expect(v4Result.ok).toBe(true);
+    if (v4Result.ok) {
+      expect(v4Result.backup.version).toBe(6);
+      expect(v4Result.backup.merchants).toEqual([]);
+      expect(v4Result.backup.paymentInstruments).toEqual([]);
+    }
+
+    const v5 = {...makeBackup(), version: 5};
+    delete (v5 as {merchants?: unknown}).merchants;
+    delete (v5 as {paymentInstruments?: unknown}).paymentInstruments;
+    const v5Result = validateFinanceBackup(v5);
+    expect(v5Result.ok).toBe(true);
+    if (v5Result.ok) {
+      expect(v5Result.backup.version).toBe(6);
+      expect(v5Result.backup.merchants).toEqual([]);
+    }
+  });
+
+  it('rejects a version 5 backup that already uses new identity fields', () => {
+    const result = validateFinanceBackup({
+      ...makeBackup(),
+      version: 5,
+      merchants: undefined,
+      paymentInstruments: undefined,
+      transactions: [{...transaction, merchantId: 'merch-1'}],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.join('\n')).toContain('不受支援的欄位');
+  });
+
+  it('rejects a full card number stored as last4', () => {
+    const result = validateFinanceBackup(makeBackup({
+      paymentInstruments: [{
+        id: 'pay-1', name: '卡', type: 'credit_card', last4: '1234567890123456',
+        active: true, createdAt: '2026-08-01T00:00:00.000Z',
+      }],
+    }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.join('\n')).toContain('last4');
   });
 
   it('round-trips OCR audit and transaction receipt links in version 5', () => {
@@ -96,8 +151,16 @@ describe('finance backup validation', () => {
         duplicateCandidates: [],
       }],
     });
-    const result = validateFinanceBackup(audited);
-    expect(result).toEqual({ok: true, backup: audited});
+    const legacy = {...audited, version: 5};
+    delete (legacy as {merchants?: unknown}).merchants;
+    delete (legacy as {paymentInstruments?: unknown}).paymentInstruments;
+    const result = validateFinanceBackup(legacy);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.backup.version).toBe(6);
+      expect(result.backup.transactions[0].receiptId).toBe('receipt-1');
+      expect(result.backup.merchants).toEqual([]);
+    }
   });
 
   it('rejects calendar dates that only resemble date keys', () => {

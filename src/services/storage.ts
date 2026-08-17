@@ -32,7 +32,8 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import type {DocumentData, DocumentReference} from 'firebase/firestore';
-import {Account, AnalyticsEvent, Budget, Goal, Receipt, Subscription, Transaction, Transfer} from '../types/finance';
+import {Account, AnalyticsEvent, Budget, Goal, Merchant, PaymentInstrument, Receipt, Subscription, Transaction, Transfer} from '../types/finance';
+import {mergeMerchantRecords} from './merchantIdentity';
 import {clean, db, getUid} from './firebase';
 
 // ── Firestore path helpers ────────────────────────────────────────────────────
@@ -526,6 +527,56 @@ export async function removeGoalEntry(goalId: string, entryId: string): Promise<
   return nextGoal;
 }
 
+export async function loadMerchants(): Promise<Merchant[]> {
+  return loadCollection<Merchant>(getUid(), 'merchants');
+}
+
+export async function upsertMerchant(merchant: Merchant): Promise<void> {
+  const uid = getUid();
+  await setDoc(docRef(uid, 'merchants', merchant.id), clean(merchant));
+}
+
+export async function deleteMerchant(id: string): Promise<void> {
+  const uid = getUid();
+  await deleteDoc(docRef(uid, 'merchants', id));
+}
+
+export async function mergeMerchants(sourceId: string, targetId: string): Promise<Merchant> {
+  if (sourceId === targetId) throw new Error('不能把商戶合併到自己。');
+  const uid = getUid();
+  const [sourceSnap, targetSnap, transactions] = await Promise.all([
+    getDoc(docRef(uid, 'merchants', sourceId)),
+    getDoc(docRef(uid, 'merchants', targetId)),
+    loadTransactions(),
+  ]);
+  if (!sourceSnap.exists() || !targetSnap.exists()) throw new Error('找不到要合併的商戶。');
+  const merged = mergeMerchantRecords(targetSnap.data() as Merchant, sourceSnap.data() as Merchant);
+  const writes: RestoreWrite[] = [
+    {kind: 'set', ref: docRef(uid, 'merchants', targetId), data: clean(merged)},
+    {kind: 'delete', ref: docRef(uid, 'merchants', sourceId)},
+  ];
+  transactions
+    .filter(item => item.merchantId === sourceId)
+    .forEach(item => {
+      writes.push({
+        kind: 'set',
+        ref: docRef(uid, 'transactions', item.id),
+        data: clean({...item, merchantId: targetId}),
+      });
+    });
+  await commitRestoreWrites(writes);
+  return merged;
+}
+
+export async function loadPaymentInstruments(): Promise<PaymentInstrument[]> {
+  return loadCollection<PaymentInstrument>(getUid(), 'paymentInstruments');
+}
+
+export async function upsertPaymentInstrument(instrument: PaymentInstrument): Promise<void> {
+  const uid = getUid();
+  await setDoc(docRef(uid, 'paymentInstruments', instrument.id), clean(instrument));
+}
+
 export async function loadAccounts(): Promise<Account[]> {
   return loadCollection<Account>(getUid(), 'accounts');
 }
@@ -671,7 +722,7 @@ export async function loadEvents(): Promise<AnalyticsEvent[]> {
 
 export async function createFinanceBackup(userEmail: string): Promise<FinanceBackup> {
   const uid = getUid();
-  const [transactions, goals, budgets, receipts, subscriptions, accounts, transfers, budgetMonths] = await Promise.all([
+  const [transactions, goals, budgets, receipts, subscriptions, accounts, transfers, budgetMonths, merchants, paymentInstruments] = await Promise.all([
     loadTransactions(),
     loadCollection<Goal>(uid, 'goals'),
     loadBudgets(),
@@ -680,6 +731,8 @@ export async function createFinanceBackup(userEmail: string): Promise<FinanceBac
     loadAccounts(),
     loadTransfers(),
     loadAllBudgetMonths(),
+    loadMerchants(),
+    loadPaymentInstruments(),
   ]);
 
   return {
@@ -696,6 +749,8 @@ export async function createFinanceBackup(userEmail: string): Promise<FinanceBac
     receipts: [...receipts].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     accounts: [...accounts].sort((a, b) => a.name.localeCompare(b.name)),
     transfers: [...transfers].sort((a, b) => a.date.localeCompare(b.date)),
+    merchants: [...merchants].sort((a, b) => a.name.localeCompare(b.name)),
+    paymentInstruments: [...paymentInstruments].sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
 
@@ -742,6 +797,8 @@ export async function restoreFinanceBackup(backup: FinanceBackup): Promise<void>
     appendCollectionRestoreWrites(writes, uid, 'receipts', backup.receipts),
     appendCollectionRestoreWrites(writes, uid, 'accounts', backup.accounts),
     appendCollectionRestoreWrites(writes, uid, 'transfers', backup.transfers),
+    appendCollectionRestoreWrites(writes, uid, 'merchants', backup.merchants),
+    appendCollectionRestoreWrites(writes, uid, 'paymentInstruments', backup.paymentInstruments),
   ]);
 
   const currentBudgetMonths = await getDocs(col(uid, BUDGET_MONTHS));

@@ -8,7 +8,7 @@
 | 路徑 | 職責 |
 |---|---|
 | App.tsx | App shell：lazy 路由、AuthProvider、SubscriptionProcessingProvider、PWA 更新橫幅；登入後由訂閱處理 context 自動入帳 |
-| src/screens/ | 8 個頁面（Dashboard／Analysis／Transaction／TransactionList／Goals／Subscriptions／Profile／Login），多數配對 .module.css（Subscriptions、TransactionList 兩頁沒有） |
+| src/screens/ | 9 個頁面（Dashboard／Analysis／Transaction／TransactionList／Goals／Subscriptions／Profile／Directory／Login），多數配對 .module.css（Subscriptions、TransactionList 兩頁沒有） |
 | src/integration/ | Auth／Firestore Emulator 整合測試（交易＋Account/Transfer、訂閱、月度 Budget、Backup Restore、跨使用者 rules） |
 | src/services/ | 所有邏輯與 IO（見下表）；唯一可以 import firebase 的層 |
 | src/types/finance.ts | 全部資料型別的唯一定義（＝事實上的 schema） |
@@ -31,7 +31,12 @@
 | financeLogic.ts | 純邏輯。目標：`normalizeGoal`（legacy opening entry）、`getGoalSavedAmount`（standalone ledger）、`getGoalWithSavedAmount`（canonical resolver）、`calculateAccountBalance`（linked ledger）；分類聚合：`sumExpensesByCategory`、`sumSubscriptionChargesByCategory`；幣別：`normalizeCurrency`、`summarizeTransactionsByCurrency`；日期、訂閱與預算 helpers |
 | storage.ts | 全部 Firestore CRUD。**高危**：`processDueSubscriptions`（登入自動入帳，00-risks 風險 2）、`saveTransactionWithGoalLink`（runTransaction 連動目標）、`syncTransactionTransfer`（交易↔轉帳↔帳戶連動）、`restoreFinanceBackup`（完整取代資料）。聚合：`getAccountBalance`、`getMonthlySummary`、`getCategoryBreakdown`。預算：`loadBudgetMonth`／`saveCurrentMonthBudgets`（writeBatch 原子雙寫 legacy＋月文件）／`loadBudgetRowsForMonth`。備份：`createFinanceBackup`／`restoreFinanceBackup` |
 | firebase.ts | 初始化。正式環境用 persistentLocalCache；只有 `VITE_USE_FIREBASE_EMULATORS=true` 才改用 memory cache 並連 Auth／Firestore Emulator。`getUid` 未登入直接 throw；`clean` 去 undefined，Firestore 寫入前必經 |
-| financeBackup.ts | 完整備份 schema 驗證、項目計數、差異預覽與資料指紋（純邏輯） |
+| financeBackup.ts | 完整備份 schema 驗證、項目計數、差異預覽與資料指紋（純邏輯）。現行 `FINANCE_BACKUP_VERSION = 6`；v4／v5 讀入時補空的 `merchants`／`paymentInstruments` |
+| comparisonEngine.ts | 可重用比較分析：期間 KPI、相對／百分點 delta、分類貢獻、分組支出比較 |
+| merchantIdentity.ts | 商戶正規化／別名比對、疑似重複建議、merge 純函式、交易儲存規劃；不自動合併 |
+| paymentInstrument.ts | 付款工具類型標籤、last4 驗證（只准 4 位）、類型／工具／帳戶／訂閱比較 |
+| budgetPace.ts | 預算進度 vs 月份進度、安全日額、月底推估 |
+| analysisInsights.ts | Analysis 洞察：由 KPI／貢獻／預算進度產生 3–5 條 deterministic 文字 |
 | subscriptionProcessing.ts | 包裝自動入帳的錯誤保存與重試狀態；React context 使用這個狀態機 |
 | ocr.ts | 前端打 `/api/ocr`（正式＝hosting rewrite→Cloud Run；本機＝vite proxy 或 VITE_OCR_PROXY_URL） |
 | appearance.ts | localStorage 主題 `pfm-theme-mode` |
@@ -41,18 +46,20 @@
 
 ## 資料模型（Firestore：`users/{uid}/` 底下，兩位使用者各自一棵、互不可見）
 
-- 集合：`transactions`、`subscriptions`、`goals`、`accounts`、`transfers`、`receipts`——文件 id＝物件 id，內容＝types/finance.ts 對應型別經 `clean()` 後原樣。
+- 集合：`transactions`、`subscriptions`、`goals`、`accounts`、`transfers`、`receipts`、`merchants`、`paymentInstruments`——文件 id＝物件 id，內容＝types/finance.ts 對應型別經 `clean()` 後原樣。
 - 單文件：`meta/budgets`（`Record<分類, 金額>`——**legacy，儲存預算時與月度文件原子雙寫保持同步**）、`meta/events`（分析事件，保留最後 500 筆）。
 - 月度預算集合：`budgetMonths/{YYYY-MM}`（2026-07-13 起；文件＝`Record<分類, 金額>`。**當月一律讀 legacy**（兩版 app 都寫它，不會跨裝置過期）；其他月讀該月自己的文件、缺文件＝該月無紀錄。舊版 app 只讀寫 legacy 也不壞）。
 - **id／去重鍵格式＝schema 的一部分，改了＝資料相容性破壞**（00-risks 風險 1）：
   - 訂閱入帳交易 id：`sub-{訂閱id}-{日期}`；去重鍵 `{subscriptionId}:{date}`
   - 交易連動轉帳 id：`txn-{交易id}`
   - 目標 entry id：`{goalId}-{timestamp}-{隨機}`
+  - 商戶／付款工具新文件 id：`merch-{timestamp}`／`pay-{timestamp}`（既有交易 id 格式不變）
+- Transaction 可選身份欄位（只加不改）：`merchantId`、`merchantText`、`paymentInstrumentId`。舊 `merchant`／`paymentMethod` 仍寫入以相容舊版 app。分析時商戶只信任 `merchantId`；未歸戶文字分開標示，不用自由文字假裝精確分組。
 
 ## 一筆交易的資料流（讀懂這段就懂一半）
 
 1. **寫入**：TransactionScreen → `saveTransactionWithGoalLink()`。standalone goal 在 runTransaction 內寫 `deposits[]`；account-linked goal 則把目標扣款寫成 `txn-*` Transfer，Goal 餘額由帳戶 ledger 推導。一般帳戶交易仍可經 `syncTransactionTransfer()` 建立對應 Transfer。
-2. **讀取**：Dashboard／Analysis 用 `getTransactionsByMonth()`（date 字串範圍查詢）→ `getMonthlySummary()`／`getCategoryBreakdown()` 聚合。
+2. **讀取**：Dashboard 用 `getTransactionsByMonth()` → `getMonthlySummary()`／`getCategoryBreakdown()`。Analysis 用 comparisonEngine 做期間比較與貢獻，不再把比較邏輯寫死在畫面裡。
 3. **自動寫入**：登入後 `SubscriptionProcessingProvider` 觸發 `processDueSubscriptions()`——把到期訂閱寫成真交易、推進 nextBillingDate；失敗不阻斷登入，但 Dashboard 顯示警示、保留原因並提供重試。
 4. **帳戶餘額**：不存欄位，每次由 `initialBalance + 轉帳流入 − 轉帳流出` 重算（`getAccountBalance`）。
 
@@ -63,7 +70,8 @@
 - **幣別**：`Account.currency` 是帳戶基準幣別，連結交易必須相同，否則在 `saveTransactionWithGoalLink` 寫入前拒絕。第一階段不做 FX；Dashboard 固定以 HKD 為顯示基準，月度摘要、預算、訂閱預留、分類警示及異常消費只計 HKD，其他 currency 原額分列。`summarizeTransactionsByCurrency` 是分幣別聚合範本。Analysis 等畫面仍可能混加，見 backlog。
 - **Firestore 寫入**：一律 `setDoc(ref, clean(obj))`；跨文件連動用 `runTransaction`（範本：saveTransactionWithGoalLink）。
 - **Goal canonical source**：無 `accountId`＝`deposits[]`；有 `accountId`＝Account `initialBalance + transfers`。`savedAmount` 僅是 derived cache，不可直接編輯或單獨加減。linked goal 的畫面歷史由 `goalId` Transfer 投影，原始 Transfer 才是真相。
-- **新頁面**：lazy import + Suspense（照 App.tsx 現有模式）；樣式配 .module.css。
+- **新頁面**：lazy import + Suspense（照 App.tsx 現有模式）；樣式配 .module.css。商戶／付款工具管理在 `/directory`，從 Profile 進入。
+- **付款工具 vs 帳戶**：Account＝資金／負債所在；Payment Instrument＝這次怎麼付款。可選 `accountId` 連結，不是第二套帳戶系統。`last4` 只能 4 位數字。
 - **測試**：純邏輯放 `src/services/*.test.ts`；Auth／Firestore 流程放 `src/integration/*.integration.ts`；Functions policy 用 Node test。`npm run verify` 全部會跑；Live Gemini 由 `functions/src/ocrEval.ts` 使用私有測試集明確執行，不進 CI。
 
 ## 已知地雷（動到附近先看這裡）
@@ -93,7 +101,7 @@
 
 待辦（依價值排序）：
 1. Analysis／Subscriptions 等非 Dashboard 聚合全面按 currency 隔離；仍不做 FX。
-2. screens 預算計算改用 financeLogic `calculateBudgetUsage`（現全 inline；屬重構，需行為對拍：Dashboard 警示門檻 0.75 vs 函式預設 0.7、ratio 有無 clamp）；順帶把 AnalysisScreen 日長條圖的裸加（barData，:113 附近，純顯示）一併收掉。
+2. screens 預算計算改用 financeLogic `calculateBudgetUsage`（現全 inline；屬重構，需行為對拍：Dashboard 警示門檻 0.75 vs 函式預設 0.7、ratio 有無 clamp）。AnalysisScreen 日長條已改 `sumMoney`。
 3. OCR endpoint／App Check 實際 token 尚須 deployment 驗證；Gemini 準確度改由私有香港收據 baseline 評估，不在 CI 讀取真實圖片或 secret。
 4. 10-prod-safety §8 的剩餘待驗證（Console rollback 步驟、export 是否需 Blaze）。
 
@@ -108,3 +116,4 @@
 - 2026-08-07 Dashboard 固定 HKD 基準幣別，其他 currency 分列；新增分幣別聚合慣例及其餘畫面待辦。
 - 2026-08-07 Goal 雙重真相收斂：新增 legacy opening migration、account ledger resolver 與 Transfer-based linked goal history。
 - 2026-08-10 App Check 加入 observe logging／response status、typed boolean parameter、enforce policy tests 與兩階段 rollout gate。
+- 2026-08-17 Analysis 2.0：comparisonEngine、分類貢獻、Merchant／PaymentInstrument 身份模型、backup v6、Directory 管理頁、Analysis 比較／洞察／預算進度。

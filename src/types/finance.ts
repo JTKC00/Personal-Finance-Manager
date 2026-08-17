@@ -12,7 +12,10 @@ export type Transaction = {
   accountId?: string;
   linkedTransferId?: string;
   merchant?: string;
+  merchantId?: string;
+  merchantText?: string;
   paymentMethod?: string;
+  paymentInstrumentId?: string;
   subscriptionId?: string;
   note?: string;
   receiptUrl?: string;
@@ -122,6 +125,32 @@ export type GoalDeposit = {
   type: 'deposit' | 'withdraw';
   note?: string;
   linkedTransactionId?: string;
+};
+
+export type Merchant = {
+  id: string;
+  name: string;
+  aliases: string[];
+  createdAt: string;
+};
+
+export type PaymentInstrumentType =
+  | 'credit_card'
+  | 'debit_card'
+  | 'e_wallet'
+  | 'cash'
+  | 'bank'
+  | 'other';
+
+export type PaymentInstrument = {
+  id: string;
+  name: string;
+  type: PaymentInstrumentType;
+  provider?: string;
+  last4?: string;
+  accountId?: string;
+  active: boolean;
+  createdAt: string;
 };
 
 export type AccountType = 'cash' | 'bank' | 'wallet' | 'credit';
