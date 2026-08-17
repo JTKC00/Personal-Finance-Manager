@@ -417,6 +417,25 @@ export function analyzeCategoryContribution(
   );
 }
 
+function currentOnlyCategoryRows(currentMap: Record<string, number>): CategoryContribution[] {
+  const currentTotal = sumMoney(Object.values(currentMap));
+  return Object.entries(currentMap)
+    .filter(([, amount]) => amount > 0)
+    .map(([category, currentAmount]) => ({
+      category,
+      currentAmount,
+      comparisonAmount: 0,
+      delta: 0,
+      percentageDelta: null,
+      currentShare: shareOf(currentAmount, currentTotal),
+      comparisonShare: 0,
+      shareChange: 0,
+      contribution: 0,
+      role: 'neutral' as const,
+    }))
+    .sort((left, right) => right.currentAmount - left.currentAmount);
+}
+
 export function analyzeCategoryContributionAcrossMonths(
   currentTransactions: Transaction[],
   monthlyComparison: Record<string, Transaction[]>,
@@ -424,7 +443,7 @@ export function analyzeCategoryContributionAcrossMonths(
   currency = ANALYSIS_BASE_CURRENCY
 ): CategoryContribution[] {
   const currentMap = sumExpensesByCategory(filterTransactionsByCurrency(currentTransactions, currency));
-  if (!availableMonths.length) return contributeFromCategoryMaps(currentMap, {});
+  if (!availableMonths.length) return currentOnlyCategoryRows(currentMap);
 
   const monthlyMaps = availableMonths.map(month => (
     sumExpensesByCategory(filterTransactionsByCurrency(monthlyComparison[month] || [], currency))

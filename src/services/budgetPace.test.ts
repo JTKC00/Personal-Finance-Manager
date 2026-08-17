@@ -125,4 +125,91 @@ describe('analysis insights', () => {
       transactionCount: 0,
     })[0].id).toBe('empty-month');
   });
+
+  const fakeComparativeContributions = [{
+    category: '餐飲',
+    currentAmount: 800,
+    comparisonAmount: 0,
+    delta: 800,
+    percentageDelta: null,
+    currentShare: 0.8,
+    comparisonShare: 0,
+    shareChange: 0.8,
+    contribution: 1,
+    role: 'driver' as const,
+  }, {
+    category: '購物',
+    currentAmount: 200,
+    comparisonAmount: 0,
+    delta: 200,
+    percentageDelta: null,
+    currentShare: 0.2,
+    comparisonShare: 0,
+    shareChange: 0.2,
+    contribution: 0,
+    role: 'driver' as const,
+  }];
+
+  it('does not emit comparison insights when comparison data is unavailable', () => {
+    const ids = buildAnalysisInsights({
+      mode: 'avg_12m',
+      hasComparisonData: false,
+      expense: compareKpis(currentTotals, previousTotals).expense,
+      savingsRate: compareKpis(currentTotals, previousTotals).savingsRate,
+      contributions: fakeComparativeContributions,
+      budgetPaces: [],
+      transactionCount: 4,
+    }).map(item => item.id);
+    expect(ids).toContain('missing-comparison');
+    expect(ids).not.toContain('expense-change');
+    expect(ids).not.toContain('top-contribution');
+    expect(ids).not.toContain('category-increase');
+    expect(ids).not.toContain('share-jump');
+    expect(ids).not.toContain('savings-rate');
+  });
+
+  it('does not emit comparison insights when the mode is none', () => {
+    const ids = buildAnalysisInsights({
+      mode: 'none',
+      hasComparisonData: false,
+      expense: compareKpis(currentTotals, previousTotals).expense,
+      savingsRate: compareKpis(currentTotals, previousTotals).savingsRate,
+      contributions: fakeComparativeContributions,
+      budgetPaces: [],
+      transactionCount: 4,
+    }).map(item => item.id);
+    expect(ids).not.toContain('missing-comparison');
+    expect(ids).not.toContain('expense-change');
+    expect(ids).not.toContain('top-contribution');
+    expect(ids).not.toContain('category-increase');
+    expect(ids).not.toContain('share-jump');
+    expect(ids).not.toContain('savings-rate');
+  });
+
+  it('still emits comparative insights and a coverage warning for partial history', () => {
+    const ids = buildAnalysisInsights({
+      mode: 'avg_12m',
+      hasComparisonData: true,
+      coverageLabel: '此比較只根據 2 / 12 個月歷史資料。',
+      expense: compareKpis(currentTotals, previousTotals).expense,
+      savingsRate: compareKpis(currentTotals, previousTotals).savingsRate,
+      contributions: [{
+        category: '餐飲',
+        currentAmount: 2200,
+        comparisonAmount: 1000,
+        delta: 1200,
+        percentageDelta: 1.2,
+        currentShare: 0.21,
+        comparisonShare: 0.12,
+        shareChange: 0.09,
+        contribution: 0.5714,
+        role: 'driver',
+      }],
+      budgetPaces: [],
+      transactionCount: 20,
+    }).map(item => item.id);
+    expect(ids).toContain('partial-coverage');
+    expect(ids).toContain('expense-change');
+    expect(ids).not.toContain('missing-comparison');
+  });
 });

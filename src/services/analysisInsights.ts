@@ -56,8 +56,9 @@ export function buildAnalysisInsights(options: {
     });
   }
 
+  const canCompare = options.mode !== 'none' && options.hasComparisonData;
   const expense = options.expense;
-  if (options.mode !== 'none' && expense.absoluteDelta !== null && expense.direction !== 'flat') {
+  if (canCompare && expense.absoluteDelta !== null && expense.direction !== 'flat') {
     const increased = (expense.absoluteDelta || 0) > 0;
     insights.push({
       id: 'expense-change',
@@ -71,7 +72,7 @@ export function buildAnalysisInsights(options: {
   }
 
   const topDriver = options.contributions.find(item => item.role === 'driver' && item.delta !== 0);
-  if (topDriver && options.mode !== 'none' && expense.absoluteDelta) {
+  if (canCompare && topDriver && expense.absoluteDelta) {
     const share = Math.abs(topDriver.contribution);
     insights.push({
       id: 'top-contribution',
@@ -83,7 +84,7 @@ export function buildAnalysisInsights(options: {
   }
 
   const topIncrease = options.contributions.find(item => item.delta > 0);
-  if (topIncrease && options.mode !== 'none' && topIncrease.category !== topDriver?.category) {
+  if (canCompare && topIncrease && topIncrease.category !== topDriver?.category) {
     insights.push({
       id: 'category-increase',
       title: `${topIncrease.category} 支出較比較期增加 ${money(topIncrease.delta)}`,
@@ -96,7 +97,7 @@ export function buildAnalysisInsights(options: {
   }
 
   const savings = options.savingsRate;
-  if (options.mode !== 'none' && savings.absoluteDelta !== null && Math.abs(savings.absoluteDelta) >= 0.02) {
+  if (canCompare && savings.absoluteDelta !== null && Math.abs(savings.absoluteDelta) >= 0.02) {
     const dropped = savings.absoluteDelta < 0;
     insights.push({
       id: 'savings-rate',
@@ -110,7 +111,7 @@ export function buildAnalysisInsights(options: {
   const shareJump = options.contributions
     .filter(item => Math.abs(item.shareChange) >= 0.05)
     .sort((left, right) => Math.abs(right.shareChange) - Math.abs(left.shareChange))[0];
-  if (shareJump && options.mode !== 'none') {
+  if (canCompare && shareJump) {
     insights.push({
       id: 'share-jump',
       title: `${shareJump.category} 佔總支出比重${shareJump.shareChange > 0 ? '上升' : '下降'}`,

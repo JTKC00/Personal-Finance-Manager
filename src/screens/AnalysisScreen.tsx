@@ -176,13 +176,13 @@ export function AnalysisScreen() {
   const categoryMap = useMemo(() => sumExpensesByCategory(scopedTransactions), [scopedTransactions]);
   const availableMonths = coverage.availableMonths;
   const contributions = useMemo(
-    () => mode === 'none' ? [] : analyzeCategoryContributionAcrossMonths(
+    () => analyzeCategoryContributionAcrossMonths(
       scopedTransactions,
       monthlyTransactions,
-      availableMonths,
+      hasComparisonData ? availableMonths : [],
       ANALYSIS_BASE_CURRENCY
     ),
-    [availableMonths, mode, monthlyTransactions, scopedTransactions]
+    [availableMonths, hasComparisonData, monthlyTransactions, scopedTransactions]
   );
   const merchantRows = useMemo(
     () => compareMerchantsAcrossMonths(scopedTransactions, monthlyTransactions, availableMonths, merchants),
@@ -484,15 +484,17 @@ export function AnalysisScreen() {
                       {hasComparisonData ? ` · ${vsLabel} ${formatMoney(item.comparisonAmount)}` : ''}
                     </span>
                   </div>
-                  <span className={[styles.changeDelta, item.delta >= 0 ? styles.deltaUp : styles.deltaDown].join(' ')}>
-                    {formatSignedMoney(item.delta)}
-                    {hasComparisonData && item.role !== 'neutral' ? ` · ${item.role === 'offset' ? '抵銷' : '貢獻'} ${formatPercent(Math.abs(item.contribution))}` : ''}
-                  </span>
+                  {hasComparisonData ? (
+                    <span className={[styles.changeDelta, item.delta >= 0 ? styles.deltaUp : styles.deltaDown].join(' ')}>
+                      {formatSignedMoney(item.delta)}
+                      {item.role !== 'neutral' ? ` · ${item.role === 'offset' ? '抵銷' : '貢獻'} ${formatPercent(Math.abs(item.contribution))}` : ''}
+                    </span>
+                  ) : null}
                 </div>
               ))}
             </div>
           ) : (
-            <p className={styles.empty}>本月尚無分類支出可比較。</p>
+            <p className={styles.empty}>本月尚無分類支出。</p>
           )
         ) : null}
 

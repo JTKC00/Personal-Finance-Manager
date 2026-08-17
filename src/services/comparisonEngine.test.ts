@@ -346,6 +346,26 @@ describe('compareSpendGroups', () => {
     expect(twelve.find(item => item.key === '醫療')?.comparisonCount).toBe(0);
   });
 
+  it('returns current-only category rows when there are no available comparison months', () => {
+    const rows = analyzeCategoryContributionAcrossMonths(
+      [tx({id: 'food', amount: 800, category: '餐飲'}), tx({id: 'shop', amount: 200, category: '購物'})],
+      {},
+      []
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows.find(item => item.category === '餐飲')).toMatchObject({
+      currentAmount: 800,
+      currentShare: 0.8,
+      comparisonAmount: 0,
+      delta: 0,
+      percentageDelta: null,
+      shareChange: 0,
+      contribution: 0,
+      role: 'neutral',
+    });
+    expect(rows.find(item => item.category === '購物')?.currentShare).toBe(0.2);
+  });
+
   it('averages category contribution from monthly totals, not scaled transaction rows', () => {
     const rows = analyzeCategoryContributionAcrossMonths(
       [tx({id: 'now', amount: 900, category: '餐飲'})],
