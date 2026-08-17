@@ -2,11 +2,15 @@ import {describe, expect, it} from 'vitest';
 import type {Transaction} from '../types/finance';
 import {
   analyzeCategoryContribution,
+  analyzeCategoryContributionAcrossMonths,
   averagePeriodTotals,
+  buildComparisonResult,
   buildComparisonTotals,
   buildPeriodTotals,
   compareKpis,
   compareSpendGroups,
+  compareSpendGroupsAcrossMonths,
+  resolveComparisonCoverage,
   resolveComparisonMonths,
   shiftMonthKey,
 } from './comparisonEngine';
@@ -211,6 +215,67 @@ describe('analyzeCategoryContribution', () => {
   });
 });
 
+describe('multi-currency isolation', () => {
+  it('does not mix HKD and USD in KPI, comparison, category, or grouped analysis', () => {
+    const current = [
+      tx({id: 'hkd-1', amount: 1000, category: '餐飲'}),
+      tx({id: 'usd-1', amount: 100, currency: 'USD', category: '餐飲'}),
+    ];
+    const previous = [
+      tx({id: 'hkd-2', amount: 400, date: '2026-07-10', category: '餐飲'}),
+      tx({id: 'usd-2', amount: 80, currency: 'USD', date: '2026-07-10', category: '餐飲'}),
+    ];
+    expect(buildPeriodTotals(current, currentOptions).expense).toBe(1000);
+    expect(buildComparisonTotals('2026-08', 'previous_month', {
+      '2026-08': current,
+      '2026-07': previous,
+    }, {currentMonth: '2026-08', today: new Date(2026, 7, 16), historyStartMonth: '2026-07'})?.expense).toBe(400);
+    expect(analyzeCategoryContribution(current, previous).find(item => item.category === '餐飲')).toMatchObject({
+      currentAmount: 1000,
+      comparisonAmount: 400,
+    });
+    expect(compareSpendGroups(current, previous, () => ({key: 'food', label: '餐飲', linked: true}))[0]).toMatchObject({
+      currentAmount: 1000,
+      comparisonAmount: 400,
+    });
+  });
+
+  it('keeps budget-facing category maps on the analysis currency', () => {
+    const mixed = [
+      tx({id: 'hkd', amount: 3800, category: '餐飲'}),
+      tx({id: 'usd', amount: 900, currency: 'USD', category: '餐飲'}),
+    ];
+    expect(analyzeCategoryContribution(mixed, []).find(item => item.category === '餐飲')?.currentAmount).toBe(3800);
+  });
+});
+
+describe('historical coverage', () => {
+  it('does not treat months before the first recorded transaction as zero spend', () => {
+    const coverage = resolveComparisonCoverage('2026-08', 'avg_12m', '2026-06');
+    expect(coverage).toMatchObject({
+      requestedPeriods: 12,
+      availablePeriods: 2,
+    });
+    expect(coverage.availableMonths).toEqual(['2026-07', '2026-06']);
+
+    const result = buildComparisonResult('2026-08', 'avg_12m', {
+      '2026-08': [tx({id: 'now', amount: 900})],
+      '2026-07': [tx({id: 'jul', amount: 300, date: '2026-07-02'})],
+      '2026-06': [tx({id: 'jun', amount: 500, date: '2026-06-02'})],
+    }, {currentMonth: '2026-08', today: new Date(2026, 7, 16), historyStartMonth: '2026-06'});
+    expect(result.coverage.availablePeriods).toBe(2);
+    expect(result.totals?.expense).toBe(400);
+  });
+
+  it('returns no comparison when there is no historical coverage', () => {
+    const result = buildComparisonResult('2026-08', 'previous_month', {
+      '2026-08': [tx({amount: 100})],
+    }, {currentMonth: '2026-08', today: new Date(2026, 7, 16), historyStartMonth: '2026-08'});
+    expect(result.totals).toBeNull();
+    expect(result.coverage.availablePeriods).toBe(0);
+  });
+});
+
 describe('compareSpendGroups', () => {
   it('aggregates amount, count, and average for a group key', () => {
     const rows = compareSpendGroups(
@@ -226,6 +291,75 @@ describe('compareSpendGroups', () => {
       percentageDelta: 4,
       currentCount: 2,
       currentAverage: 50,
+    });
+  });
+
+  it('averages monthly merchant aggregates instead of scaling raw transactions', () => {
+    const current = [tx({id: 'aug-1', amount: 200}), tx({id: 'aug-2', amount: 200})];
+    const monthly = {
+      '2026-07': Array.from({length: 6}, (_, index) => tx({id: `jul-${index}`, amount: 50, date: '2026-07-02'})),
+      '2026-06': Array.from({length: 10}, (_, index) => tx({id: `jun-${index}`, amount: 50, date: '2026-06-02'})),
+      '2026-05': Array.from({length: 8}, (_, index) => tx({id: `may-${index}`, amount: 50, date: '2026-05-02'})),
+    };
+    const rows = compareSpendGroupsAcrossMonths(
+      current,
+      monthly,
+      ['2026-07', '2026-06', '2026-05'],
+      () => ({key: 'mcd', label: '麥當勞', linked: true})
+    );
+    expect(rows[0]).toMatchObject({
+      comparisonAmount: 400,
+      comparisonCount: 8,
+      comparisonAverage: 50,
+    });
+  });
+
+  it('includes in-coverage months that lack the group as true zeros and supports 6M / 12M / new / disappeared groups', () => {
+    const current = [tx({id: 'new', amount: 90, category: '醫療'})];
+    const monthly: Record<string, Transaction[]> = {
+      '2026-07': [tx({id: 'old', amount: 120, date: '2026-07-02', category: '保險'})],
+      '2026-06': [],
+      '2026-05': [tx({id: 'old-2', amount: 180, date: '2026-05-02', category: '保險'})],
+    };
+    const rows = compareSpendGroupsAcrossMonths(
+      current,
+      monthly,
+      ['2026-07', '2026-06', '2026-05'],
+      transaction => ({key: transaction.category, label: transaction.category, linked: true})
+    );
+    expect(rows.find(item => item.key === '醫療')).toMatchObject({
+      currentAmount: 90,
+      comparisonAmount: 0,
+      comparisonCount: 0,
+    });
+    expect(rows.find(item => item.key === '保險')).toMatchObject({
+      currentAmount: 0,
+      comparisonAmount: 100,
+      comparisonCount: 0.7,
+    });
+
+    const byCategory = (transaction: Transaction) => ({key: transaction.category, label: transaction.category, linked: true});
+    const six = compareSpendGroupsAcrossMonths(current, monthly, ['2026-07', '2026-06', '2026-05', '2026-04', '2026-03', '2026-02'], byCategory);
+    expect(six.find(item => item.key === '醫療')?.comparisonAmount).toBe(0);
+    const twelveMonths = Array.from({length: 12}, (_, index) => shiftMonthKey('2026-08', -(index + 1)));
+    const twelve = compareSpendGroupsAcrossMonths(current, monthly, twelveMonths, byCategory);
+    expect(twelve.find(item => item.key === '醫療')?.comparisonCount).toBe(0);
+  });
+
+  it('averages category contribution from monthly totals, not scaled transaction rows', () => {
+    const rows = analyzeCategoryContributionAcrossMonths(
+      [tx({id: 'now', amount: 900, category: '餐飲'})],
+      {
+        '2026-07': [tx({id: 'j1', amount: 300, date: '2026-07-02', category: '餐飲'})],
+        '2026-06': [tx({id: 'n1', amount: 500, date: '2026-06-02', category: '餐飲'})],
+        '2026-05': [tx({id: 'm1', amount: 400, date: '2026-05-02', category: '餐飲'})],
+      },
+      ['2026-07', '2026-06', '2026-05']
+    );
+    expect(rows[0]).toMatchObject({
+      currentAmount: 900,
+      comparisonAmount: 400,
+      delta: 500,
     });
   });
 });

@@ -31,6 +31,21 @@
   font-weight: 600;
 }
 
+.coverageNote,
+.currencyNote {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.currencyNote {
+  margin: 0 0 var(--spacing-md);
+}
+
+.currencyNote p {
+  margin: 0 0 2px;
+}
+
 .monthNav {
   display: flex;
   align-items: center;

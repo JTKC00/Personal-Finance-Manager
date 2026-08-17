@@ -67,7 +67,7 @@
 
 - **金額**：JS number、單位「元」、2 位小數（不是整數 cents）。運算一律過 money.ts：加總用 `sumMoney(array)`，單一結果用 `roundMoney(x)`；**分類聚合不要自寫 reduce**，直接用 financeLogic 的 `sumExpensesByCategory`／`sumSubscriptionChargesByCategory`。✅ 正例：storage.ts:528 `getCategoryBreakdown`、三個 screens 的分類聚合（2026-07-11 起）。❌ 反例（歷史，均已修復）：storage 裸加總（75cf3f9 修）、screens 分類 map 裸加總（2026-07-11 修）——同型新犯是本 repo 最常見的回歸。
 - **日期**：`YYYY-MM-DD` 字串、**本地時區**（經 `formatDateKey`），比較直接用字串大小；月鍵 `YYYY-MM`。時間戳欄位（createdAt、at）才用 `toISOString()`。⚠️ 別混用：`toISOString().slice(0,10)` 是 UTC 日期，香港凌晨 0–8 點會差一天——ocr.ts 曾踩此坑，2026-07-05 已修（main 5c1bac2，見地雷 #3）。
-- **幣別**：`Account.currency` 是帳戶基準幣別，連結交易必須相同，否則在 `saveTransactionWithGoalLink` 寫入前拒絕。第一階段不做 FX；Dashboard 固定以 HKD 為顯示基準，月度摘要、預算、訂閱預留、分類警示及異常消費只計 HKD，其他 currency 原額分列。`summarizeTransactionsByCurrency` 是分幣別聚合範本。Analysis 等畫面仍可能混加，見 backlog。
+- **幣別**：`Account.currency` 是帳戶基準幣別，連結交易必須相同，否則在 `saveTransactionWithGoalLink` 寫入前拒絕。第一階段不做 FX；Dashboard 與 Analysis 固定以 HKD 為顯示／分析基準，其他 currency 原額分列、不得混加。`summarizeTransactionsByCurrency`／`filterTransactionsByCurrency` 是分幣別聚合範本。Subscriptions 等其餘畫面仍可能混加，見 backlog。
 - **Firestore 寫入**：一律 `setDoc(ref, clean(obj))`；跨文件連動用 `runTransaction`（範本：saveTransactionWithGoalLink）。
 - **Goal canonical source**：無 `accountId`＝`deposits[]`；有 `accountId`＝Account `initialBalance + transfers`。`savedAmount` 僅是 derived cache，不可直接編輯或單獨加減。linked goal 的畫面歷史由 `goalId` Transfer 投影，原始 Transfer 才是真相。
 - **新頁面**：lazy import + Suspense（照 App.tsx 現有模式）；樣式配 .module.css。商戶／付款工具管理在 `/directory`，從 Profile 進入。
@@ -100,7 +100,7 @@
 - ✅ Goal canonical source：standalone deposits ledger、linked Account/Transfer ledger；savedAmount 僅 derived cache（2026-08-07）。
 
 待辦（依價值排序）：
-1. Analysis／Subscriptions 等非 Dashboard 聚合全面按 currency 隔離；仍不做 FX。
+1. Subscriptions 等非 Dashboard／Analysis 聚合全面按 currency 隔離；仍不做 FX。Analysis 已用 HKD scope。
 2. screens 預算計算改用 financeLogic `calculateBudgetUsage`（現全 inline；屬重構，需行為對拍：Dashboard 警示門檻 0.75 vs 函式預設 0.7、ratio 有無 clamp）。AnalysisScreen 日長條已改 `sumMoney`。
 3. OCR endpoint／App Check 實際 token 尚須 deployment 驗證；Gemini 準確度改由私有香港收據 baseline 評估，不在 CI 讀取真實圖片或 secret。
 4. 10-prod-safety §8 的剩餘待驗證（Console rollback 步驟、export 是否需 Blaze）。
@@ -117,3 +117,4 @@
 - 2026-08-07 Goal 雙重真相收斂：新增 legacy opening migration、account ledger resolver 與 Transfer-based linked goal history。
 - 2026-08-10 App Check 加入 observe logging／response status、typed boolean parameter、enforce policy tests 與兩階段 rollout gate。
 - 2026-08-17 Analysis 2.0：comparisonEngine、分類貢獻、Merchant／PaymentInstrument 身份模型、backup v6、Directory 管理頁、Analysis 比較／洞察／預算進度。
+- 2026-08-17 Analysis 2.0 correctness：HKD 隔離、rolling average 先按月再平均、未確認商戶不可存、付款工具帶入 Account、歷史 coverage 不當成 $0。

@@ -18,6 +18,7 @@ const points = (ratio: number) => `${Math.abs(ratio * 100).toFixed(1)} 個百分
 export function buildAnalysisInsights(options: {
   mode: ComparisonMode;
   hasComparisonData: boolean;
+  coverageLabel?: string;
   expense: KpiComparison;
   savingsRate: KpiComparison;
   contributions: CategoryContribution[];
@@ -40,10 +41,18 @@ export function buildAnalysisInsights(options: {
   if (options.mode !== 'none' && !options.hasComparisonData) {
     insights.push({
       id: 'missing-comparison',
-      title: '比較期資料不足',
-      detail: `目前沒有足夠資料計算「${vsLabel}」。KPI 仍顯示本月數字，但不做比較。`,
+      title: '暫無足夠歷史資料可比較',
+      detail: `目前沒有足夠資料計算「${vsLabel}」。KPI 仍顯示本月數字，但不做比較，也不會把缺資料的月份當成 $0。`,
       tone: 'info',
       rank: 10,
+    });
+  } else if (options.coverageLabel) {
+    insights.push({
+      id: 'partial-coverage',
+      title: '比較期覆蓋不完整',
+      detail: options.coverageLabel,
+      tone: 'info',
+      rank: 8,
     });
   }
 

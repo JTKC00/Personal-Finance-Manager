@@ -32,6 +32,7 @@ import {
   loadPaymentInstruments,
   mergeMerchants,
 } from '../services/storage';
+import {resolveInstrumentAccount} from '../services/paymentInstrument';
 import type {Account, Goal, Merchant, PaymentInstrument, Receipt, Subscription, Transaction} from '../types/finance';
 
 const projectId = 'demo-personal-finance-manager';
@@ -359,6 +360,60 @@ describe('Firestore storage integration', () => {
     const [merchants, instruments] = await Promise.all([loadMerchants(), loadPaymentInstruments()]);
     expect(merchants).toEqual([]);
     expect(instruments).toMatchObject([{id: 'pay-1', name: '舊卡', active: false, last4: '1234'}]);
+  });
+
+  it('applies a payment instrument account to the transaction ledger and still rejects currency mismatch', async () => {
+    const account: Account = {
+      id: 'hsbc-credit',
+      name: 'HSBC Credit Card',
+      type: 'credit',
+      initialBalance: 1000,
+      currency: 'HKD',
+      createdAt: '2026-08-01T00:00:00.000Z',
+    };
+    const instrument: PaymentInstrument = {
+      id: 'pay-red',
+      name: 'HSBC Red Card',
+      type: 'credit_card',
+      last4: '1234',
+      accountId: account.id,
+      active: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+    };
+    await upsertAccount(account);
+    await upsertPaymentInstrument(instrument);
+    const resolved = resolveInstrumentAccount({instrument});
+    expect(resolved).toEqual({ok: true, accountId: account.id});
+    if (!resolved.ok) return;
+
+    const saved = await saveTransactionWithGoalLink(makeTransaction({
+      id: 'card-spend',
+      paymentInstrumentId: instrument.id,
+      paymentMethod: '信用卡',
+      accountId: resolved.accountId,
+    }));
+    const [balance, transferDoc] = await Promise.all([
+      getAccountBalance(account.id),
+      getDoc(userDoc('transfers', 'txn-card-spend')),
+    ]);
+    expect(saved.accountId).toBe(account.id);
+    expect(saved.linkedTransferId).toBe('txn-card-spend');
+    expect(balance).toBe(874.5);
+    expect(transferDoc.data()).toMatchObject({fromAccountId: account.id, amount: 125.5});
+
+    await expect(saveTransactionWithGoalLink(makeTransaction({
+      id: 'usd-on-card',
+      currency: 'USD',
+      accountId: account.id,
+      paymentInstrumentId: instrument.id,
+    }))).rejects.toThrow(/幣別/);
+
+    const unlinked = await saveTransactionWithGoalLink(makeTransaction({
+      id: 'cash-spend',
+      paymentMethod: '現金',
+    }));
+    expect(unlinked.accountId).toBeUndefined();
+    expect(unlinked.linkedTransferId).toBeUndefined();
   });
 });
 

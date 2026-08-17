@@ -73,6 +73,11 @@ export async function loadTransactions(): Promise<Transaction[]> {
   return loadCollection<Transaction>(getUid(), 'transactions');
 }
 
+export async function getEarliestTransactionMonth(): Promise<string | null> {
+  const dates = (await loadTransactions()).map(item => item.date).filter(Boolean).sort();
+  return dates[0] ? dates[0].slice(0, 7) : null;
+}
+
 export async function saveTransactions(transactions: Transaction[]): Promise<void> {
   const uid = getUid();
   await Promise.all(

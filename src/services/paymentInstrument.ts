@@ -1,4 +1,4 @@
-import {compareSpendGroups, type SpendGroupComparison} from './comparisonEngine';
+import {compareSpendGroups, compareSpendGroupsAcrossMonths, type SpendGroupComparison} from './comparisonEngine';
 import type {Account, PaymentInstrument, PaymentInstrumentType, Transaction} from '../types/finance';
 
 export const PAYMENT_INSTRUMENT_TYPES: PaymentInstrumentType[] = [
@@ -56,6 +56,32 @@ export function formatInstrumentLabel(instrument: PaymentInstrument): string {
   return instrument.last4 ? `${instrument.name} ••••${instrument.last4}` : instrument.name;
 }
 
+export type InstrumentAccountResolution =
+  | {ok: true; accountId?: string}
+  | {ok: false; transactionAccountId: string; instrumentAccountId: string};
+
+export function resolveInstrumentAccount(options: {
+  instrument?: PaymentInstrument | null;
+  explicitAccountId?: string;
+  previousInstrumentAccountId?: string;
+  choice?: 'instrument' | 'keep';
+}): InstrumentAccountResolution {
+  const instrumentAccountId = options.instrument?.accountId;
+  const explicitAccountId = options.explicitAccountId;
+
+  if (!instrumentAccountId) return {ok: true, accountId: explicitAccountId};
+
+  if (!explicitAccountId || explicitAccountId === instrumentAccountId) {
+    return {ok: true, accountId: instrumentAccountId};
+  }
+  if (options.previousInstrumentAccountId && explicitAccountId === options.previousInstrumentAccountId) {
+    return {ok: true, accountId: instrumentAccountId};
+  }
+  if (options.choice === 'instrument') return {ok: true, accountId: instrumentAccountId};
+  if (options.choice === 'keep') return {ok: true, accountId: explicitAccountId};
+  return {ok: false, transactionAccountId: explicitAccountId, instrumentAccountId};
+}
+
 export function resolveTransactionInstrument(
   transaction: Transaction,
   instruments: PaymentInstrument[]
@@ -73,16 +99,55 @@ export function resolveTransactionPaymentType(
   return paymentTypeFromMethod(transaction.paymentMethod);
 }
 
+function resolvePaymentTypeGroup(transaction: Transaction, instruments: PaymentInstrument[]) {
+  const type = resolveTransactionPaymentType(transaction, instruments);
+  if (!type) return {key: 'unspecified', label: '未指定', linked: false};
+  return {key: type, label: PAYMENT_INSTRUMENT_TYPE_LABELS[type], linked: true};
+}
+
+function resolvePaymentInstrumentGroup(transaction: Transaction, instruments: PaymentInstrument[]) {
+  const linked = resolveTransactionInstrument(transaction, instruments);
+  if (linked) {
+    return {key: `id:${linked.id}`, label: formatInstrumentLabel(linked), linked: true};
+  }
+  const type = paymentTypeFromMethod(transaction.paymentMethod);
+  if (!type) return {key: 'unspecified', label: '未指定付款工具', linked: false};
+  return {
+    key: `legacy:${type}`,
+    label: `${PAYMENT_INSTRUMENT_TYPE_LABELS[type]}（未指定具體工具）`,
+    linked: false,
+  };
+}
+
+function splitLinked(rows: SpendGroupComparison[]) {
+  return {
+    linked: rows.filter(item => item.linked),
+    unlinked: rows.filter(item => !item.linked),
+  };
+}
+
 export function comparePaymentTypes(
   currentTransactions: Transaction[],
   comparisonTransactions: Transaction[],
   instruments: PaymentInstrument[]
 ): SpendGroupComparison[] {
-  return compareSpendGroups(currentTransactions, comparisonTransactions, transaction => {
-    const type = resolveTransactionPaymentType(transaction, instruments);
-    if (!type) return {key: 'unspecified', label: '未指定', linked: false};
-    return {key: type, label: PAYMENT_INSTRUMENT_TYPE_LABELS[type], linked: true};
-  });
+  return compareSpendGroups(currentTransactions, comparisonTransactions, transaction => (
+    resolvePaymentTypeGroup(transaction, instruments)
+  ));
+}
+
+export function comparePaymentTypesAcrossMonths(
+  currentTransactions: Transaction[],
+  monthlyComparison: Record<string, Transaction[]>,
+  availableMonths: string[],
+  instruments: PaymentInstrument[]
+): SpendGroupComparison[] {
+  return compareSpendGroupsAcrossMonths(
+    currentTransactions,
+    monthlyComparison,
+    availableMonths,
+    transaction => resolvePaymentTypeGroup(transaction, instruments)
+  );
 }
 
 export function comparePaymentInstruments(
@@ -90,22 +155,32 @@ export function comparePaymentInstruments(
   comparisonTransactions: Transaction[],
   instruments: PaymentInstrument[]
 ): {linked: SpendGroupComparison[]; unlinked: SpendGroupComparison[]} {
-  const rows = compareSpendGroups(currentTransactions, comparisonTransactions, transaction => {
-    const linked = resolveTransactionInstrument(transaction, instruments);
-    if (linked) {
-      return {key: `id:${linked.id}`, label: formatInstrumentLabel(linked), linked: true};
-    }
-    const type = paymentTypeFromMethod(transaction.paymentMethod);
-    if (!type) return {key: 'unspecified', label: '未指定付款工具', linked: false};
-    return {
-      key: `legacy:${type}`,
-      label: `${PAYMENT_INSTRUMENT_TYPE_LABELS[type]}（未指定具體工具）`,
-      linked: false,
-    };
-  });
+  return splitLinked(compareSpendGroups(currentTransactions, comparisonTransactions, transaction => (
+    resolvePaymentInstrumentGroup(transaction, instruments)
+  )));
+}
+
+export function comparePaymentInstrumentsAcrossMonths(
+  currentTransactions: Transaction[],
+  monthlyComparison: Record<string, Transaction[]>,
+  availableMonths: string[],
+  instruments: PaymentInstrument[]
+): {linked: SpendGroupComparison[]; unlinked: SpendGroupComparison[]} {
+  return splitLinked(compareSpendGroupsAcrossMonths(
+    currentTransactions,
+    monthlyComparison,
+    availableMonths,
+    transaction => resolvePaymentInstrumentGroup(transaction, instruments)
+  ));
+}
+
+function resolveAccountGroup(transaction: Transaction, accounts: Account[]) {
+  if (!transaction.accountId) return {key: 'unspecified', label: '未指定帳戶', linked: false};
+  const account = accounts.find(item => item.id === transaction.accountId);
   return {
-    linked: rows.filter(item => item.linked),
-    unlinked: rows.filter(item => !item.linked),
+    key: `id:${transaction.accountId}`,
+    label: account?.name || '已刪除帳戶',
+    linked: Boolean(account),
   };
 }
 
@@ -114,15 +189,32 @@ export function compareAccounts(
   comparisonTransactions: Transaction[],
   accounts: Account[]
 ): SpendGroupComparison[] {
-  return compareSpendGroups(currentTransactions, comparisonTransactions, transaction => {
-    if (!transaction.accountId) return {key: 'unspecified', label: '未指定帳戶', linked: false};
-    const account = accounts.find(item => item.id === transaction.accountId);
-    return {
-      key: `id:${transaction.accountId}`,
-      label: account?.name || '已刪除帳戶',
-      linked: Boolean(account),
-    };
-  });
+  return compareSpendGroups(currentTransactions, comparisonTransactions, transaction => (
+    resolveAccountGroup(transaction, accounts)
+  ));
+}
+
+export function compareAccountsAcrossMonths(
+  currentTransactions: Transaction[],
+  monthlyComparison: Record<string, Transaction[]>,
+  availableMonths: string[],
+  accounts: Account[]
+): SpendGroupComparison[] {
+  return compareSpendGroupsAcrossMonths(
+    currentTransactions,
+    monthlyComparison,
+    availableMonths,
+    transaction => resolveAccountGroup(transaction, accounts)
+  );
+}
+
+function resolveSubscriptionGroup(transaction: Transaction, names: Record<string, string>) {
+  if (!transaction.subscriptionId) return null;
+  return {
+    key: `id:${transaction.subscriptionId}`,
+    label: names[transaction.subscriptionId] || '已刪除訂閱',
+    linked: Boolean(names[transaction.subscriptionId]),
+  };
 }
 
 export function compareSubscriptions(
@@ -130,12 +222,21 @@ export function compareSubscriptions(
   comparisonTransactions: Transaction[],
   names: Record<string, string>
 ): SpendGroupComparison[] {
-  return compareSpendGroups(currentTransactions, comparisonTransactions, transaction => {
-    if (!transaction.subscriptionId) return null;
-    return {
-      key: `id:${transaction.subscriptionId}`,
-      label: names[transaction.subscriptionId] || '已刪除訂閱',
-      linked: Boolean(names[transaction.subscriptionId]),
-    };
-  });
+  return compareSpendGroups(currentTransactions, comparisonTransactions, transaction => (
+    resolveSubscriptionGroup(transaction, names)
+  ));
+}
+
+export function compareSubscriptionsAcrossMonths(
+  currentTransactions: Transaction[],
+  monthlyComparison: Record<string, Transaction[]>,
+  availableMonths: string[],
+  names: Record<string, string>
+): SpendGroupComparison[] {
+  return compareSpendGroupsAcrossMonths(
+    currentTransactions,
+    monthlyComparison,
+    availableMonths,
+    transaction => resolveSubscriptionGroup(transaction, names)
+  );
 }

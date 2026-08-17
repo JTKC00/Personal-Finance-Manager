@@ -9,6 +9,7 @@ import {
   planMerchantSave,
   resolveTransactionMerchantDisplay,
   suggestDuplicateMerchants,
+  unresolvedMerchantSuggestion,
 } from './merchantIdentity';
 
 function merchant(patch: Partial<Merchant> = {}): Merchant {
@@ -93,12 +94,37 @@ describe('merchant merge', () => {
 
   it('plans a confirmed link, a new merchant, and an alias addition', () => {
     const existing = merchant();
-    expect(planMerchantSave('M記', 'merch-1', false, [existing]).upsert?.aliases).toContain('M記');
+    const linked = planMerchantSave('M記', 'merch-1', false, [existing]);
+    expect(linked.ok).toBe(true);
+    if (linked.ok) expect(linked.upsert?.aliases).toContain('M記');
     const createdAt = new Date('2026-08-10T00:00:00.000Z');
     expect(planMerchantSave('茶記', undefined, true, [existing], createdAt)).toMatchObject({
+      ok: true,
       merchant: '茶記',
       merchantId: `merch-${createdAt.getTime()}`,
     });
-    expect(planMerchantSave("McDonald's", undefined, false, [existing]).merchantId).toBe('merch-1');
+    expect(planMerchantSave("McDonald's", undefined, false, [existing])).toMatchObject({
+      ok: true,
+      merchantId: 'merch-1',
+      merchantText: "McDonald's",
+    });
+  });
+
+  it('blocks save when a similar merchant is unresolved', () => {
+    const existing = merchant();
+    expect(unresolvedMerchantSuggestion('McDonald', undefined, false, [existing])?.merchant.name).toBe('麥當勞');
+    const blocked = planMerchantSave('McDonald', undefined, false, [existing]);
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.suggestion.merchant.name).toBe('麥當勞');
+  });
+
+  it('creates a new merchant only after explicit confirmation and keeps merchantText', () => {
+    const created = planMerchantSave('McDonald', undefined, true, [merchant()], new Date('2026-08-10T00:00:00.000Z'));
+    expect(created).toMatchObject({
+      ok: true,
+      merchant: 'McDonald',
+      merchantText: 'McDonald',
+    });
+    if (created.ok) expect(created.merchantId).not.toBe('merch-1');
   });
 });

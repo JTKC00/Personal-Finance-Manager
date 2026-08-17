@@ -7,6 +7,7 @@ import {
   formatInstrumentLabel,
   paymentMethodFromType,
   paymentTypeFromMethod,
+  resolveInstrumentAccount,
   validateLast4,
 } from './paymentInstrument';
 
@@ -100,5 +101,29 @@ describe('payment instrument helpers', () => {
       currentAmount: 80,
     });
     expect(rows.find(item => item.key === 'unspecified')?.currentAmount).toBe(20);
+  });
+
+  it('applies a linked instrument account and never silently overwrites a conflicting explicit account', () => {
+    const card = instrument({accountId: 'account-1'});
+    expect(resolveInstrumentAccount({instrument: card})).toEqual({ok: true, accountId: 'account-1'});
+    expect(resolveInstrumentAccount({instrument: instrument({accountId: undefined})}).ok).toBe(true);
+    expect(resolveInstrumentAccount({
+      instrument: instrument({accountId: undefined}),
+      explicitAccountId: 'keep-me',
+    })).toEqual({ok: true, accountId: 'keep-me'});
+    expect(resolveInstrumentAccount({
+      instrument: card,
+      explicitAccountId: 'account-2',
+    })).toEqual({ok: false, transactionAccountId: 'account-2', instrumentAccountId: 'account-1'});
+    expect(resolveInstrumentAccount({
+      instrument: card,
+      explicitAccountId: 'account-2',
+      choice: 'keep',
+    })).toEqual({ok: true, accountId: 'account-2'});
+    expect(resolveInstrumentAccount({
+      instrument: card,
+      explicitAccountId: 'old-instrument-account',
+      previousInstrumentAccountId: 'old-instrument-account',
+    })).toEqual({ok: true, accountId: 'account-1'});
   });
 });

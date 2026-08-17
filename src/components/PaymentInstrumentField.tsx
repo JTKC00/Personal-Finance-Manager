@@ -32,6 +32,10 @@ export function PaymentInstrumentField({instruments, accounts, type, instrumentI
   }, [instrumentId, instruments, selectedType]);
 
   const showSecondLayer = selectedType ? instrumentNeedsSecondLayer(selectedType) || visible.length > 0 : false;
+  const selectedInstrument = instruments.find(item => item.id === instrumentId);
+  const linkedAccount = selectedInstrument?.accountId
+    ? accounts.find(item => item.id === selectedInstrument.accountId)
+    : undefined;
 
   async function createInstrument() {
     if (!selectedType) return;
@@ -112,6 +116,12 @@ export function PaymentInstrumentField({instruments, accounts, type, instrumentI
               新增
             </button>
           </div>
+          {selectedInstrument ? (
+            <p className={styles.hint}>
+              {formatInstrumentLabel(selectedInstrument)}
+              {linkedAccount ? ` · 連結帳戶：${linkedAccount.name}` : ''}
+            </p>
+          ) : null}
           {creating ? (
             <div className={styles.createBox}>
               <input

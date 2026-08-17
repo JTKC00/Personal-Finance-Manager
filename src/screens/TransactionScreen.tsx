@@ -6,7 +6,7 @@ import {MerchantField} from '../components/MerchantField';
 import {PaymentInstrumentField} from '../components/PaymentInstrumentField';
 import {expenseCategories, incomeCategories} from '../constants/categories';
 import {planMerchantSave} from '../services/merchantIdentity';
-import {paymentMethodFromType, paymentTypeFromMethod} from '../services/paymentInstrument';
+import {paymentMethodFromType, paymentTypeFromMethod, resolveInstrumentAccount} from '../services/paymentInstrument';
 import {OcrScanResult, OcrUsageStatus, loadOcrUsageStatus, scanReceipt} from '../services/ocr';
 import {
   buildOcrChangedFields,
@@ -180,12 +180,23 @@ export function TransactionScreen() {
     }
 
     const plannedMerchant = planMerchantSave(draft.merchant, draft.merchantId, draft.createNewMerchant, merchants);
+    if (!plannedMerchant.ok) {
+      showToast(`請先確認商戶：這可能是「${plannedMerchant.suggestion.merchant.name}」。`);
+      return;
+    }
     if (plannedMerchant.upsert) {
       await upsertMerchant(plannedMerchant.upsert);
       setMerchants(current => {
         const remaining = current.filter(item => item.id !== plannedMerchant.upsert?.id);
         return [...remaining, plannedMerchant.upsert!];
       });
+    }
+
+    const selectedInstrument = instruments.find(item => item.id === draft.paymentInstrumentId);
+    const accountLink = resolveInstrumentAccount({instrument: selectedInstrument});
+    if (!accountLink.ok) {
+      showToast('請先處理付款工具與帳戶的連結衝突。');
+      return;
     }
 
     const transaction: Transaction = {
@@ -199,6 +210,7 @@ export function TransactionScreen() {
       merchantId: plannedMerchant.merchantId,
       merchantText: plannedMerchant.merchantText,
       goalId: draft.type === 'expense' ? (draft.goalId || undefined) : undefined,
+      accountId: accountLink.accountId,
       paymentMethod: draft.paymentType ? paymentMethodFromType(draft.paymentType) : undefined,
       paymentInstrumentId: draft.paymentInstrumentId,
       note: draft.note,

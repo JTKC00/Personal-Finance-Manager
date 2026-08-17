@@ -1,4 +1,4 @@
-import {compareSpendGroups, type SpendGroupComparison} from './comparisonEngine';
+import {compareSpendGroups, compareSpendGroupsAcrossMonths, type SpendGroupComparison} from './comparisonEngine';
 import {normalizeMerchant} from './ocrLogic';
 import type {Merchant, Transaction} from '../types/finance';
 
@@ -93,28 +93,44 @@ export function addMerchantAlias(merchant: Merchant, alias: string): Merchant {
   return {...merchant, aliases: [...merchant.aliases, trimmed]};
 }
 
+export type MerchantSavePlan =
+  | {ok: true; merchantText?: string; merchant?: string; merchantId?: string; upsert?: Merchant}
+  | {ok: false; reason: 'unresolved_suggestion'; suggestion: MerchantMatch};
+
+export function unresolvedMerchantSuggestion(
+  text: string,
+  merchantId: string | undefined,
+  createNew: boolean,
+  merchants: Merchant[]
+): MerchantMatch | undefined {
+  if (merchantId || createNew || !text.trim()) return undefined;
+  if (findExactMerchant(text, merchants)) return undefined;
+  return findMerchantMatches(text, merchants).find(item => item.confidence !== 'high');
+}
+
 export function planMerchantSave(
   text: string,
   merchantId: string | undefined,
   createNew: boolean,
   merchants: Merchant[],
   now = new Date()
-): {
-  merchantText?: string;
-  merchant?: string;
-  merchantId?: string;
-  upsert?: Merchant;
-} {
+): MerchantSavePlan {
   const trimmed = text.trim();
-  if (!trimmed) return {};
+  if (!trimmed) return {ok: true};
+
+  const blocked = unresolvedMerchantSuggestion(trimmed, merchantId, createNew, merchants);
+  if (blocked) {
+    return {ok: false, reason: 'unresolved_suggestion', suggestion: blocked};
+  }
 
   if (merchantId) {
     const existing = merchants.find(item => item.id === merchantId);
     if (!existing) {
-      return {merchantText: trimmed, merchant: trimmed};
+      return {ok: true, merchantText: trimmed, merchant: trimmed};
     }
     const next = addMerchantAlias(existing, trimmed);
     return {
+      ok: true,
       merchantText: trimmed,
       merchant: existing.name,
       merchantId: existing.id,
@@ -125,6 +141,7 @@ export function planMerchantSave(
   const exact = findExactMerchant(trimmed, merchants);
   if (exact && !createNew) {
     return {
+      ok: true,
       merchantText: trimmed,
       merchant: exact.name,
       merchantId: exact.id,
@@ -138,6 +155,7 @@ export function planMerchantSave(
     createdAt: now.toISOString(),
   };
   return {
+    ok: true,
     merchantText: trimmed,
     merchant: trimmed,
     merchantId: created.id,
@@ -153,32 +171,53 @@ export function resolveTransactionMerchantDisplay(transaction: Transaction, merc
   return transaction.merchantText || transaction.merchant || '';
 }
 
+function resolveMerchantGroup(transaction: Transaction, merchants: Merchant[]) {
+  if (transaction.merchantId) {
+    const linked = merchants.find(item => item.id === transaction.merchantId);
+    return {
+      key: `id:${transaction.merchantId}`,
+      label: linked?.name || '已刪除商戶',
+      linked: Boolean(linked),
+    };
+  }
+  const raw = (transaction.merchantText || transaction.merchant || '').trim();
+  if (!raw) return null;
+  return {
+    key: `text:${normalizeMerchant(raw)}`,
+    label: raw,
+    linked: false,
+  };
+}
+
+function splitMerchantRows(rows: SpendGroupComparison[]) {
+  return {
+    linked: rows.filter(item => item.linked),
+    unlinked: rows.filter(item => !item.linked),
+  };
+}
+
 export function compareMerchants(
   currentTransactions: Transaction[],
   comparisonTransactions: Transaction[],
   merchants: Merchant[]
 ): {linked: SpendGroupComparison[]; unlinked: SpendGroupComparison[]} {
-  const rows = compareSpendGroups(currentTransactions, comparisonTransactions, transaction => {
-    if (transaction.merchantId) {
-      const linked = merchants.find(item => item.id === transaction.merchantId);
-      return {
-        key: `id:${transaction.merchantId}`,
-        label: linked?.name || '已刪除商戶',
-        linked: Boolean(linked),
-      };
-    }
-    const raw = (transaction.merchantText || transaction.merchant || '').trim();
-    if (!raw) return null;
-    return {
-      key: `text:${normalizeMerchant(raw)}`,
-      label: raw,
-      linked: false,
-    };
-  });
-  return {
-    linked: rows.filter(item => item.linked),
-    unlinked: rows.filter(item => !item.linked),
-  };
+  return splitMerchantRows(compareSpendGroups(currentTransactions, comparisonTransactions, transaction => {
+    return resolveMerchantGroup(transaction, merchants);
+  }));
+}
+
+export function compareMerchantsAcrossMonths(
+  currentTransactions: Transaction[],
+  monthlyComparison: Record<string, Transaction[]>,
+  availableMonths: string[],
+  merchants: Merchant[]
+): {linked: SpendGroupComparison[]; unlinked: SpendGroupComparison[]} {
+  return splitMerchantRows(compareSpendGroupsAcrossMonths(
+    currentTransactions,
+    monthlyComparison,
+    availableMonths,
+    transaction => resolveMerchantGroup(transaction, merchants)
+  ));
 }
 
 function scoreMerchant(needle: string, rawQuery: string, merchant: Merchant): MerchantMatch | null {

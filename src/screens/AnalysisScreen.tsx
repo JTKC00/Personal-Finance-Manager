@@ -7,32 +7,36 @@ import {Screen} from '../components/Screen';
 import {buildAnalysisInsights} from '../services/analysisInsights';
 import {buildBudgetPaces} from '../services/budgetPace';
 import {
+  ANALYSIS_BASE_CURRENCY,
   COMPARISON_MODE_LABELS,
-  analyzeCategoryContribution,
-  buildComparisonTotals,
+  analyzeCategoryContributionAcrossMonths,
+  buildComparisonResult,
   buildPeriodTotals,
   compareKpis,
   daysInMonthKey,
+  filterTransactionsByCurrency,
   getMonthLabel,
   getShortMonthLabel,
   listMonthRange,
   monthsNeededForAnalysis,
+  otherCurrencySummaries,
   shiftMonthKey,
   type ComparisonMode,
   type KpiComparison,
   type SpendGroupComparison,
 } from '../services/comparisonEngine';
 import {sumExpensesByCategory} from '../services/financeLogic';
-import {compareMerchants} from '../services/merchantIdentity';
+import {compareMerchantsAcrossMonths} from '../services/merchantIdentity';
 import {roundMoney, sumMoney} from '../services/money';
 import {
-  compareAccounts,
-  comparePaymentInstruments,
-  comparePaymentTypes,
-  compareSubscriptions,
+  compareAccountsAcrossMonths,
+  comparePaymentInstrumentsAcrossMonths,
+  comparePaymentTypesAcrossMonths,
+  compareSubscriptionsAcrossMonths,
 } from '../services/paymentInstrument';
 import {
   getCurrentMonthKey,
+  getEarliestTransactionMonth,
   getTransactionsByMonth,
   loadAccounts,
   loadBudgetRowsForMonth,
@@ -71,7 +75,7 @@ function kpiDeltaText(kpi: KpiComparison, mode: ComparisonMode) {
   return `${amount}${percent}`;
 }
 
-function GroupList({rows, empty, vsLabel}: {rows: SpendGroupComparison[]; empty: string; vsLabel: string}) {
+function GroupList({rows, empty, vsLabel, showComparison}: {rows: SpendGroupComparison[]; empty: string; vsLabel: string; showComparison: boolean}) {
   if (!rows.length) return <p className={styles.empty}>{empty}</p>;
   return (
     <div className={styles.changeList}>
@@ -82,13 +86,15 @@ function GroupList({rows, empty, vsLabel}: {rows: SpendGroupComparison[]; empty:
             <span className={styles.changeMeta}>
               本月 {formatMoney(item.currentAmount)} · {item.currentCount} 次
               {item.currentAverage !== null ? ` · 平均 ${formatMoney(item.currentAverage)}` : ''}
-              {item.comparisonAmount > 0 || item.comparisonCount > 0 ? ` · ${vsLabel} ${formatMoney(item.comparisonAmount)}` : ''}
+              {showComparison && (item.comparisonAmount > 0 || item.comparisonCount > 0) ? ` · ${vsLabel} ${formatMoney(item.comparisonAmount)}` : ''}
             </span>
           </div>
-          <span className={[styles.changeDelta, item.delta >= 0 ? styles.deltaUp : styles.deltaDown].join(' ')}>
-            {formatSignedMoney(item.delta)}
-            {item.percentageDelta !== null ? ` · ${item.percentageDelta >= 0 ? '+' : '-'}${formatPercent(Math.abs(item.percentageDelta))}` : ''}
-          </span>
+          {showComparison ? (
+            <span className={[styles.changeDelta, item.delta >= 0 ? styles.deltaUp : styles.deltaDown].join(' ')}>
+              {formatSignedMoney(item.delta)}
+              {item.percentageDelta !== null ? ` · ${item.percentageDelta >= 0 ? '+' : '-'}${formatPercent(Math.abs(item.percentageDelta))}` : ''}
+            </span>
+          ) : null}
         </div>
       ))}
     </div>
@@ -106,6 +112,7 @@ export function AnalysisScreen() {
   const [instruments, setInstruments] = useState<PaymentInstrument[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [historyStartMonth, setHistoryStartMonth] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -116,13 +123,15 @@ export function AnalysisScreen() {
       loadPaymentInstruments(),
       loadAccounts(),
       loadSubscriptions(),
-    ]).then(([nextBudgets, nextMerchants, nextInstruments, nextAccounts, nextSubscriptions]) => {
+      getEarliestTransactionMonth(),
+    ]).then(([nextBudgets, nextMerchants, nextInstruments, nextAccounts, nextSubscriptions, earliestMonth]) => {
       if (!active) return;
       setBudgets(nextBudgets);
       setMerchants(nextMerchants);
       setInstruments(nextInstruments);
       setAccounts(nextAccounts);
       setSubscriptions(nextSubscriptions);
+      setHistoryStartMonth(earliestMonth);
     });
     return () => { active = false; };
   }, [selectedMonth]);
@@ -138,44 +147,67 @@ export function AnalysisScreen() {
   }, [mode, selectedMonth]);
 
   const transactions = monthlyTransactions[selectedMonth] || [];
+  const scopedTransactions = useMemo(
+    () => filterTransactionsByCurrency(transactions, ANALYSIS_BASE_CURRENCY),
+    [transactions]
+  );
+  const foreignSummaries = useMemo(() => otherCurrencySummaries(transactions, ANALYSIS_BASE_CURRENCY), [transactions]);
   const today = useMemo(() => new Date(), []);
+  const comparison = useMemo(
+    () => buildComparisonResult(selectedMonth, mode, monthlyTransactions, {
+      currentMonth,
+      today,
+      currency: ANALYSIS_BASE_CURRENCY,
+      historyStartMonth,
+    }),
+    [currentMonth, historyStartMonth, mode, monthlyTransactions, selectedMonth, today]
+  );
   const currentTotals = useMemo(
-    () => buildPeriodTotals(transactions, {month: selectedMonth, currentMonth, today}),
-    [currentMonth, selectedMonth, today, transactions]
+    () => buildPeriodTotals(scopedTransactions, {month: selectedMonth, currentMonth, today, currency: ANALYSIS_BASE_CURRENCY}),
+    [currentMonth, scopedTransactions, selectedMonth, today]
   );
-  const comparisonTotals = useMemo(
-    () => buildComparisonTotals(selectedMonth, mode, monthlyTransactions, {currentMonth, today}),
-    [currentMonth, mode, monthlyTransactions, selectedMonth, today]
+  const comparisonTotals = comparison.totals;
+  const coverage = comparison.coverage;
+  const hasComparisonData = mode !== 'none' && coverage.availablePeriods > 0;
+  const kpis = useMemo(
+    () => compareKpis(currentTotals, hasComparisonData ? comparisonTotals : null),
+    [comparisonTotals, currentTotals, hasComparisonData]
   );
-  const kpis = useMemo(() => compareKpis(currentTotals, comparisonTotals), [comparisonTotals, currentTotals]);
-  const categoryMap = useMemo(() => sumExpensesByCategory(transactions), [transactions]);
+  const categoryMap = useMemo(() => sumExpensesByCategory(scopedTransactions), [scopedTransactions]);
+  const availableMonths = coverage.availableMonths;
   const contributions = useMemo(
-    () => mode === 'none' ? [] : analyzeCategoryContribution(transactions, comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions)),
-    [mode, monthlyTransactions, selectedMonth, transactions]
+    () => mode === 'none' ? [] : analyzeCategoryContributionAcrossMonths(
+      scopedTransactions,
+      monthlyTransactions,
+      availableMonths,
+      ANALYSIS_BASE_CURRENCY
+    ),
+    [availableMonths, mode, monthlyTransactions, scopedTransactions]
   );
   const merchantRows = useMemo(
-    () => compareMerchants(transactions, comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions), merchants),
-    [merchants, mode, monthlyTransactions, selectedMonth, transactions]
+    () => compareMerchantsAcrossMonths(scopedTransactions, monthlyTransactions, availableMonths, merchants),
+    [availableMonths, merchants, monthlyTransactions, scopedTransactions]
   );
   const paymentTypes = useMemo(
-    () => comparePaymentTypes(transactions, comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions), instruments),
-    [instruments, mode, monthlyTransactions, selectedMonth, transactions]
+    () => comparePaymentTypesAcrossMonths(scopedTransactions, monthlyTransactions, availableMonths, instruments),
+    [availableMonths, instruments, monthlyTransactions, scopedTransactions]
   );
   const paymentInstruments = useMemo(
-    () => comparePaymentInstruments(transactions, comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions), instruments),
-    [instruments, mode, monthlyTransactions, selectedMonth, transactions]
+    () => comparePaymentInstrumentsAcrossMonths(scopedTransactions, monthlyTransactions, availableMonths, instruments),
+    [availableMonths, instruments, monthlyTransactions, scopedTransactions]
   );
   const accountRows = useMemo(
-    () => compareAccounts(transactions, comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions), accounts),
-    [accounts, mode, monthlyTransactions, selectedMonth, transactions]
+    () => compareAccountsAcrossMonths(scopedTransactions, monthlyTransactions, availableMonths, accounts),
+    [accounts, availableMonths, monthlyTransactions, scopedTransactions]
   );
   const subscriptionRows = useMemo(
-    () => compareSubscriptions(
-      transactions,
-      comparisonTransactionsForContribution(mode, selectedMonth, monthlyTransactions),
+    () => compareSubscriptionsAcrossMonths(
+      scopedTransactions,
+      monthlyTransactions,
+      availableMonths,
       Object.fromEntries(subscriptions.map(item => [item.id, item.name]))
     ),
-    [mode, monthlyTransactions, selectedMonth, subscriptions, transactions]
+    [availableMonths, monthlyTransactions, scopedTransactions, subscriptions]
   );
 
   const daysInMonth = daysInMonthKey(selectedMonth);
@@ -192,13 +224,26 @@ export function AnalysisScreen() {
   );
   const insights = useMemo(() => buildAnalysisInsights({
     mode,
-    hasComparisonData: mode === 'none' ? false : Boolean(comparisonTotals),
+    hasComparisonData,
+    coverageLabel: coverage.requestedPeriods > 0 && coverage.availablePeriods > 0 && coverage.availablePeriods < coverage.requestedPeriods
+      ? `此比較只根據 ${coverage.availablePeriods} / ${coverage.requestedPeriods} 個月歷史資料。`
+      : undefined,
     expense: kpis.expense,
     savingsRate: kpis.savingsRate,
     contributions,
     budgetPaces,
     transactionCount: currentTotals.transactionCount,
-  }), [comparisonTotals, contributions, currentTotals.transactionCount, budgetPaces, kpis.expense, kpis.savingsRate, mode]);
+  }), [
+    coverage.availablePeriods,
+    coverage.requestedPeriods,
+    contributions,
+    currentTotals.transactionCount,
+    budgetPaces,
+    hasComparisonData,
+    kpis.expense,
+    kpis.savingsRate,
+    mode,
+  ]);
 
   const pieData = useMemo(
     () => Object.entries(categoryMap)
@@ -219,12 +264,12 @@ export function AnalysisScreen() {
   const barDays = selectedMonth === currentMonth ? today.getDate() : daysInMonth;
   const barData = useMemo(() => {
     const amounts = Array.from({length: barDays}, () => 0);
-    transactions.filter(item => item.type === 'expense').forEach(item => {
+    scopedTransactions.filter(item => item.type === 'expense').forEach(item => {
       const day = parseInt(item.date.split('-')[2], 10) - 1;
       if (day >= 0 && day < barDays) amounts[day] = sumMoney([amounts[day], item.amount]);
     });
     return amounts.map((amount, index) => ({day: String(index + 1), amount: roundMoney(amount)}));
-  }, [barDays, transactions]);
+  }, [barDays, scopedTransactions]);
 
   const vsLabel = COMPARISON_MODE_LABELS[mode];
   const kpiCards: Array<{label: string; kpi: KpiComparison; color: string; format: (value: number | null) => string}> = [
@@ -261,7 +306,26 @@ export function AnalysisScreen() {
               <option key={option} value={option}>{COMPARISON_MODE_LABELS[option]}</option>
             ))}
           </select>
+          {mode !== 'none' && coverage.requestedPeriods > 0 && coverage.availablePeriods === 0 ? (
+            <span className={styles.coverageNote}>暫無足夠歷史資料可比較</span>
+          ) : null}
+          {mode !== 'none' && coverage.availablePeriods > 0 && coverage.availablePeriods < coverage.requestedPeriods ? (
+            <span className={styles.coverageNote}>
+              {COMPARISON_MODE_LABELS[mode]} · 可用資料：{coverage.availablePeriods} / {coverage.requestedPeriods} 個月
+            </span>
+          ) : null}
         </label>
+      </div>
+
+      <div className={styles.currencyNote}>
+        <p>主要分析：{ANALYSIS_BASE_CURRENCY}</p>
+        {foreignSummaries.length ? (
+          <p>
+            其他幣別交易：{foreignSummaries.map(item => (
+              `${item.currency} ${item.expense || item.income ? (item.expense || item.income).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '0.00'}`
+            )).join(' · ')}
+          </p>
+        ) : null}
       </div>
 
       <div className={styles.grid}>
@@ -272,7 +336,7 @@ export function AnalysisScreen() {
               <span className={styles.metricLabel}>{card.label}</span>
               <span className={styles.metricValue} style={{color: card.color}}>{card.format(card.kpi.current)}</span>
               {delta ? <span className={[styles.metricDelta, card.kpi.direction === 'up' ? styles.deltaUp : card.kpi.direction === 'down' ? styles.deltaDown : ''].join(' ')}>{delta}</span> : null}
-              {mode !== 'none' ? <span className={styles.metricVs}>vs {vsLabel}</span> : null}
+              {mode !== 'none' && hasComparisonData ? <span className={styles.metricVs}>vs {vsLabel}</span> : null}
             </div>
           );
         })}
@@ -417,12 +481,12 @@ export function AnalysisScreen() {
                     <span className={styles.changeTitle}>{item.category}</span>
                     <span className={styles.changeMeta}>
                       本月 {formatMoney(item.currentAmount)} · 佔 {formatPercent(item.currentShare)}
-                      {mode !== 'none' ? ` · ${vsLabel} ${formatMoney(item.comparisonAmount)}` : ''}
+                      {hasComparisonData ? ` · ${vsLabel} ${formatMoney(item.comparisonAmount)}` : ''}
                     </span>
                   </div>
                   <span className={[styles.changeDelta, item.delta >= 0 ? styles.deltaUp : styles.deltaDown].join(' ')}>
                     {formatSignedMoney(item.delta)}
-                    {mode !== 'none' && item.role !== 'neutral' ? ` · ${item.role === 'offset' ? '抵銷' : '貢獻'} ${formatPercent(Math.abs(item.contribution))}` : ''}
+                    {hasComparisonData && item.role !== 'neutral' ? ` · ${item.role === 'offset' ? '抵銷' : '貢獻'} ${formatPercent(Math.abs(item.contribution))}` : ''}
                   </span>
                 </div>
               ))}
@@ -434,11 +498,11 @@ export function AnalysisScreen() {
 
         {deepTab === 'merchant' ? (
           <>
-            <GroupList rows={merchantRows.linked} empty="還沒有已歸戶的商戶分析。記帳時確認商戶身份後才會出現在這裡。" vsLabel={vsLabel} />
+            <GroupList rows={merchantRows.linked} empty="還沒有已歸戶的商戶分析。記帳時確認商戶身份後才會出現在這裡。" vsLabel={vsLabel} showComparison={hasComparisonData} />
             {merchantRows.unlinked.length ? (
               <>
                 <p className={styles.unlinkedNote}>以下是尚未歸戶的原始商戶文字，不應視為精確的獨立商戶。</p>
-                <GroupList rows={merchantRows.unlinked} empty="" vsLabel={vsLabel} />
+                <GroupList rows={merchantRows.unlinked} empty="" vsLabel={vsLabel} showComparison={hasComparisonData} />
               </>
             ) : null}
           </>
@@ -447,51 +511,28 @@ export function AnalysisScreen() {
         {deepTab === 'payment' ? (
           <>
             <p className={styles.sectionLabel}>付款類型</p>
-            <GroupList rows={paymentTypes} empty="本月沒有付款資料。" vsLabel={vsLabel} />
+            <GroupList rows={paymentTypes} empty="本月沒有付款資料。" vsLabel={vsLabel} showComparison={hasComparisonData} />
             <p className={styles.sectionLabel}>具體付款工具</p>
-            <GroupList rows={paymentInstruments.linked} empty="還沒有具體付款工具。新增信用卡或電子錢包後才會出現在這裡。" vsLabel={vsLabel} />
+            <GroupList rows={paymentInstruments.linked} empty="還沒有具體付款工具。新增信用卡或電子錢包後才會出現在這裡。" vsLabel={vsLabel} showComparison={hasComparisonData} />
             {paymentInstruments.unlinked.length ? (
               <>
                 <p className={styles.unlinkedNote}>只有大類、尚未指定具體工具的交易：</p>
-                <GroupList rows={paymentInstruments.unlinked} empty="" vsLabel={vsLabel} />
+                <GroupList rows={paymentInstruments.unlinked} empty="" vsLabel={vsLabel} showComparison={hasComparisonData} />
               </>
             ) : null}
           </>
         ) : null}
 
         {deepTab === 'account' ? (
-          <GroupList rows={accountRows} empty="本月沒有帳戶連結交易。" vsLabel={vsLabel} />
+          <GroupList rows={accountRows} empty="本月沒有帳戶連結交易。" vsLabel={vsLabel} showComparison={hasComparisonData} />
         ) : null}
 
         {deepTab === 'subscription' ? (
-          <GroupList rows={subscriptionRows} empty="本月沒有訂閱入帳。" vsLabel={vsLabel} />
+          <GroupList rows={subscriptionRows} empty="本月沒有訂閱入帳。" vsLabel={vsLabel} showComparison={hasComparisonData} />
         ) : null}
       </Card>
     </Screen>
   );
 }
 
-function comparisonTransactionsForContribution(
-  mode: ComparisonMode,
-  selectedMonth: string,
-  monthlyTransactions: Record<string, Transaction[]>
-): Transaction[] {
-  if (mode === 'none') return [];
-  if (mode === 'previous_month') return monthlyTransactions[shiftMonthKey(selectedMonth, -1)] || [];
-  if (mode === 'same_month_last_year') return monthlyTransactions[shiftMonthKey(selectedMonth, -12)] || [];
-  const months = mode === 'avg_3m' ? 3 : mode === 'avg_6m' ? 6 : 12;
-  const combined: Transaction[] = [];
-  for (let index = 1; index <= months; index += 1) {
-    combined.push(...(monthlyTransactions[shiftMonthKey(selectedMonth, -index)] || []));
-  }
-  return scaleTransactionsAsAverage(combined, months);
-}
 
-function scaleTransactionsAsAverage(transactions: Transaction[], monthCount: number): Transaction[] {
-  if (monthCount <= 1) return transactions;
-  return transactions.map((item, index) => ({
-    ...item,
-    id: `${item.id}-avg-${index}`,
-    amount: roundMoney(item.amount / monthCount),
-  }));
-}

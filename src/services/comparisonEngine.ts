@@ -1,6 +1,8 @@
 import {roundMoney, sumMoney} from './money';
-import {sumExpensesByCategory} from './financeLogic';
+import {normalizeCurrency, sumExpensesByCategory, summarizeTransactionsByCurrency} from './financeLogic';
 import type {Transaction} from '../types/finance';
+
+export const ANALYSIS_BASE_CURRENCY = 'HKD';
 
 export type ComparisonMode =
   | 'none'
@@ -79,6 +81,21 @@ export type SpendGroupComparison = {
   comparisonAverage: number | null;
 };
 
+export type ComparisonCoverage = {
+  requestedPeriods: number;
+  availablePeriods: number;
+  coverageRatio: number;
+  requestedMonths: string[];
+  availableMonths: string[];
+};
+
+export type ComparisonResult = {
+  totals: PeriodTotals | null;
+  coverage: ComparisonCoverage;
+};
+
+export type SpendGroupResolver = (transaction: Transaction) => {key: string; label: string; linked: boolean} | null;
+
 const KPI_KEYS: KpiKey[] = [
   'income', 'expense', 'balance', 'savingsRate', 'dailyExpense', 'transactionCount', 'averageExpense',
 ];
@@ -136,6 +153,55 @@ export function monthsNeededForAnalysis(selectedMonth: string, mode: ComparisonM
   return [...months].sort();
 }
 
+export function filterTransactionsByCurrency(
+  transactions: Transaction[],
+  currency = ANALYSIS_BASE_CURRENCY
+): Transaction[] {
+  const base = normalizeCurrency(currency);
+  return transactions.filter(item => normalizeCurrency(item.currency) === base);
+}
+
+export function historyStartMonthFromTransactions(transactions: Transaction[]): string | null {
+  const dates = transactions.map(item => item.date).filter(Boolean).sort();
+  return dates[0] ? dates[0].slice(0, 7) : null;
+}
+
+export function inferHistoryStartMonth(monthlyTransactions: Record<string, Transaction[]>): string | null {
+  return historyStartMonthFromTransactions(Object.values(monthlyTransactions).flat());
+}
+
+export function resolveAvailableComparisonMonths(
+  requestedMonths: string[],
+  historyStartMonth: string | null
+): string[] {
+  if (!historyStartMonth) return [];
+  return requestedMonths.filter(month => month >= historyStartMonth);
+}
+
+export function resolveComparisonCoverage(
+  selectedMonth: string,
+  mode: ComparisonMode,
+  historyStartMonth: string | null
+): ComparisonCoverage {
+  const requestedMonths = resolveComparisonMonths(selectedMonth, mode);
+  const availableMonths = resolveAvailableComparisonMonths(requestedMonths, historyStartMonth);
+  return {
+    requestedPeriods: requestedMonths.length,
+    availablePeriods: availableMonths.length,
+    coverageRatio: requestedMonths.length ? roundRatio(availableMonths.length / requestedMonths.length) : 0,
+    requestedMonths,
+    availableMonths,
+  };
+}
+
+export function otherCurrencySummaries(
+  transactions: Transaction[],
+  currency = ANALYSIS_BASE_CURRENCY
+) {
+  const base = normalizeCurrency(currency);
+  return summarizeTransactionsByCurrency(transactions).filter(item => item.currency !== base);
+}
+
 export function activeDaysForMonth(monthKey: string, currentMonth: string, todayDay: number): number {
   if (monthKey === currentMonth) return Math.max(1, todayDay);
   return Math.max(1, daysInMonthKey(monthKey));
@@ -143,11 +209,12 @@ export function activeDaysForMonth(monthKey: string, currentMonth: string, today
 
 export function buildPeriodTotals(
   transactions: Transaction[],
-  options: {month: string; currentMonth: string; today?: Date}
+  options: {month: string; currentMonth: string; today?: Date; currency?: string}
 ): PeriodTotals {
+  const scoped = filterTransactionsByCurrency(transactions, options.currency);
   const today = options.today ?? new Date();
-  const income = sumMoney(transactions.filter(item => item.type === 'income').map(item => item.amount));
-  const expenses = transactions.filter(item => item.type === 'expense');
+  const income = sumMoney(scoped.filter(item => item.type === 'income').map(item => item.amount));
+  const expenses = scoped.filter(item => item.type === 'expense');
   const expense = sumMoney(expenses.map(item => item.amount));
   const balance = roundMoney(income - expense);
   const savingsRate = income > 0 ? roundRatio((income - expense) / income) : null;
@@ -159,7 +226,7 @@ export function buildPeriodTotals(
     balance,
     savingsRate,
     dailyExpense,
-    transactionCount: transactions.length,
+    transactionCount: scoped.length,
     expenseTransactionCount: expenses.length,
     averageExpense,
   };
@@ -190,21 +257,36 @@ export function averagePeriodTotals(periods: PeriodTotals[]): PeriodTotals | nul
   };
 }
 
+export function buildComparisonResult(
+  selectedMonth: string,
+  mode: ComparisonMode,
+  monthlyTransactions: Record<string, Transaction[]>,
+  options: {currentMonth: string; today?: Date; currency?: string; historyStartMonth?: string | null}
+): ComparisonResult {
+  const historyStartMonth = options.historyStartMonth === undefined
+    ? inferHistoryStartMonth(monthlyTransactions)
+    : options.historyStartMonth;
+  const coverage = resolveComparisonCoverage(selectedMonth, mode, historyStartMonth);
+  if (!coverage.availableMonths.length) return {totals: null, coverage};
+  const periods = coverage.availableMonths.map(month => buildPeriodTotals(monthlyTransactions[month] || [], {
+    month,
+    currentMonth: options.currentMonth,
+    today: options.today,
+    currency: options.currency,
+  }));
+  return {
+    totals: coverage.availableMonths.length === 1 ? periods[0] : averagePeriodTotals(periods),
+    coverage,
+  };
+}
+
 export function buildComparisonTotals(
   selectedMonth: string,
   mode: ComparisonMode,
   monthlyTransactions: Record<string, Transaction[]>,
-  options: {currentMonth: string; today?: Date}
+  options: {currentMonth: string; today?: Date; currency?: string; historyStartMonth?: string | null}
 ): PeriodTotals | null {
-  const months = resolveComparisonMonths(selectedMonth, mode);
-  if (!months.length) return null;
-  const periods = months.map(month => buildPeriodTotals(monthlyTransactions[month] || [], {
-    month,
-    currentMonth: options.currentMonth,
-    today: options.today,
-  }));
-  if (months.length === 1) return periods[0];
-  return averagePeriodTotals(periods);
+  return buildComparisonResult(selectedMonth, mode, monthlyTransactions, options).totals;
 }
 
 function relativeDelta(current: number, comparison: number): number | null {
@@ -280,12 +362,10 @@ function shareOf(amount: number, total: number): number {
   return roundRatio(amount / total);
 }
 
-export function analyzeCategoryContribution(
-  currentTransactions: Transaction[],
-  comparisonTransactions: Transaction[]
+function contributeFromCategoryMaps(
+  currentMap: Record<string, number>,
+  comparisonMap: Record<string, number>
 ): CategoryContribution[] {
-  const currentMap = sumExpensesByCategory(currentTransactions);
-  const comparisonMap = sumExpensesByCategory(comparisonTransactions);
   const currentTotal = sumMoney(Object.values(currentMap));
   const comparisonTotal = sumMoney(Object.values(comparisonMap));
   const totalDelta = roundMoney(currentTotal - comparisonTotal);
@@ -326,14 +406,51 @@ export function analyzeCategoryContribution(
     .sort((left, right) => Math.abs(right.delta) - Math.abs(left.delta) || right.currentAmount - left.currentAmount);
 }
 
+export function analyzeCategoryContribution(
+  currentTransactions: Transaction[],
+  comparisonTransactions: Transaction[],
+  currency = ANALYSIS_BASE_CURRENCY
+): CategoryContribution[] {
+  return contributeFromCategoryMaps(
+    sumExpensesByCategory(filterTransactionsByCurrency(currentTransactions, currency)),
+    sumExpensesByCategory(filterTransactionsByCurrency(comparisonTransactions, currency))
+  );
+}
+
+export function analyzeCategoryContributionAcrossMonths(
+  currentTransactions: Transaction[],
+  monthlyComparison: Record<string, Transaction[]>,
+  availableMonths: string[],
+  currency = ANALYSIS_BASE_CURRENCY
+): CategoryContribution[] {
+  const currentMap = sumExpensesByCategory(filterTransactionsByCurrency(currentTransactions, currency));
+  if (!availableMonths.length) return contributeFromCategoryMaps(currentMap, {});
+
+  const monthlyMaps = availableMonths.map(month => (
+    sumExpensesByCategory(filterTransactionsByCurrency(monthlyComparison[month] || [], currency))
+  ));
+  const categories = new Set([
+    ...Object.keys(currentMap),
+    ...monthlyMaps.flatMap(item => Object.keys(item)),
+  ]);
+  const comparisonMap: Record<string, number> = {};
+  categories.forEach(category => {
+    comparisonMap[category] = roundMoney(
+      sumMoney(monthlyMaps.map(item => item[category] || 0)) / availableMonths.length
+    );
+  });
+  return contributeFromCategoryMaps(currentMap, comparisonMap);
+}
+
 export function compareSpendGroups(
   currentTransactions: Transaction[],
   comparisonTransactions: Transaction[],
-  resolveGroup: (transaction: Transaction) => {key: string; label: string; linked: boolean} | null
+  resolveGroup: SpendGroupResolver,
+  currency = ANALYSIS_BASE_CURRENCY
 ): SpendGroupComparison[] {
   const build = (transactions: Transaction[]) => {
     const groups = new Map<string, {label: string; linked: boolean; amounts: number[]; count: number}>();
-    transactions.filter(item => item.type === 'expense').forEach(transaction => {
+    filterTransactionsByCurrency(transactions, currency).filter(item => item.type === 'expense').forEach(transaction => {
       const resolved = resolveGroup(transaction);
       if (!resolved) return;
       const existing = groups.get(resolved.key);
@@ -368,6 +485,85 @@ export function compareSpendGroups(
         key,
         label: current?.label || comparison?.label || key,
         linked: current?.linked ?? comparison?.linked ?? false,
+        currentAmount,
+        comparisonAmount,
+        delta: roundMoney(currentAmount - comparisonAmount),
+        percentageDelta: relativeDelta(currentAmount, comparisonAmount),
+        currentCount,
+        comparisonCount,
+        currentAverage: currentCount > 0 ? roundMoney(currentAmount / currentCount) : null,
+        comparisonAverage: comparisonCount > 0 ? roundMoney(comparisonAmount / comparisonCount) : null,
+      };
+    })
+    .filter(item => item.currentAmount > 0 || item.comparisonAmount > 0)
+    .sort((left, right) => right.currentAmount - left.currentAmount || Math.abs(right.delta) - Math.abs(left.delta));
+}
+
+type GroupMonth = {label: string; linked: boolean; amount: number; count: number};
+
+function aggregateExpenseGroups(
+  transactions: Transaction[],
+  resolveGroup: SpendGroupResolver,
+  currency = ANALYSIS_BASE_CURRENCY
+): Map<string, GroupMonth> {
+  const groups = new Map<string, {label: string; linked: boolean; amounts: number[]; count: number}>();
+  filterTransactionsByCurrency(transactions, currency).filter(item => item.type === 'expense').forEach(transaction => {
+    const resolved = resolveGroup(transaction);
+    if (!resolved) return;
+    const existing = groups.get(resolved.key);
+    if (existing) {
+      existing.amounts.push(transaction.amount);
+      existing.count += 1;
+      return;
+    }
+    groups.set(resolved.key, {
+      label: resolved.label,
+      linked: resolved.linked,
+      amounts: [transaction.amount],
+      count: 1,
+    });
+  });
+  return new Map([...groups.entries()].map(([key, item]) => [key, {
+    label: item.label,
+    linked: item.linked,
+    amount: sumMoney(item.amounts),
+    count: item.count,
+  }]));
+}
+
+export function compareSpendGroupsAcrossMonths(
+  currentTransactions: Transaction[],
+  monthlyComparison: Record<string, Transaction[]>,
+  availableMonths: string[],
+  resolveGroup: SpendGroupResolver,
+  currency = ANALYSIS_BASE_CURRENCY
+): SpendGroupComparison[] {
+  const currentGroups = aggregateExpenseGroups(currentTransactions, resolveGroup, currency);
+  const monthlyGroups = availableMonths.map(month => (
+    aggregateExpenseGroups(monthlyComparison[month] || [], resolveGroup, currency)
+  ));
+  const keys = new Set([
+    ...currentGroups.keys(),
+    ...monthlyGroups.flatMap(item => [...item.keys()]),
+  ]);
+  const monthCount = availableMonths.length;
+
+  return [...keys]
+    .map(key => {
+      const current = currentGroups.get(key);
+      const currentAmount = current?.amount || 0;
+      const currentCount = current?.count || 0;
+      const comparisonAmount = monthCount
+        ? roundMoney(sumMoney(monthlyGroups.map(item => item.get(key)?.amount || 0)) / monthCount)
+        : 0;
+      const comparisonCount = monthCount
+        ? roundRatio(monthlyGroups.reduce((total, item) => total + (item.get(key)?.count || 0), 0) / monthCount, 1)
+        : 0;
+      const sample = monthlyGroups.find(item => item.has(key));
+      return {
+        key,
+        label: current?.label || sample?.get(key)?.label || key,
+        linked: current?.linked ?? sample?.get(key)?.linked ?? false,
         currentAmount,
         comparisonAmount,
         delta: roundMoney(currentAmount - comparisonAmount),

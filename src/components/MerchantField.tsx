@@ -61,7 +61,7 @@ export function MerchantField({merchants, text, merchantId, createNew, onChange}
               className={styles.promptSecondary}
               onClick={() => onChange({text, merchantId: undefined, createNew: true})}
             >
-              建立新商戶
+              確定建立新商戶
             </button>
           </div>
         </div>

@@ -7,7 +7,7 @@ import {MerchantField} from '../components/MerchantField';
 import {PaymentInstrumentField} from '../components/PaymentInstrumentField';
 import {expenseCategories, incomeCategories} from '../constants/categories';
 import {planMerchantSave, resolveTransactionMerchantDisplay} from '../services/merchantIdentity';
-import {formatInstrumentLabel, paymentMethodFromType, paymentTypeFromMethod} from '../services/paymentInstrument';
+import {formatInstrumentLabel, paymentMethodFromType, paymentTypeFromMethod, resolveInstrumentAccount} from '../services/paymentInstrument';
 import {
   deleteTransactionWithGoalLink,
   getCurrentMonthKey,
@@ -36,6 +36,7 @@ type Draft = {
   date: string;
   paymentType: PaymentInstrumentType | '';
   paymentInstrumentId?: string;
+  accountLinkChoice?: 'instrument' | 'keep';
   goalId: string;
 };
 
@@ -195,9 +196,26 @@ export function TransactionListScreen() {
     }
 
     const plannedMerchant = planMerchantSave(draft.merchant, draft.merchantId, draft.createNewMerchant, merchants);
+    if (!plannedMerchant.ok) {
+      showToast(`請先確認商戶：這可能是「${plannedMerchant.suggestion.merchant.name}」。`);
+      return;
+    }
     if (plannedMerchant.upsert) {
       await upsertMerchant(plannedMerchant.upsert);
       setMerchants(current => [...current.filter(item => item.id !== plannedMerchant.upsert?.id), plannedMerchant.upsert!]);
+    }
+
+    const selectedInstrument = instruments.find(item => item.id === draft.paymentInstrumentId);
+    const previousInstrument = instruments.find(item => item.id === editingTransaction.paymentInstrumentId);
+    const accountLink = resolveInstrumentAccount({
+      instrument: selectedInstrument,
+      explicitAccountId: editingTransaction.accountId,
+      previousInstrumentAccountId: previousInstrument?.accountId,
+      choice: draft.accountLinkChoice,
+    });
+    if (!accountLink.ok) {
+      showToast('請先處理付款工具與帳戶的連結衝突。');
+      return;
     }
 
     const transaction: Transaction = {
@@ -209,7 +227,7 @@ export function TransactionListScreen() {
       category: draft.category,
       goalId: draft.type === 'expense' ? (draft.goalId || undefined) : undefined,
       linkedGoalEntryId: draft.type === 'expense' ? editingTransaction.linkedGoalEntryId : undefined,
-      accountId: editingTransaction.accountId,
+      accountId: accountLink.accountId,
       linkedTransferId: editingTransaction.linkedTransferId,
       merchant: plannedMerchant.merchant,
       merchantId: plannedMerchant.merchantId,
@@ -313,12 +331,43 @@ export function TransactionListScreen() {
             accounts={accounts}
             type={draft.paymentType}
             instrumentId={draft.paymentInstrumentId}
-            onChange={next => updateDraft({paymentType: next.type, paymentInstrumentId: next.instrumentId})}
+            onChange={next => updateDraft({
+              paymentType: next.type,
+              paymentInstrumentId: next.instrumentId,
+              accountLinkChoice: undefined,
+            })}
             onCreate={async instrument => {
               await upsertPaymentInstrument(instrument);
               setInstruments(current => [...current.filter(item => item.id !== instrument.id), instrument]);
             }}
           />
+          {(() => {
+            if (!draft || !editingTransaction) return null;
+            const selectedInstrument = instruments.find(item => item.id === draft.paymentInstrumentId);
+            const previousInstrument = instruments.find(item => item.id === editingTransaction.paymentInstrumentId);
+            const accountLink = resolveInstrumentAccount({
+              instrument: selectedInstrument,
+              explicitAccountId: editingTransaction.accountId,
+              previousInstrumentAccountId: previousInstrument?.accountId,
+              choice: draft.accountLinkChoice,
+            });
+            if (accountLink.ok) return null;
+            const instrumentAccount = accounts.find(item => item.id === accountLink.instrumentAccountId);
+            const currentAccount = accounts.find(item => item.id === accountLink.transactionAccountId);
+            return (
+              <div className={styles.hint}>
+                <p>此付款工具連結「{instrumentAccount?.name || '另一個帳戶'}」，但這筆交易目前連結「{currentAccount?.name || '現有帳戶'}」。請選擇要使用哪一個，系統不會自動覆寫。</p>
+                <div className={styles.actionRow}>
+                  <button className={styles.secondaryBtn} onClick={() => updateDraft({accountLinkChoice: 'instrument'})}>
+                    改用付款工具的帳戶
+                  </button>
+                  <button className={styles.secondaryBtn} onClick={() => updateDraft({accountLinkChoice: 'keep'})}>
+                    保留現有帳戶
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {goals.length > 0 && draft.type === 'expense' ? (
             <>
