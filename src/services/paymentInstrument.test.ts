@@ -9,6 +9,7 @@ import {
   paymentTypeFromMethod,
   resolveInstrumentAccount,
   resolveSubscriptionPosting,
+  subscriptionPaymentFromDraft,
   subscriptionPaymentLabel,
   validateLast4,
 } from './paymentInstrument';
@@ -154,5 +155,17 @@ describe('payment instrument helpers', () => {
       paymentMethod: '信用卡',
       paymentInstrumentId: 'deleted',
     }, [card])).toBe('信用卡');
+  });
+
+  it('does not turn an unspecified subscription payment type into 信用卡', () => {
+    expect(subscriptionPaymentFromDraft('', undefined)).toBeNull();
+    expect(subscriptionPaymentFromDraft('credit_card', undefined)).toEqual({
+      paymentMethod: '信用卡',
+      paymentInstrumentId: undefined,
+    });
+    expect(subscriptionPaymentFromDraft('credit_card', 'card-1')).toEqual({
+      paymentMethod: '信用卡',
+      paymentInstrumentId: 'card-1',
+    });
   });
 });

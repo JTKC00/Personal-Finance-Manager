@@ -78,6 +78,17 @@ export function resolveSubscriptionPosting(
   };
 }
 
+export function subscriptionPaymentFromDraft(
+  paymentType: PaymentInstrumentType | '',
+  paymentInstrumentId?: string
+): {paymentMethod: string; paymentInstrumentId?: string} | null {
+  if (!paymentType) return null;
+  return {
+    paymentMethod: paymentMethodFromType(paymentType),
+    paymentInstrumentId,
+  };
+}
+
 export function subscriptionPaymentLabel(
   subscription: Pick<Subscription, 'paymentMethod' | 'paymentInstrumentId'>,
   instruments: PaymentInstrument[]

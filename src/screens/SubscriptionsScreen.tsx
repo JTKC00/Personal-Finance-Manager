@@ -5,7 +5,7 @@ import {Screen} from '../components/Screen';
 import {PaymentInstrumentField} from '../components/PaymentInstrumentField';
 import {expenseCategories} from '../constants/categories';
 import {useSubscriptionProcessing} from '../contexts/SubscriptionProcessingContext';
-import {paymentMethodFromType, paymentTypeFromMethod, subscriptionPaymentLabel} from '../services/paymentInstrument';
+import {paymentTypeFromMethod, subscriptionPaymentFromDraft, subscriptionPaymentLabel} from '../services/paymentInstrument';
 import {
   deleteSubscription,
   getCurrentMonthKey,
@@ -103,8 +103,8 @@ export function SubscriptionsScreen() {
   useEffect(() => { refresh(); }, [refresh]);
 
   const canSave = useMemo(
-    () => Boolean(draft.name.trim()) && Number(draft.amount) > 0 && Boolean(draft.nextBillingDate),
-    [draft.amount, draft.name, draft.nextBillingDate]
+    () => Boolean(draft.name.trim()) && Number(draft.amount) > 0 && Boolean(draft.nextBillingDate) && Boolean(draft.paymentType),
+    [draft.amount, draft.name, draft.nextBillingDate, draft.paymentType]
   );
 
   const activeSubscriptions = subscriptions.filter(item => item.active);
@@ -146,7 +146,16 @@ export function SubscriptionsScreen() {
 
   async function save() {
     if (!canSave) {
-      showToast('名稱、金額與下次扣款日為必填。');
+      showToast('名稱、金額、付款方式與下次扣款日為必填。');
+      return;
+    }
+    if (!draft.paymentType) {
+      showToast('名稱、金額、付款方式與下次扣款日為必填。');
+      return;
+    }
+    const payment = subscriptionPaymentFromDraft(draft.paymentType, draft.paymentInstrumentId);
+    if (!payment) {
+      showToast('名稱、金額、付款方式與下次扣款日為必填。');
       return;
     }
     const existing = editingId ? subscriptions.find(item => item.id === editingId) : undefined;
@@ -156,8 +165,8 @@ export function SubscriptionsScreen() {
       amount: Number(draft.amount),
       currency: existing?.currency || 'HKD',
       category: draft.category,
-      paymentMethod: draft.paymentType ? paymentMethodFromType(draft.paymentType) : '信用卡',
-      paymentInstrumentId: draft.paymentInstrumentId,
+      paymentMethod: payment.paymentMethod,
+      paymentInstrumentId: payment.paymentInstrumentId,
       frequency: draft.frequency,
       nextBillingDate: draft.nextBillingDate,
       trialEndDate: draft.trialEndDate || undefined,
