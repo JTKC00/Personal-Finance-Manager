@@ -216,13 +216,14 @@ function validateSubscriptions(value: unknown, errors: string[]): value is Subsc
   value.forEach((item, index) => {
     const path = `subscriptions[${index}]`;
     if (!isRecord(item)) return errors.push(`${path} 必須是物件`);
-    hasOnlyKeys(item, ['id', 'name', 'amount', 'currency', 'category', 'paymentMethod', 'frequency', 'nextBillingDate', 'trialEndDate', 'reminderDays', 'active', 'lastPostedDate', 'note', 'createdAt'], path, errors);
+    hasOnlyKeys(item, ['id', 'name', 'amount', 'currency', 'category', 'paymentMethod', 'paymentInstrumentId', 'frequency', 'nextBillingDate', 'trialEndDate', 'reminderDays', 'active', 'lastPostedDate', 'note', 'createdAt'], path, errors);
     validateId(item, path, errors);
     requireString(item, 'name', path, errors);
     requireNumber(item, 'amount', path, errors);
     requireString(item, 'currency', path, errors);
     requireString(item, 'category', path, errors);
     requireString(item, 'paymentMethod', path, errors);
+    optionalString(item, 'paymentInstrumentId', path, errors);
     if (!['weekly', 'monthly', 'quarterly', 'yearly'].includes(String(item.frequency))) errors.push(`${path}.frequency 無效`);
     requireDateKey(item, 'nextBillingDate', path, errors);
     optionalDateKey(item, 'trialEndDate', path, errors);

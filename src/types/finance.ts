@@ -191,6 +191,7 @@ export type Subscription = {
   currency: string;
   category: string;
   paymentMethod: string;
+  paymentInstrumentId?: string;
   frequency: SubscriptionFrequency;
   nextBillingDate: string;
   trialEndDate?: string;

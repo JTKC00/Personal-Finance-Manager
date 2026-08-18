@@ -45,7 +45,7 @@ describe('finance backup validation', () => {
       }],
       subscriptions: [{
         id: 'subscription-1', name: '雲端服務', amount: 68, currency: 'HKD', category: '工具',
-        paymentMethod: '信用卡', frequency: 'monthly', nextBillingDate: '2026-09-01',
+        paymentMethod: '信用卡', paymentInstrumentId: 'pay-1', frequency: 'monthly', nextBillingDate: '2026-09-01',
         reminderDays: 7, active: true, createdAt: '2026-08-01T00:00:00.000Z'
       }],
       budgets: {'飲食': 3000},

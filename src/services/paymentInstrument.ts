@@ -1,5 +1,5 @@
 import {compareSpendGroups, compareSpendGroupsAcrossMonths, type SpendGroupComparison} from './comparisonEngine';
-import type {Account, PaymentInstrument, PaymentInstrumentType, Transaction} from '../types/finance';
+import type {Account, PaymentInstrument, PaymentInstrumentType, Subscription, Transaction} from '../types/finance';
 
 export const PAYMENT_INSTRUMENT_TYPES: PaymentInstrumentType[] = [
   'credit_card', 'debit_card', 'e_wallet', 'cash', 'bank', 'other',
@@ -54,6 +54,37 @@ export function validateLast4(value: string | undefined): Last4Validation {
 
 export function formatInstrumentLabel(instrument: PaymentInstrument): string {
   return instrument.last4 ? `${instrument.name} ••••${instrument.last4}` : instrument.name;
+}
+
+export function resolveSubscriptionPosting(
+  subscription: Pick<Subscription, 'paymentMethod' | 'paymentInstrumentId'>,
+  instruments: PaymentInstrument[]
+): {
+  paymentMethod: string;
+  paymentInstrumentId?: string;
+  accountId?: string;
+} {
+  if (!subscription.paymentInstrumentId) {
+    return {paymentMethod: subscription.paymentMethod};
+  }
+  const instrument = instruments.find(item => item.id === subscription.paymentInstrumentId);
+  if (!instrument) {
+    return {paymentMethod: subscription.paymentMethod};
+  }
+  return {
+    paymentMethod: paymentMethodFromType(instrument.type),
+    paymentInstrumentId: instrument.id,
+    accountId: instrument.accountId,
+  };
+}
+
+export function subscriptionPaymentLabel(
+  subscription: Pick<Subscription, 'paymentMethod' | 'paymentInstrumentId'>,
+  instruments: PaymentInstrument[]
+): string {
+  if (!subscription.paymentInstrumentId) return subscription.paymentMethod;
+  const instrument = instruments.find(item => item.id === subscription.paymentInstrumentId);
+  return instrument ? formatInstrumentLabel(instrument) : subscription.paymentMethod;
 }
 
 export type InstrumentAccountResolution =

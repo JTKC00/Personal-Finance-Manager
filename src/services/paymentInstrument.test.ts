@@ -8,6 +8,8 @@ import {
   paymentMethodFromType,
   paymentTypeFromMethod,
   resolveInstrumentAccount,
+  resolveSubscriptionPosting,
+  subscriptionPaymentLabel,
   validateLast4,
 } from './paymentInstrument';
 
@@ -125,5 +127,32 @@ describe('payment instrument helpers', () => {
       explicitAccountId: 'old-instrument-account',
       previousInstrumentAccountId: 'old-instrument-account',
     })).toEqual({ok: true, accountId: 'account-1'});
+  });
+
+  it('resolves subscription posting from a linked instrument and falls back when it is missing', () => {
+    const card = instrument({id: 'card-1', accountId: 'account-1'});
+    expect(resolveSubscriptionPosting({paymentMethod: '信用卡'}, [card])).toEqual({
+      paymentMethod: '信用卡',
+    });
+    expect(resolveSubscriptionPosting({
+      paymentMethod: '電子錢包',
+      paymentInstrumentId: 'card-1',
+    }, [card])).toEqual({
+      paymentMethod: '信用卡',
+      paymentInstrumentId: 'card-1',
+      accountId: 'account-1',
+    });
+    expect(resolveSubscriptionPosting({
+      paymentMethod: '現金',
+      paymentInstrumentId: 'deleted',
+    }, [card])).toEqual({paymentMethod: '現金'});
+    expect(subscriptionPaymentLabel({
+      paymentMethod: '信用卡',
+      paymentInstrumentId: 'card-1',
+    }, [card])).toBe('HSBC Red Card ••••1234');
+    expect(subscriptionPaymentLabel({
+      paymentMethod: '信用卡',
+      paymentInstrumentId: 'deleted',
+    }, [card])).toBe('信用卡');
   });
 });

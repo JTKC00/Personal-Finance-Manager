@@ -12,6 +12,7 @@ import {
   sumExpensesByCategory,
 } from './financeLogic';
 import {roundMoney, sumMoney} from './money';
+import {resolveSubscriptionPosting} from './paymentInstrument';
 import {FINANCE_BACKUP_VERSION, type FinanceBackup} from './financeBackup';
 export {
   getCurrentMonthKey,
@@ -287,7 +288,11 @@ export async function deleteSubscription(id: string): Promise<void> {
 }
 
 export async function processDueSubscriptions(today = formatDateKey(new Date())): Promise<number> {
-  const [subscriptions, transactions] = await Promise.all([loadSubscriptions(), loadTransactions()]);
+  const [subscriptions, transactions, instruments] = await Promise.all([
+    loadSubscriptions(),
+    loadTransactions(),
+    loadPaymentInstruments(),
+  ]);
   const postedKeys = new Set(
     transactions
       .filter(item => item.subscriptionId)
@@ -303,6 +308,7 @@ export async function processDueSubscriptions(today = formatDateKey(new Date()))
     while (dueDate <= today && guard < 36) {
       const key = `${subscription.id}:${dueDate}`;
       if (!postedKeys.has(key)) {
+        const posting = resolveSubscriptionPosting(subscription, instruments);
         const transaction: Transaction = {
           id: `sub-${subscription.id}-${dueDate}`,
           type: 'expense',
@@ -310,12 +316,18 @@ export async function processDueSubscriptions(today = formatDateKey(new Date()))
           currency: subscription.currency || 'HKD',
           date: dueDate,
           category: subscription.category,
-          paymentMethod: subscription.paymentMethod,
+          paymentMethod: posting.paymentMethod,
+          paymentInstrumentId: posting.paymentInstrumentId,
+          accountId: posting.accountId,
           subscriptionId: subscription.id,
           note: subscription.name,
           createdAt: new Date().toISOString()
         };
-        await upsertTransaction(transaction);
+        try {
+          await saveTransactionWithGoalLink(transaction);
+        } catch {
+          break;
+        }
         postedKeys.add(key);
         created += 1;
       }

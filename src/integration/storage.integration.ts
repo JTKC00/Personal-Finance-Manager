@@ -243,6 +243,132 @@ describe('Firestore storage integration', () => {
       'sub-cloud-plan-2026-02-28',
     ]);
     expect(subscriptions[0]).toMatchObject({nextBillingDate: '2026-03-28', lastPostedDate: '2026-02-28'});
+    expect(transactions.every(item => !item.paymentInstrumentId && !item.accountId)).toBe(true);
+    expect(transactions.every(item => item.paymentMethod === '信用卡')).toBe(true);
+  });
+
+  it('posts a linked payment-instrument subscription onto the account ledger', async () => {
+    const account: Account = {
+      id: 'account-1',
+      name: 'HSBC Credit Card',
+      type: 'credit',
+      initialBalance: 500,
+      currency: 'HKD',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    const instrument: PaymentInstrument = {
+      id: 'card-1',
+      name: 'HSBC Red Card',
+      type: 'credit_card',
+      last4: '1234',
+      accountId: account.id,
+      active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    await upsertAccount(account);
+    await upsertPaymentInstrument(instrument);
+    await upsertSubscription({
+      id: 'netflix',
+      name: 'Netflix',
+      amount: 88,
+      currency: 'HKD',
+      category: '娛樂',
+      paymentMethod: '電子錢包',
+      paymentInstrumentId: instrument.id,
+      frequency: 'monthly',
+      nextBillingDate: '2026-02-01',
+      reminderDays: 7,
+      active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await expect(processDueSubscriptions('2026-02-01')).resolves.toBe(1);
+    const [transaction, transferDoc, balance] = await Promise.all([
+      getDoc(userDoc('transactions', 'sub-netflix-2026-02-01')),
+      getDoc(userDoc('transfers', 'txn-sub-netflix-2026-02-01')),
+      getAccountBalance(account.id),
+    ]);
+    expect(transaction.data()).toMatchObject({
+      paymentInstrumentId: 'card-1',
+      paymentMethod: '信用卡',
+      accountId: 'account-1',
+      linkedTransferId: 'txn-sub-netflix-2026-02-01',
+      amount: 88,
+    });
+    expect(transferDoc.data()).toMatchObject({fromAccountId: 'account-1', amount: 88});
+    expect(balance).toBe(412);
+  });
+
+  it('rejects a currency-mismatched subscription post without leaving a partial ledger', async () => {
+    await upsertAccount({
+      id: 'hkd-account',
+      name: 'HKD 卡',
+      type: 'credit',
+      initialBalance: 200,
+      currency: 'HKD',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    await upsertPaymentInstrument({
+      id: 'usd-card',
+      name: 'USD Card',
+      type: 'credit_card',
+      accountId: 'hkd-account',
+      active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    await upsertSubscription({
+      id: 'usd-sub',
+      name: 'US App',
+      amount: 10,
+      currency: 'USD',
+      category: '工具',
+      paymentMethod: '信用卡',
+      paymentInstrumentId: 'usd-card',
+      frequency: 'monthly',
+      nextBillingDate: '2026-02-01',
+      reminderDays: 7,
+      active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await expect(processDueSubscriptions('2026-02-01')).resolves.toBe(0);
+    const [transaction, transfer, subscription, balance] = await Promise.all([
+      getDoc(userDoc('transactions', 'sub-usd-sub-2026-02-01')),
+      getDoc(userDoc('transfers', 'txn-sub-usd-sub-2026-02-01')),
+      loadSubscriptions(),
+      getAccountBalance('hkd-account'),
+    ]);
+    expect(transaction.exists()).toBe(false);
+    expect(transfer.exists()).toBe(false);
+    expect(subscription[0].nextBillingDate).toBe('2026-02-01');
+    expect(subscription[0].lastPostedDate).toBeUndefined();
+    expect(balance).toBe(200);
+  });
+
+  it('falls back to the legacy payment method when the instrument is missing', async () => {
+    await upsertSubscription({
+      id: 'ghost-card',
+      name: 'Ghost',
+      amount: 30,
+      currency: 'HKD',
+      category: '工具',
+      paymentMethod: '現金',
+      paymentInstrumentId: 'deleted-instrument',
+      frequency: 'monthly',
+      nextBillingDate: '2026-02-01',
+      reminderDays: 7,
+      active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await expect(processDueSubscriptions('2026-02-01')).resolves.toBe(1);
+    const transaction = await getDoc(userDoc('transactions', 'sub-ghost-card-2026-02-01'));
+    expect(transaction.data()).toMatchObject({
+      paymentMethod: '現金',
+      amount: 30,
+    });
+    expect(transaction.data()?.paymentInstrumentId).toBeUndefined();
+    expect(transaction.data()?.accountId).toBeUndefined();
   });
 
   it('atomically dual-writes and reads the current monthly budget', async () => {

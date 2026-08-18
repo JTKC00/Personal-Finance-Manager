@@ -2,28 +2,36 @@ import {useCallback, useEffect, useMemo, useState} from 'react';
 import {Pencil, Trash2, Pause, Play} from 'lucide-react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
-import {expenseCategories, paymentMethods} from '../constants/categories';
+import {PaymentInstrumentField} from '../components/PaymentInstrumentField';
+import {expenseCategories} from '../constants/categories';
 import {useSubscriptionProcessing} from '../contexts/SubscriptionProcessingContext';
+import {paymentMethodFromType, paymentTypeFromMethod, subscriptionPaymentLabel} from '../services/paymentInstrument';
 import {
   deleteSubscription,
   getCurrentMonthKey,
   getSubscriptionChargesForMonth,
   getTransactionsByMonth,
+  loadAccounts,
   loadBudgetRows,
+  loadPaymentInstruments,
   loadSubscriptions,
   trackEvent,
+  upsertPaymentInstrument,
   upsertSubscription,
 } from '../services/storage';
 import {formatDateKey, sumExpensesByCategory, sumSubscriptionChargesByCategory} from '../services/financeLogic';
 import {roundMoney, sumMoney} from '../services/money';
-import {Budget, Subscription, SubscriptionFrequency, Transaction} from '../types/finance';
+import {
+  Account, Budget, PaymentInstrument, PaymentInstrumentType, Subscription, SubscriptionFrequency, Transaction,
+} from '../types/finance';
 import styles from './TransactionScreen.module.css';
 
 type Draft = {
   name: string;
   amount: string;
   category: string;
-  paymentMethod: string;
+  paymentType: PaymentInstrumentType | '';
+  paymentInstrumentId?: string;
   frequency: SubscriptionFrequency;
   nextBillingDate: string;
   trialEndDate: string;
@@ -46,7 +54,8 @@ function emptyDraft(): Draft {
     name: '',
     amount: '',
     category: expenseCategories[0],
-    paymentMethod: paymentMethods[0],
+    paymentType: 'credit_card',
+    paymentInstrumentId: undefined,
     frequency: 'monthly',
     nextBillingDate: today(),
     trialEndDate: '',
@@ -71,17 +80,23 @@ export function SubscriptionsScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [instruments, setInstruments] = useState<PaymentInstrument[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
 
   const refresh = useCallback(async () => {
     const created = await processSubscriptions().catch(() => 0);
-    const [nextSubscriptions, nextTransactions, nextBudgets] = await Promise.all([
+    const [nextSubscriptions, nextTransactions, nextBudgets, nextInstruments, nextAccounts] = await Promise.all([
       loadSubscriptions(),
       getTransactionsByMonth(month),
       loadBudgetRows(),
+      loadPaymentInstruments(),
+      loadAccounts(),
     ]);
     setSubscriptions(nextSubscriptions.sort((a, b) => a.nextBillingDate.localeCompare(b.nextBillingDate)));
     setTransactions(nextTransactions);
     setBudgets(nextBudgets);
+    setInstruments(nextInstruments);
+    setAccounts(nextAccounts);
     if (created > 0) showToast(`已自動補記 ${created} 筆訂閱支出。`);
   }, [month, processSubscriptions]);
 
@@ -141,7 +156,8 @@ export function SubscriptionsScreen() {
       amount: Number(draft.amount),
       currency: existing?.currency || 'HKD',
       category: draft.category,
-      paymentMethod: draft.paymentMethod,
+      paymentMethod: draft.paymentType ? paymentMethodFromType(draft.paymentType) : '信用卡',
+      paymentInstrumentId: draft.paymentInstrumentId,
       frequency: draft.frequency,
       nextBillingDate: draft.nextBillingDate,
       trialEndDate: draft.trialEndDate || undefined,
@@ -167,7 +183,10 @@ export function SubscriptionsScreen() {
       name: subscription.name,
       amount: String(subscription.amount),
       category: subscription.category,
-      paymentMethod: subscription.paymentMethod,
+      paymentType: instruments.find(item => item.id === subscription.paymentInstrumentId)?.type
+        || paymentTypeFromMethod(subscription.paymentMethod)
+        || '',
+      paymentInstrumentId: subscription.paymentInstrumentId,
       frequency: subscription.frequency,
       nextBillingDate: subscription.nextBillingDate,
       trialEndDate: subscription.trialEndDate || '',
@@ -261,18 +280,17 @@ export function SubscriptionsScreen() {
         </div>
 
         <p className={styles.sectionLabel}>付款方式</p>
-        <div className={styles.chips}>
-          {paymentMethods.map(item => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => updateDraft({paymentMethod: item})}
-              className={[styles.chip, draft.paymentMethod === item ? styles.activeChip : ''].join(' ')}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
+        <PaymentInstrumentField
+          instruments={instruments}
+          accounts={accounts}
+          type={draft.paymentType}
+          instrumentId={draft.paymentInstrumentId}
+          onChange={next => updateDraft({paymentType: next.type, paymentInstrumentId: next.instrumentId})}
+          onCreate={async instrument => {
+            await upsertPaymentInstrument(instrument);
+            setInstruments(current => [...current.filter(item => item.id !== instrument.id), instrument]);
+          }}
+        />
 
         <label className={styles.fieldLabel}>下次扣款日</label>
         <input
@@ -314,7 +332,7 @@ export function SubscriptionsScreen() {
           <div key={`${item.subscription.id}-${item.date}`} className={styles.txRow}>
             <div className={styles.txMain}>
               <span className={styles.txTitle}>{item.subscription.name}</span>
-              <span className={styles.txMeta}>{item.date} · {item.subscription.category} · {item.subscription.paymentMethod}</span>
+              <span className={styles.txMeta}>{item.date} · {item.subscription.category} · {subscriptionPaymentLabel(item.subscription, instruments)}</span>
             </div>
             <span className={styles.expenseText}>-{formatMoney(item.amount)}</span>
           </div>
@@ -371,7 +389,7 @@ export function SubscriptionsScreen() {
                 {subscription.name} {!subscription.active ? '（已停用）' : ''}
               </span>
               <span className={styles.txMeta}>
-                {frequencyLabels[subscription.frequency]} · 下次 {subscription.nextBillingDate} · {subscription.category}
+                {frequencyLabels[subscription.frequency]} · 下次 {subscription.nextBillingDate} · {subscription.category} · {subscriptionPaymentLabel(subscription, instruments)}
               </span>
               {subscription.note ? <span className={styles.goalMeta}>{subscription.note}</span> : null}
             </div>

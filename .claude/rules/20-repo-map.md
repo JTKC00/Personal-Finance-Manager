@@ -29,7 +29,7 @@
 |---|---|
 | money.ts | `roundMoney`:12、`sumMoney`:21——金額運算唯一合法途徑（整數 cents 防浮點漂移），純函式 |
 | financeLogic.ts | 純邏輯。目標：`normalizeGoal`（legacy opening entry）、`getGoalSavedAmount`（standalone ledger）、`getGoalWithSavedAmount`（canonical resolver）、`calculateAccountBalance`（linked ledger）；分類聚合：`sumExpensesByCategory`、`sumSubscriptionChargesByCategory`；幣別：`normalizeCurrency`、`summarizeTransactionsByCurrency`；日期、訂閱與預算 helpers |
-| storage.ts | 全部 Firestore CRUD。**高危**：`processDueSubscriptions`（登入自動入帳，00-risks 風險 2）、`saveTransactionWithGoalLink`（runTransaction 連動目標）、`syncTransactionTransfer`（交易↔轉帳↔帳戶連動）、`restoreFinanceBackup`（完整取代資料）。聚合：`getAccountBalance`、`getMonthlySummary`、`getCategoryBreakdown`。預算：`loadBudgetMonth`／`saveCurrentMonthBudgets`（writeBatch 原子雙寫 legacy＋月文件）／`loadBudgetRowsForMonth`。備份：`createFinanceBackup`／`restoreFinanceBackup` |
+| storage.ts | 全部 Firestore CRUD。**高危**：`processDueSubscriptions`（登入自動入帳，00-risks 風險 2；有 PaymentInstrument 時走 `saveTransactionWithGoalLink` 連動帳戶）、`saveTransactionWithGoalLink`（runTransaction 連動目標）、`syncTransactionTransfer`（交易↔轉帳↔帳戶連動）、`restoreFinanceBackup`（完整取代資料）。聚合：`getAccountBalance`、`getMonthlySummary`、`getCategoryBreakdown`。預算：`loadBudgetMonth`／`saveCurrentMonthBudgets`（writeBatch 原子雙寫 legacy＋月文件）／`loadBudgetRowsForMonth`。備份：`createFinanceBackup`／`restoreFinanceBackup` |
 | firebase.ts | 初始化。正式環境用 persistentLocalCache；只有 `VITE_USE_FIREBASE_EMULATORS=true` 才改用 memory cache 並連 Auth／Firestore Emulator。`getUid` 未登入直接 throw；`clean` 去 undefined，Firestore 寫入前必經 |
 | financeBackup.ts | 完整備份 schema 驗證、項目計數、差異預覽與資料指紋（純邏輯）。現行 `FINANCE_BACKUP_VERSION = 6`；v4／v5 讀入時補空的 `merchants`／`paymentInstruments` |
 | comparisonEngine.ts | 可重用比較分析：期間 KPI、相對／百分點 delta、分類貢獻、分組支出比較 |
@@ -55,6 +55,7 @@
   - 目標 entry id：`{goalId}-{timestamp}-{隨機}`
   - 商戶／付款工具新文件 id：`merch-{timestamp}`／`pay-{timestamp}`（既有交易 id 格式不變）
 - Transaction 可選身份欄位（只加不改）：`merchantId`、`merchantText`、`paymentInstrumentId`。舊 `merchant`／`paymentMethod` 仍寫入以相容舊版 app。分析時商戶只信任 `merchantId`；未歸戶文字分開標示，不用自由文字假裝精確分組。
+- Subscription 可選 `paymentInstrumentId`；`paymentMethod` 仍必填。自動入帳若找到該 instrument，會寫入交易的 instrument／legacy 付款類型，並在 instrument 有 `accountId` 時走帳戶 ledger。找不到 instrument 則只 fallback `paymentMethod`，不猜卡、不連帳戶。
 
 ## 一筆交易的資料流（讀懂這段就懂一半）
 
@@ -118,3 +119,4 @@
 - 2026-08-10 App Check 加入 observe logging／response status、typed boolean parameter、enforce policy tests 與兩階段 rollout gate。
 - 2026-08-17 Analysis 2.0：comparisonEngine、分類貢獻、Merchant／PaymentInstrument 身份模型、backup v6、Directory 管理頁、Analysis 比較／洞察／預算進度。
 - 2026-08-17 Analysis 2.0 correctness：HKD 隔離、rolling average 先按月再平均、未確認商戶不可存、付款工具帶入 Account、歷史 coverage 不當成 $0。
+- 2026-08-18 訂閱接上 PaymentInstrument：可選 `paymentInstrumentId`、SubscriptionsScreen 改用同一套付款欄位、自動入帳走 `saveTransactionWithGoalLink`。
