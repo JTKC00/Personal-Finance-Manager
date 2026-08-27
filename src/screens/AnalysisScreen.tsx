@@ -16,8 +16,6 @@ import {
   daysInMonthKey,
   filterTransactionsByCurrency,
   getMonthLabel,
-  getShortMonthLabel,
-  listMonthRange,
   monthsNeededForAnalysis,
   otherCurrencySummaries,
   shiftMonthKey,
@@ -27,7 +25,8 @@ import {
 } from '../services/comparisonEngine';
 import {sumExpensesByCategory} from '../services/financeLogic';
 import {compareMerchantsAcrossMonths} from '../services/merchantIdentity';
-import {roundMoney, sumMoney} from '../services/money';
+import {buildDailySpendChartData, buildTrendChartData} from '../services/chartData';
+import {formatChartMoney, formatMoney} from '../services/chartFormatters';
 import {
   compareAccountsAcrossMonths,
   comparePaymentInstrumentsAcrossMonths,
@@ -58,7 +57,6 @@ const COMPARISON_OPTIONS: ComparisonMode[] = [
 
 type DeepTab = 'category' | 'merchant' | 'payment' | 'account' | 'subscription';
 
-const formatMoney = (value: number) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
 const formatSignedMoney = (value: number) => `${value >= 0 ? '+' : '-'}${formatMoney(Math.abs(value))}`;
 
@@ -251,25 +249,15 @@ export function AnalysisScreen() {
       .map(([name, value], index) => ({name, value, color: CATEGORY_COLORS[index % CATEGORY_COLORS.length]})),
     [categoryMap]
   );
-  const trendData = useMemo(() => listMonthRange(selectedMonth, 6).map(month => {
-    const totals = buildPeriodTotals(monthlyTransactions[month] || [], {month, currentMonth, today});
-    return {
-      month,
-      label: getShortMonthLabel(month),
-      income: Math.round(totals.income),
-      expense: Math.round(totals.expense),
-      balance: Math.round(totals.balance),
-    };
-  }), [currentMonth, monthlyTransactions, selectedMonth, today]);
+  const trendData = useMemo(
+    () => buildTrendChartData(monthlyTransactions, {selectedMonth, currentMonth, today}),
+    [currentMonth, monthlyTransactions, selectedMonth, today]
+  );
   const barDays = selectedMonth === currentMonth ? today.getDate() : daysInMonth;
-  const barData = useMemo(() => {
-    const amounts = Array.from({length: barDays}, () => 0);
-    scopedTransactions.filter(item => item.type === 'expense').forEach(item => {
-      const day = parseInt(item.date.split('-')[2], 10) - 1;
-      if (day >= 0 && day < barDays) amounts[day] = sumMoney([amounts[day], item.amount]);
-    });
-    return amounts.map((amount, index) => ({day: String(index + 1), amount: roundMoney(amount)}));
-  }, [barDays, scopedTransactions]);
+  const barData = useMemo(
+    () => buildDailySpendChartData(scopedTransactions, barDays),
+    [barDays, scopedTransactions]
+  );
 
   const vsLabel = COMPARISON_MODE_LABELS[mode];
   const kpiCards: Array<{label: string; kpi: KpiComparison; color: string; format: (value: number | null) => string}> = [
@@ -402,7 +390,7 @@ export function AnalysisScreen() {
               <BarChart data={trendData} margin={{top: 8, right: 0, left: -20, bottom: 0}}>
                 <XAxis dataKey="label" tick={{fontSize: 10}} />
                 <YAxis tick={{fontSize: 10}} />
-                <Tooltip formatter={(value: number) => formatMoney(value)} labelFormatter={(_, payload) => (
+                <Tooltip formatter={formatChartMoney} labelFormatter={(_, payload) => (
                   payload?.[0]?.payload?.month ? getMonthLabel(payload[0].payload.month) : ''
                 )} />
                 <Bar dataKey="income" name="收入" fill="var(--color-success)" radius={[2, 2, 0, 0]} />
@@ -421,7 +409,7 @@ export function AnalysisScreen() {
                   <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70}>
                     {pieData.map(entry => <Cell key={entry.name} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip formatter={(value: number) => formatMoney(value)} />
+                  <Tooltip formatter={formatChartMoney} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -445,7 +433,7 @@ export function AnalysisScreen() {
               <BarChart data={barData} margin={{top: 4, right: 0, left: -20, bottom: 0}}>
                 <XAxis dataKey="day" tick={{fontSize: 10}} interval={4} />
                 <YAxis tick={{fontSize: 10}} />
-                <Tooltip formatter={(value: number) => formatMoney(value)} />
+                <Tooltip formatter={formatChartMoney} />
                 <Bar dataKey="amount" fill="var(--color-danger)" radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -536,5 +524,4 @@ export function AnalysisScreen() {
     </Screen>
   );
 }
-
 
