@@ -301,7 +301,7 @@ async function main() {
   const datasetDir = path.resolve(readArg('dataset', '../ocr-eval-private'));
   const project = readArg('project', 'personal-finance-manager-8e8b4');
   const secret = readArg('secret', 'GEMINI_API_KEY');
-  const model = readArg('model', 'gemini-3.6-flash');
+  const model = readArg('model', 'gemini-3.8-flash');
   const requestedProfile = readArg('profile');
   const manifestPath = path.join(datasetDir, 'manifest.json');
   const manifest = validateManifest(JSON.parse(await readFile(manifestPath, 'utf8')));
