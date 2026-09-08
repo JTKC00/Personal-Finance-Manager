@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {Wallet, Eye, EyeOff, Sun, Moon} from 'lucide-react';
+import {Eye, EyeOff, Sun, Moon} from 'lucide-react';
 import {useAuth} from '../contexts/AuthContext';
 import {translateFirebaseAuthError} from '../services/authErrors';
 import styles from './LoginScreen.module.css';
@@ -101,7 +101,7 @@ export function LoginScreen() {
           </button>
         </div>
         <div className={styles.brandMark}>
-          <div className={styles.brandIcon}><Wallet size={30} strokeWidth={1.5} aria-hidden="true" /></div>
+          <div className={styles.brandIcon}><img src="/brand/pfm-mark-128.png" width="52" height="52" alt="" /></div>
           <h1 className={styles.title}>個人財務管家</h1>
         </div>
         <p className={styles.subtitle}>每一筆收支，心中有數。</p>
