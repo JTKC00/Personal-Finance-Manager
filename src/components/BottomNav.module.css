@@ -93,7 +93,7 @@
 @media (min-width: 1024px) {
   .nav { inset: 0 auto 0 0; width: 224px; height: 100dvh; transform: none; padding: 32px 16px; border: 0; border-right: 1px solid var(--color-border); border-radius: 0; box-shadow: none; flex-direction: column; gap: 6px; overflow-y: auto; background: var(--color-surface); }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 28px; font-size: 16px; font-weight: 650; }
-  .brand > svg { color: var(--color-primary); flex-shrink: 0; }
+  .brand > img { border-radius: 10px; flex-shrink: 0; display: block; }
   .brand small { display: block; margin-top: 5px; font-size: 11px; font-weight: 400; color: var(--color-text-muted); }
   .navHeading { display: block; padding: 12px 12px 8px; font-size: 11px; color: var(--color-text-muted); }
   .item, .centerItem { flex: none; flex-direction: row; justify-content: flex-start; min-height: 48px; padding: 12px; gap: 12px; border-radius: 12px; }

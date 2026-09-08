@@ -1,5 +1,5 @@
 import {NavLink} from 'react-router-dom';
-import {Home, List, PlusCircle, Flag, User, Wallet, ChartNoAxesCombined, Repeat, BookUser} from 'lucide-react';
+import {Home, List, PlusCircle, Flag, User, ChartNoAxesCombined, Repeat, BookUser} from 'lucide-react';
 import styles from './BottomNav.module.css';
 
 const tabs: {to: string; label: string; Icon: React.ElementType; center?: boolean}[] = [
@@ -13,7 +13,7 @@ const tabs: {to: string; label: string; Icon: React.ElementType; center?: boolea
 export function BottomNav() {
   return (
     <nav className={styles.nav} aria-label="主要導覽">
-      <div className={styles.brand}><Wallet size={24} strokeWidth={1.5} /><span>個人財務管家<small>每一筆，心中有數。</small></span></div>
+      <div className={styles.brand}><img src="/brand/pfm-mark-128.png" width="36" height="36" alt="" /><span>個人財務管家<small>每一筆，心中有數。</small></span></div>
       <span className={styles.navHeading}>日常理財</span>
       {tabs.map(({to, label, Icon, center}) => (
         <NavLink
