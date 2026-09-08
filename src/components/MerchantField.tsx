@@ -1,4 +1,4 @@
-import {useMemo, useState} from 'react';
+import {useId, useMemo, useState} from 'react';
 import {findMerchantMatches} from '../services/merchantIdentity';
 import type {Merchant} from '../types/finance';
 import styles from './IdentityFields.module.css';
@@ -12,6 +12,7 @@ type Props = {
 };
 
 export function MerchantField({merchants, text, merchantId, createNew, onChange}: Props) {
+  const inputId = useId();
   const [open, setOpen] = useState(false);
   const matches = useMemo(() => findMerchantMatches(text, merchants).slice(0, 6), [merchants, text]);
   const selected = merchants.find(item => item.id === merchantId);
@@ -25,7 +26,9 @@ export function MerchantField({merchants, text, merchantId, createNew, onChange}
 
   return (
     <div className={styles.field}>
+      <label className={styles.label} htmlFor={inputId}>商戶名稱（選填）</label>
       <input
+        id={inputId}
         type="text"
         placeholder="商戶名稱"
         className={styles.input}

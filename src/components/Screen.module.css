@@ -1,7 +1,7 @@
 .container {
-  padding: var(--spacing-lg);
+  padding: 32px 20px;
   padding-bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + var(--spacing-xl));
-  max-width: 600px;
+  max-width: 720px;
   margin: 0 auto;
   min-height: 100%;
   animation: fadeIn 0.25s ease both;
@@ -13,7 +13,7 @@
 
 .title {
   color: var(--color-text);
-  font-size: 26px;
+  font-size: 32px;
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: -0.02em;
@@ -21,6 +21,12 @@
 
 .subtitle {
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: 14px;
   margin-top: 5px;
+}
+
+@media (min-width: 1024px) {
+  .container { padding: 44px 32px 48px; }
+  .wide { max-width: 1360px; }
+  .header { margin-bottom: 32px; }
 }

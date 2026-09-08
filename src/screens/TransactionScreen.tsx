@@ -324,7 +324,9 @@ export function TransactionScreen() {
   }
 
   return (
-    <Screen title="記帳" subtitle="拍照 OCR 或快速新增一筆交易">
+    <Screen wide title="記一筆" subtitle="記下當下，慢慢累積好習慣">
+      <details className={styles.scanDisclosure}>
+        <summary>掃描收據，自動帶入資料</summary>
       <Card title="收據 OCR">
         <input
           ref={fileInputRef}
@@ -417,26 +419,31 @@ export function TransactionScreen() {
         ) : null}
       </Card>
 
-      <Card title="快速新增">
-        <p className={styles.sectionLabel}>類型</p>
-        <div className={styles.chips}>
+      </details>
+      <Card title="交易資料">
+        <div className={styles.entryGrid}>
+        <div>
+        <div className={styles.segmented} role="group" aria-label="收支類型">
           <button
             type="button"
+            aria-pressed={draft.type === 'expense'}
             onClick={() => updateDraft({type: 'expense', category: expenseCategories[0], goalId: ''})}
             className={[styles.chip, draft.type === 'expense' ? styles.activeChip : ''].join(' ')}
           >支出</button>
           <button
             type="button"
+            aria-pressed={draft.type === 'income'}
             onClick={() => updateDraft({type: 'income', category: incomeCategories[0], goalId: ''})}
             className={[styles.chip, draft.type === 'income' ? styles.activeChip : ''].join(' ')}
           >收入</button>
         </div>
+        <label className={styles.fieldLabel} htmlFor="transaction-amount">金額 · HKD</label>
         <input
-          autoFocus
+          id="transaction-amount"
           type="number"
           inputMode="decimal"
-          placeholder="金額"
-          className={styles.input}
+          placeholder="0.00"
+          className={[styles.input, styles.amountInput].join(' ')}
           value={draft.amount}
           onChange={e => updateDraft({amount: e.target.value})}
         />
@@ -451,26 +458,33 @@ export function TransactionScreen() {
             createNewMerchant: next.createNew,
           })}
         />
+        <label className={styles.fieldLabel} htmlFor="transaction-note">備註（選填）</label>
         <input
+          id="transaction-note"
           type="text"
-          placeholder="備註"
+          placeholder="例如：和朋友晚餐"
           className={styles.input}
           value={draft.note}
           onChange={e => updateDraft({note: e.target.value})}
         />
+        <label className={styles.fieldLabel} htmlFor="transaction-date">日期</label>
         <input
+          id="transaction-date"
           type="date"
           className={styles.input}
           value={draft.date}
           onChange={e => updateDraft({date: e.target.value})}
         />
 
+        </div>
+        <div className={styles.entryOptions}>
         <p className={styles.sectionLabel}>分類</p>
         <div className={styles.chips}>
           {(draft.type === 'income' ? incomeCategories : expenseCategories).map(item => (
             <button
               key={item}
               type="button"
+              aria-pressed={draft.category === item}
               onClick={() => updateDraft({category: item})}
               className={[styles.chip, item === draft.category ? styles.activeChip : ''].join(' ')}
             >
@@ -518,13 +532,16 @@ export function TransactionScreen() {
           </>
         ) : null}
 
-        <div className={styles.actionRow}>
+        </div>
+        </div>
+        <div className={styles.entryFooter}>
+          <span>確認金額及日期後，即可儲存。</span>
           <button
             disabled={!canSave}
             className={[styles.primaryBtn, !canSave ? styles.disabledBtn : ''].join(' ')}
             onClick={save}
           >
-            新增
+            儲存交易
           </button>
         </div>
       </Card>
