@@ -1,7 +1,9 @@
 import {useEffect, useState} from 'react';
+import {Eye, EyeOff, Sun, Moon} from 'lucide-react';
 import {useAuth} from '../contexts/AuthContext';
 import {translateFirebaseAuthError} from '../services/authErrors';
 import styles from './LoginScreen.module.css';
+import {applyThemeMode, getStoredThemeMode} from '../services/appearance';
 
 function validatePasswordStrength(pw: string): string {
   if (pw.length < 8) return '密碼最少 8 個字元';
@@ -20,10 +22,12 @@ export function LoginScreen() {
     authError,
     clearAuthError,
   } = useAuth();
+  const [theme, setTheme] = useState(getStoredThemeMode);
   const [tab, setTab] = useState<'signIn' | 'signUp'>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resetMode, setResetMode] = useState(false);
@@ -86,11 +90,21 @@ export function LoginScreen() {
   return (
     <div className={styles.container}>
       <div className={styles.inner}>
+        <div className={styles.toolbar}>
+          <span className={styles.appLabel}>個人理財</span>
+          <button type="button" className={styles.themeButton} aria-label={theme === 'light' ? '切換深色外觀' : '切換淺色外觀'} onClick={() => {
+            const next = theme === 'light' ? 'dark' : 'light';
+            applyThemeMode(next);
+            setTheme(next);
+          }}>
+            {theme === 'light' ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
+          </button>
+        </div>
         <div className={styles.brandMark}>
-          <div className={styles.brandIcon}>💰</div>
+          <div className={styles.brandIcon}><img src="/brand/pfm-mark-128.png" width="52" height="52" alt="" /></div>
           <h1 className={styles.title}>個人財務管家</h1>
         </div>
-        <p className={styles.subtitle}>安全記錄每一筆收支{'\n'}財務自由從這裡開始</p>
+        <p className={styles.subtitle}>每一筆收支，心中有數。</p>
 
         {resetMode ? (
           /* ── 忘記密碼面板 ── */
@@ -98,14 +112,16 @@ export function LoginScreen() {
             {resetSent ? (
               <>
                 <p className={styles.resetSuccess}>
-                  重設連結已發送至 {resetEmail}。請查看收件箱；如果你的專案已設定自家認證網域，郵件會顯示由該網域發出。若數分鐘內仍未收到，請檢查垃圾郵件或返回後重新發送。
+                  重設連結已發送至 {resetEmail}。請查看收件箱；若數分鐘內仍未收到，請檢查垃圾郵件。
                 </p>
                 <button type="button" className={styles.button} onClick={() => { setResetMode(false); setResetSent(false); setResetEmail(''); setError(''); clearAuthError(); }}>返回登入</button>
               </>
             ) : (
               <form onSubmit={handleReset} className={styles.form}>
                 <p className={styles.resetHint}>輸入你的電郵地址，我們會發送密碼重設連結。</p>
+                <label className={styles.fieldLabel} htmlFor="reset-email">電郵地址</label>
                 <input
+                  id="reset-email"
                   autoCapitalize="none"
                   autoComplete="email"
                   type="email"
@@ -114,9 +130,9 @@ export function LoginScreen() {
                   value={resetEmail}
                   onChange={e => setResetEmail(e.target.value)}
                 />
-                {error ? <p className={styles.error}>{error}</p> : null}
+                {error ? <p role="alert" className={styles.error}>{error}</p> : null}
                 <button type="submit" disabled={loading} className={styles.button}>
-                  {loading ? <span className={styles.spinner} /> : '發送重設連結'}
+                  {loading ? <span role="status" aria-label="處理中" className={styles.spinner} /> : '發送重設連結'}
                 </button>
                 <button type="button" className={styles.linkBtn} onClick={() => { setResetMode(false); setError(''); clearAuthError(); }}>返回登入</button>
               </form>
@@ -125,13 +141,15 @@ export function LoginScreen() {
         ) : (
           /* ── 正常登入 / 註冊 ── */
           <>
-            <div className={styles.tabs}>
-              <button type="button" onClick={() => { setTab('signIn'); setError(''); clearAuthError(); }} className={[styles.tab, tab === 'signIn' ? styles.tabActive : ''].join(' ')}>登入</button>
-              <button type="button" onClick={() => { setTab('signUp'); setError(''); clearAuthError(); }} className={[styles.tab, tab === 'signUp' ? styles.tabActive : ''].join(' ')}>建立帳號</button>
+            <div className={styles.tabs} role="group" aria-label="登入方式">
+              <button type="button" aria-pressed={tab === 'signIn'} onClick={() => { setTab('signIn'); setShowPassword(false); setError(''); clearAuthError(); }} className={[styles.tab, tab === 'signIn' ? styles.tabActive : ''].join(' ')}>登入</button>
+              <button type="button" aria-pressed={tab === 'signUp'} onClick={() => { setTab('signUp'); setShowPassword(false); setError(''); clearAuthError(); }} className={[styles.tab, tab === 'signUp' ? styles.tabActive : ''].join(' ')}>建立帳號</button>
             </div>
 
             <form onSubmit={submit} className={styles.form}>
+              <label className={styles.fieldLabel} htmlFor="login-email">電郵地址</label>
               <input
+                id="login-email"
                 autoCapitalize="none"
                 autoComplete="email"
                 type="email"
@@ -141,15 +159,22 @@ export function LoginScreen() {
                 onChange={e => setEmail(e.target.value)}
               />
               <div>
+                <label className={styles.fieldLabel} htmlFor="login-password">密碼</label>
+                <div className={styles.passwordField}>
                 <input
+                  id="login-password"
                   autoCapitalize="none"
-                  type="password"
-                  placeholder={tab === 'signUp' ? '密碼（最少 8 位，含大小寫及數字）' : '密碼'}
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="輸入密碼"
                   autoComplete={tab === 'signIn' ? 'current-password' : 'new-password'}
                   className={styles.input}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                 />
+                <button type="button" className={styles.revealButton} aria-label={showPassword ? '隱藏密碼' : '顯示密碼'} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>
+                  {showPassword ? <EyeOff size={19} aria-hidden="true" /> : <Eye size={19} aria-hidden="true" />}
+                </button>
+                </div>
                 {tab === 'signIn' ? (
                   <button type="button" className={styles.forgotBtn} onClick={() => { setResetMode(true); setResetEmail(email.trim()); setError(''); clearAuthError(); }}>忘記密碼？</button>
                 ) : (
@@ -157,7 +182,10 @@ export function LoginScreen() {
                 )}
               </div>
               {tab === 'signUp' ? (
+                <div>
+                <label className={styles.fieldLabel} htmlFor="confirm-password">確認密碼</label>
                 <input
+                  id="confirm-password"
                   autoCapitalize="none"
                   type="password"
                   placeholder="確認密碼"
@@ -166,10 +194,11 @@ export function LoginScreen() {
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
                 />
+                </div>
               ) : null}
-              {error ? <p className={styles.error}>{error}</p> : null}
+              {error ? <p role="alert" className={styles.error}>{error}</p> : null}
               <button type="submit" disabled={loading} className={styles.button}>
-                {loading ? <span className={styles.spinner} /> : (tab === 'signIn' ? '登入' : '建立帳號')}
+                {loading ? <span role="status" aria-label="處理中" className={styles.spinner} /> : (tab === 'signIn' ? '登入' : '建立帳號')}
               </button>
             </form>
 
@@ -207,7 +236,6 @@ export function LoginScreen() {
               </svg>
               以 Google 帳號繼續
             </button>
-            <p className={styles.googleHint}>手機、PWA 或彈窗被阻擋時，系統會自動改用 Google 頁面跳轉登入。</p>
           </>
         )}
 

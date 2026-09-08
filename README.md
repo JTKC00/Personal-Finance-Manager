@@ -172,7 +172,7 @@ Cloud Function 也支援以下 OCR 每日配額設定；這些是本專案後端
 | `OCR_DAILY_LIMIT_PER_USER` | 20 | 每位使用者每日 OCR 次數 |
 | `OCR_DAILY_LIMIT_GLOBAL` | 50 | 全站每日 OCR 次數 |
 | `REQUIRE_APP_CHECK` | `false` | `false`＝observe：仍驗證並記錄 `valid`／`missing`／`invalid`，但不阻擋；`true`＝enforce：拒絕缺失或無效 token |
-| `GEMINI_MODEL` | `gemini-3.6-flash` | OCR 主要使用的 Gemini model |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | OCR 主要使用的 Gemini model |
 | `GEMINI_FALLBACK_MODELS` | `gemini-3.1-flash-lite,gemini-2.5-flash` | 主要 model 回 429/5xx 時依序 fallback 的 models |
 | `GEMINI_MAX_ATTEMPTS_PER_MODEL` | 3 | 每個 model 對 transient failure 的重試次數 |
 
@@ -193,7 +193,7 @@ Runner 使用 Google Cloud Application Default Credentials 從 Secret Manager �
 
 ```powershell
 gcloud auth application-default login
-npm --prefix functions run eval:ocr -- --dataset ../ocr-eval-private --project personal-finance-manager-8e8b4 --model gemini-3.6-flash
+npm --prefix functions run eval:ocr -- --dataset ../ocr-eval-private --project personal-finance-manager-8e8b4 --model gemini-3.8-flash
 ```
 
 Runner 以同一 model 比較 `legacy-v1` 與 `candidate-v2`，私有完整結果（逐案例預測、正誤與聚合指標）寫入 `ocr-eval-private/results/`；診斷時可加 `--profile candidate-v2` 只跑新版，減少不必要用量。如要在 repo 保存基線，只提交不含圖片、商戶、金額或逐案例資料的聚合摘要，格式參考 `DOC/ocr-eval-summary.example.json`。此命令會實際呼叫 Gemini 並產生用量，不納入一般 `npm run verify`。

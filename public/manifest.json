@@ -1,20 +1,28 @@
 {
   "name": "個人財務管家",
-  "short_name": "財務管家",
+  "short_name": "PFM",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f5f3",
-  "theme_color": "#f5f5f3",
+  "background_color": "#f5f5f7",
+  "theme_color": "#f5f5f7",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/brand/pfm-icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/brand/pfm-icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/pfm-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

@@ -21,7 +21,7 @@ const db = getFirestore();
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const requireAppCheck = defineBoolean('REQUIRE_APP_CHECK', {default: false});
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const GEMINI_FALLBACK_MODELS = parseModelList(process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.1-flash-lite,gemini-2.5-flash')
   .filter(model => model !== GEMINI_MODEL);
 const GEMINI_MODELS = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS];

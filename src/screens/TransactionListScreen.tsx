@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
-import {Copy, Pencil, Trash2} from 'lucide-react';
+import {Copy, Pencil, Trash2, Search} from 'lucide-react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {MerchantField} from '../components/MerchantField';
@@ -261,7 +261,7 @@ export function TransactionListScreen() {
   }
 
   return (
-    <Screen title="交易列表" subtitle="按月份瀏覽、編輯與刪除交易">
+    <Screen wide title="交易" subtitle="每一筆收支，都有跡可循">
       {draft ? (
         <Card title="編輯交易">
           <p className={styles.sectionLabel}>類型</p>
@@ -409,6 +409,7 @@ export function TransactionListScreen() {
       ) : null}
 
       <Card title="交易記錄">
+        <div className={styles.listToolbar}>
         <div className={styles.monthNav}>
           <button
             className={styles.navBtn}
@@ -421,15 +422,11 @@ export function TransactionListScreen() {
             onClick={() => setSelectedMonth(m => shiftMonth(m, 1))}
           >下月 ›</button>
         </div>
-        <input
-          type="search"
-          placeholder="搜尋商戶、備註、分類、付款方式或金額"
-          className={styles.input}
-          value={searchText}
-          onChange={e => setSearchText(e.target.value)}
-        />
-        <p className={styles.sectionLabel}>類型</p>
-        <div className={styles.chips}>
+        <div className={styles.searchField}>
+          <Search size={18} aria-hidden="true" />
+          <input type="search" aria-label="搜尋交易" placeholder="搜尋商戶、備註或金額" className={styles.input} value={searchText} onChange={e => setSearchText(e.target.value)} />
+        </div>
+        <div className={styles.segmented} role="group" aria-label="交易類型">
           {([
             ['all', '全部'],
             ['expense', '支出'],
@@ -438,6 +435,7 @@ export function TransactionListScreen() {
             <button
               key={value}
               type="button"
+              aria-pressed={typeFilter === value}
               onClick={() => setTypeFilter(value)}
               className={[styles.chip, typeFilter === value ? styles.activeChip : ''].join(' ')}
             >
@@ -445,31 +443,43 @@ export function TransactionListScreen() {
             </button>
           ))}
         </div>
-        {categoryOptions.length > 0 ? (
-          <>
-            <p className={styles.sectionLabel}>分類</p>
-            <div className={styles.chips}>
-              <button
-                type="button"
-                onClick={() => setCategoryFilter('all')}
-                className={[styles.chip, categoryFilter === 'all' ? styles.activeChip : ''].join(' ')}
-              >
-                全部分類
-              </button>
-              {categoryOptions.map(category => (
-                <button
-                  key={category}
-                  type="button"
-                  onClick={() => setCategoryFilter(category)}
-                  className={[styles.chip, categoryFilter === category ? styles.activeChip : ''].join(' ')}
-                >
-                  {category}
-                </button>
-              ))}
-            </div>
-          </>
+        </div>
+        <div className={styles.filterBar}>
+          <span role="status">{filteredTransactions.length} 筆交易</span>
+          <select aria-label="篩選交易分類" className={styles.categorySelect} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+            <option value="all">全部分類</option>
+            {categoryOptions.map(category => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </div>
+        {filteredTransactions.length > 0 ? (
+          <div className={styles.desktopTable}>
+            <table>
+              <caption className={styles.hidden}>交易記錄</caption>
+              <thead><tr><th scope="col">日期</th><th scope="col">商戶／備註</th><th scope="col">分類</th><th scope="col">付款方式</th><th scope="col" className={styles.numericCell}>金額</th><th scope="col">操作</th></tr></thead>
+              <tbody>{filteredTransactions.map(t => (
+                <tr key={t.id}>
+                  <td className={styles.dateCell}>{t.date}</td>
+                  <td className={styles.merchantCell}><strong>{resolveTransactionMerchantDisplay(t, merchants) || t.note || t.category}</strong>
+                    {t.goalId ? <small>儲蓄目標：{goals.find(g => g.id === t.goalId)?.name || '已刪除目標'}</small> : null}
+                    {t.subscriptionId ? <small>訂閱：{subscriptions.find(item => item.id === t.subscriptionId)?.name || '已刪除訂閱'}</small> : null}
+                  </td>
+                  <td>{t.category}</td>
+                  <td>{t.paymentInstrumentId ? formatInstrumentLabel(instruments.find(item => item.id === t.paymentInstrumentId) || {id: '', name: t.paymentMethod || '付款工具', type: 'other', active: true, createdAt: ''}) : (t.paymentMethod || '未指定')}</td>
+                  <td className={styles.numericCell}><span className={t.type === 'income' ? styles.incomeText : styles.expenseText}>{t.type === 'income' ? '+' : '-'}{t.currency || 'HKD'} {formatMoney(t.amount).slice(1)}</span></td>
+                  <td>
+                    {confirmDeleteId === t.id ? <div className={styles.tableConfirm}><span>確定刪除？</span><button className={styles.confirmYes} onClick={() => confirmDelete(t)}>確定</button><button className={styles.confirmNo} onClick={() => setConfirmDeleteId(null)}>取消</button></div> :
+                    <div className={styles.tableActions}>
+                      <button className={styles.iconBtn} aria-label={`複製交易：${t.note || t.category}`} title="複製" onClick={() => copyTransaction(t)}><Copy size={17} /></button>
+                      <button className={styles.iconBtn} aria-label={`編輯交易：${t.note || t.category}`} title="編輯" onClick={() => startEdit(t)}><Pencil size={17} /></button>
+                      <button className={styles.iconBtnDanger} aria-label={`刪除交易：${t.note || t.category}`} title="刪除" onClick={() => setConfirmDeleteId(t.id)}><Trash2 size={17} /></button>
+                    </div>}
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
         ) : null}
-        {transactions.length ? filteredTransactions.length ? filteredTransactions.map(t => (
+        {transactions.length ? filteredTransactions.length ? <div className={styles.mobileRows}>{filteredTransactions.map(t => (
           <div key={t.id} className={styles.txRow}>
             <div className={styles.txMain}>
               <span className={styles.txTitle}>{resolveTransactionMerchantDisplay(t, merchants) || t.note || t.category}</span>
@@ -491,7 +501,7 @@ export function TransactionListScreen() {
             </div>
               <div className={styles.txActions}>
               <span className={t.type === 'income' ? styles.incomeText : styles.expenseText}>
-                {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
+                {t.type === 'income' ? '+' : '-'}{t.currency || 'HKD'} {formatMoney(t.amount).slice(1)}
               </span>
               {confirmDeleteId === t.id ? (
                 <div className={styles.confirmRow}>
@@ -500,18 +510,21 @@ export function TransactionListScreen() {
                   <button className={styles.confirmNo} onClick={() => setConfirmDeleteId(null)}>取消</button>
                 </div>
               ) : (
-                <div className={styles.actionRow}>
-                  <button className={styles.iconBtn} title="複製" onClick={() => copyTransaction(t)}><Copy size={15} /></button>
-                  <button className={styles.iconBtn} title="編輯" onClick={() => startEdit(t)}><Pencil size={15} /></button>
-                  <button className={styles.iconBtnDanger} title="刪除" onClick={() => setConfirmDeleteId(t.id)}><Trash2 size={15} /></button>
-                </div>
+                <details className={styles.transactionOptions}>
+                  <summary aria-label={`操作交易：${t.note || t.category}`}>操作</summary>
+                  <div className={styles.actionRow}>
+                  <button className={styles.iconBtn} aria-label="複製交易" title="複製" onClick={() => copyTransaction(t)}><Copy size={15} /></button>
+                  <button className={styles.iconBtn} aria-label="編輯交易" title="編輯" onClick={() => startEdit(t)}><Pencil size={15} /></button>
+                  <button className={styles.iconBtnDanger} aria-label="刪除交易" title="刪除" onClick={() => setConfirmDeleteId(t.id)}><Trash2 size={15} /></button>
+                  </div>
+                </details>
               )}
             </div>
           </div>
-        )) : (
-          <p className={styles.hint}>找不到符合條件的交易。</p>
+        ))}</div> : (
+          <div className={styles.emptyState}><p className={styles.emptyTitle}>找不到符合條件的交易</p><p className={styles.hint}>試試其他關鍵字，或清除篩選。</p><button className={styles.secondaryBtn} onClick={() => {setSearchText(''); setTypeFilter('all'); setCategoryFilter('all');}}>清除篩選</button></div>
         ) : (
-          <p className={styles.hint}>本月尚無交易。</p>
+          <div className={styles.emptyState}><p className={styles.emptyTitle}>這個月，從第一筆開始</p><button className={styles.primaryBtn} onClick={() => navigate('/transaction')}>新增交易</button></div>
         )}
       </Card>
 

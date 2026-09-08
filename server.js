@@ -25,7 +25,7 @@ loadLocalEnv();
 
 const PORT = Number(process.env.PORT || 5173);
 const HOST = process.env.HOST || '127.0.0.1';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const GEMINI_FALLBACK_MODELS = parseModelList(process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.1-flash-lite,gemini-2.5-flash')
   .filter(model => model !== GEMINI_MODEL);
 const GEMINI_MODELS = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS];
