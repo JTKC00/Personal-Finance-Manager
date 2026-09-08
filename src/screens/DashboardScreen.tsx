@@ -1,4 +1,5 @@
-﻿import {useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
+import {Plus, ChartNoAxesCombined} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
@@ -75,12 +76,6 @@ export function DashboardScreen() {
     return () => { active = false; };
   }, [month, revision]);
 
-  const metrics: [string, string][] = [
-    ['本月收入', formatMoney(summary.income)],
-    ['本月支出', formatMoney(summary.expense)],
-    ['結餘', formatMoney(summary.balance)],
-    ['交易筆數', String(summary.count)]
-  ];
   const currencySummaries = summarizeTransactionsByCurrency(transactions);
   const foreignCurrencySummaries = currencySummaries.filter(item => item.currency !== dashboardBaseCurrency);
   const monthlyBudget = sumMoney(budgets.map(item => item.amount));
@@ -135,20 +130,23 @@ export function DashboardScreen() {
   const backupOverdue = isBackupOverdue(getLastBackupAt());
 
   return (
-    <Screen title="首頁" subtitle={`${month} 月現金流與重點提醒`}>
-      <div className={styles.grid}>
-        {metrics.map(([label, value]) => (
-          <div key={label} className={styles.metric}>
-            <span className={styles.label}>{label}</span>
-            <span className={styles.value}>{value}</span>
-          </div>
-        ))}
+    <Screen wide title="總覽" subtitle={`${month.replace('-', ' 年 ')} 月 · 你的收支近況`}>
+      <div className={styles.desktopGrid}>
+      <div className={styles.summaryArea}>
+      <section className={styles.balanceCard} aria-label="本月收支摘要">
+        <span className={styles.balanceLabel}>本月結餘 <span className={styles.currencyTag}>{dashboardBaseCurrency}</span></span>
+        <strong className={styles.balanceValue}>{summary.balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+        <p className={styles.balanceHint}>本月收入減支出 · {summary.count} 筆交易</p>
+        <div className={styles.cashFlow}>
+          <div><span>收入</span><strong>{formatMoney(summary.income)}</strong></div>
+          <div><span>支出</span><strong>{formatMoney(summary.expense)}</strong></div>
+        </div>
+      </section>
+      <div className={styles.quickActions}>
+        <button type="button" onClick={() => navigate('/transaction')}><Plus size={18} aria-hidden="true" />記一筆</button>
+        <button type="button" onClick={() => navigate('/analysis')}><ChartNoAxesCombined size={18} aria-hidden="true" />收支分析</button>
       </div>
-
-      <div className={styles.currencyScope}>
-        <strong>Dashboard 基準幣別：{dashboardBaseCurrency}</strong>
-        <span>所有現金流、預算與提醒只計入 {dashboardBaseCurrency}，不作匯率換算。</span>
-      </div>
+      <p className={styles.currencyScope}>統計僅含 {dashboardBaseCurrency}，其他幣別分開列示，不作匯率換算。</p>
 
       {foreignCurrencySummaries.length ? (
         <div className={styles.foreignCurrencyNotice} role="status">
@@ -178,13 +176,9 @@ export function DashboardScreen() {
         </div>
       ) : null}
 
-      {backupOverdue ? (
-        <Card title="🛡️ 該做備份了" action={{label: '去備份 ›', onClick: () => navigate('/profile')}}>
-          <p className={styles.helperText}>此裝置已超過 30 天沒有匯出完整 JSON 備份。花 30 秒到個人頁按一下，資料多一份保障。</p>
-        </Card>
-      ) : null}
-
-      <Card title="月預算進度">
+      </div>
+      <div className={styles.budgetArea}>
+      <Card title="月預算進度" action={{label: monthlyBudget > 0 ? '調整預算' : '設定預算', onClick: () => navigate('/profile')}}>
         {monthlyBudget > 0 ? (
           <>
             <div className={styles.cardHeaderRow}>
@@ -219,7 +213,8 @@ export function DashboardScreen() {
               </div>
             ) : null}
             {budgets.length > 0 && (
-              <div className={styles.categoryBudgetList}>
+              <details className={styles.categoryBudgetList}>
+                <summary>查看 {budgets.length} 個分類預算</summary>
                 {budgets.map(b => {
                   const spent = categorySpending[b.category] || 0;
                   const reserved = categoryReserved[b.category] || 0;
@@ -243,7 +238,7 @@ export function DashboardScreen() {
                     </div>
                   );
                 })}
-              </div>
+              </details>
             )}
           </>
         ) : (
@@ -251,7 +246,26 @@ export function DashboardScreen() {
         )}
       </Card>
 
-      <Card title="分類預算提醒">
+      </div>
+      <div className={styles.recentArea}>
+      <Card title="最近 3 筆交易" action={{label: '全部 ›', onClick: () => navigate('/transactions')}}>
+        {recentTransactions.length ? recentTransactions.map(t => (
+          <div key={t.id} className={styles.row}>
+            <div className={styles.rowText}>
+              <span className={styles.rowTitle}>{t.note || t.category}</span>
+              <span className={styles.rowMeta}>{t.date} · {t.paymentMethod || '未指定付款方式'}</span>
+            </div>
+            <span className={[styles.amount, t.type === 'income' ? styles.income : styles.expense].join(' ')}>
+              {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount, normalizeCurrency(t.currency))}
+            </span>
+          </div>
+        )) : (
+          <p className={styles.empty}>尚未新增交易。新增第一筆後，這裡會顯示最近紀錄。</p>
+        )}
+      </Card>
+
+      </div>
+      {categoryAlerts.length > 0 ? <div className={styles.alertArea}><Card title="分類預算提醒">
         {categoryAlerts.length > 0 ? categoryAlerts.map(alert => (
           <div key={alert.category} className={styles.row}>
             <div className={styles.rowText}>
@@ -268,9 +282,9 @@ export function DashboardScreen() {
         )) : (
           <p className={styles.empty}>所有分類支出均在安全範圍內。</p>
         )}
-      </Card>
+      </Card></div> : null}
 
-      <Card title="異常消費提醒">
+      <div className={styles.spendingArea}><Card title="大額支出留意">
         {unusualTransactions.length ? unusualTransactions.map(t => (
           <div key={t.id} className={styles.row}>
             <div className={styles.rowText}>
@@ -292,7 +306,8 @@ export function DashboardScreen() {
         )}
       </Card>
 
-      <Card title="儲蓄目標進度">
+      </div>
+      <div className={styles.goalsArea}><Card title="儲蓄目標進度">
         {totalGoalTarget > 0 ? (
           <>
             <div className={styles.cardHeaderRow}>
@@ -313,21 +328,16 @@ export function DashboardScreen() {
         )}
       </Card>
 
-      <Card title="最近 3 筆交易" action={{label: '全部 ›', onClick: () => navigate('/transactions')}}>
-        {recentTransactions.length ? recentTransactions.map(t => (
-          <div key={t.id} className={styles.row}>
-            <div className={styles.rowText}>
-              <span className={styles.rowTitle}>{t.note || t.category}</span>
-              <span className={styles.rowMeta}>{t.date} · {t.paymentMethod || '未指定付款方式'}</span>
-            </div>
-            <span className={[styles.amount, t.type === 'income' ? styles.income : styles.expense].join(' ')}>
-              {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount, normalizeCurrency(t.currency))}
-            </span>
-          </div>
-        )) : (
-          <p className={styles.empty}>尚未新增交易。新增第一筆後，這裡會顯示最近紀錄。</p>
-        )}
-      </Card>
+
+      </div>
+      {backupOverdue ? (
+        <div className={styles.backupArea}>
+        <Card title="資料備份提醒" action={{label: '去備份 ›', onClick: () => navigate('/profile')}}>
+          <p className={styles.helperText}>此裝置已超過 30 天沒有匯出完整 JSON 備份。花 30 秒到個人頁按一下，資料多一份保障。</p>
+        </Card>
+        </div>
+      ) : null}
+      </div>
     </Screen>
   );
 }

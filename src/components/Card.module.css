@@ -1,20 +1,18 @@
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  margin-bottom: var(--spacing-md);
-  padding: var(--spacing-lg);
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.2s, transform 0.2s;
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-xl);
+  box-shadow: none;
 }
 
 .card:hover {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+  box-shadow: none;
 }
 
 .flat:hover {
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   transform: none;
 }
 
@@ -22,14 +20,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
 }
 
 .title {
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   text-transform: uppercase;
   margin-bottom: 0;
 }
@@ -37,7 +35,8 @@
 .actionBtn {
   background: none;
   border: none;
-  padding: 0;
+  padding: 8px 0;
+  min-height: 44px;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-primary);

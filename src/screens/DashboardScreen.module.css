@@ -274,3 +274,47 @@
   font-size: 14px;
   line-height: 1.6;
 }
+
+.balanceCard {
+  padding: 24px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+}
+.balanceLabel { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--color-text-muted); }
+.currencyTag { font-size: 11px; padding: 2px 7px; background: var(--color-surface-muted); border-radius: 6px; }
+.balanceValue { display: block; font-size: clamp(30px, 8.5vw, 44px); letter-spacing: -0.045em; font-weight: 650; margin: 8px 0 4px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.balanceHint { color: var(--color-text-muted); font-size: 12px; }
+.cashFlow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; border-top: 1px solid var(--color-border); padding-top: 18px; margin-top: 22px; }
+.cashFlow > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.cashFlow span { color: var(--color-text-muted); font-size: 12px; }
+.cashFlow strong { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.quickActions { display: flex; gap: 12px; margin: 16px 0 12px; }
+.quickActions button { display: flex; flex: 1; align-items: center; justify-content: center; gap: 8px; min-height: 48px; font-size: 14px; font-weight: 600; border: 1px solid var(--color-border); border-radius: 14px; color: var(--color-text); background: var(--color-surface); }
+.quickActions button:first-child { background: var(--color-primary); color: var(--color-primary-text); border-color: transparent; }
+.currencyScope { background: none; padding: 0 2px; margin-bottom: 24px; font-size: 11px; }
+.categoryBudgetList summary { color: var(--color-primary); font-size: 13px; cursor: pointer; min-height: 44px; padding: 10px 0; }
+.categoryBudgetRow { margin-top: 12px; }
+.categoryBudgetHeader { flex-wrap: wrap; }
+.categoryBudgetMeta { font-variant-numeric: tabular-nums; font-size: 11px; }
+.cardHeadline { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cardHeaderRow { gap: 12px; flex-wrap: wrap; }
+.rowText { min-width: 0; overflow-wrap: anywhere; }
+.amount { font-variant-numeric: tabular-nums; }
+
+@media (min-width: 1024px) {
+  .desktopGrid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .desktopGrid > div { min-width: 0; }
+  .summaryArea { grid-column: 1; grid-row: 1; }
+  .budgetArea { grid-column: 2; grid-row: 1; }
+  .recentArea { grid-column: 1; grid-row: 2; }
+  .spendingArea { grid-column: 2; grid-row: 2; }
+  .goalsArea { grid-column: 1; grid-row: 3; }
+  .backupArea { grid-column: 2; grid-row: 3; }
+  .alertArea { grid-column: 1 / -1; }
+  .balanceCard { padding: 28px; }
+  .balanceValue { font-size: 46px; }
+  .cashFlow strong { font-size: 18px; }
+  .currencyScope { margin-bottom: 0; }
+  .quickActions { max-width: 420px; }
+}

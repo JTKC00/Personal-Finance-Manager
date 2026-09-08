@@ -6,13 +6,13 @@
 
 :root {
   /* Surfaces */
-  --color-bg: #f6f6f4;
+  --color-bg: #f5f5f7;
   --color-surface: #ffffff;
-  --color-surface-muted: #f0eeea;
+  --color-surface-muted: #ededf0;
 
   /* Text */
-  --color-text: #18181a;
-  --color-text-muted: #6b6a67;
+  --color-text: #1d1d1f;
+  --color-text-muted: #6e6e73;
 
   /* Borders */
   --color-border: rgba(0, 0, 0, 0.10);
@@ -22,10 +22,10 @@
   --color-danger: #b02020;
   --color-warning: #92570c;
 
-  /* Primary (Indigo) */
-  --color-primary: #4F46E5;
-  --color-primary-hover: #4338CA;
-  --color-primary-muted: #EEF2FF;
+  /* Primary (Blue) */
+  --color-primary: #0066cc;
+  --color-primary-hover: #0055ad;
+  --color-primary-muted: #eaf3ff;
   --color-primary-text: #ffffff;
 
   /* Spacing */
@@ -36,9 +36,9 @@
 
   /* Border radius */
   --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
   --radius-full: 9999px;
 
   /* Shadows */
@@ -61,9 +61,10 @@
   --color-success: #7ec950;
   --color-danger: #f87171;
   --color-warning: #f59e0b;
-  --color-primary: #818CF8;
-  --color-primary-hover: #A5B4FC;
-  --color-primary-muted: rgba(129, 140, 248, 0.13);
+  --color-primary-text: #08182c;
+  --color-primary: #409cff;
+  --color-primary-hover: #6bb1ff;
+  --color-primary-muted: rgba(64, 156, 255, 0.14);
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.45), 0 2px 4px rgba(0,0,0,0.3);
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.5), 0 4px 8px rgba(0,0,0,0.35);
@@ -109,4 +110,25 @@ button {
 input, select, textarea {
   font-family: inherit;
   transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+input, select, textarea { font-size: 16px; }
+button:disabled { cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .appShell { padding-left: 224px; }
 }

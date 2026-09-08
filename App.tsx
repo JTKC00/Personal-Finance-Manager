@@ -66,7 +66,7 @@ function AppShell() {
 
   return (
     <SubscriptionProcessingProvider key={user.uid}>
-      <div style={{minHeight: '100vh', overflowY: 'auto', background: 'var(--color-bg)'}}>
+      <div className="appShell" style={{minHeight: '100vh', overflowY: 'auto', background: 'var(--color-bg)'}}>
         <Suspense fallback={<LoadingScreen />}>
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />

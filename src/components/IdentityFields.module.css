@@ -67,7 +67,7 @@
 
 .promptPrimary {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-primary-text);
   border: none;
 }
 
@@ -128,7 +128,7 @@
 
 .activeChip {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-primary-text);
   border-color: var(--color-primary);
 }
 
@@ -137,3 +137,7 @@
   font-size: 12px;
   margin: 0 0 6px;
 }
+
+.label { display: block; margin: 12px 0 4px; font-size: 13px; font-weight: 600; color: var(--color-text-muted); }
+.input { min-height: 48px; border-width: 1px; background: var(--color-surface); }
+.chip, .promptPrimary, .promptSecondary { min-height: 40px; }
