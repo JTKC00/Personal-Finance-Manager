@@ -24,7 +24,10 @@ export function SubscriptionProcessingProvider({children}: PropsWithChildren) {
         setError(null);
         setRevision(current => current + 1);
       },
-      onFailure: reason => setError(reason),
+      onFailure: (reason, created) => {
+        setError(reason);
+        if (created > 0) setRevision(current => current + 1);
+      },
       onSettled: () => setProcessing(false),
     });
   }

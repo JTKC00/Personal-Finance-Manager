@@ -1,5 +1,5 @@
 import {describe, expect, it, vi} from 'vitest';
-import {createSubscriptionProcessor, getSubscriptionFailureReason} from './subscriptionProcessing';
+import {createSubscriptionProcessor, getSubscriptionCreatedCount, getSubscriptionFailureReason} from './subscriptionProcessing';
 
 describe('subscription processing', () => {
   it('shares an in-flight run so concurrent callers cannot double-process subscriptions', async () => {
@@ -40,12 +40,27 @@ describe('subscription processing', () => {
     const run = createSubscriptionProcessor(process, callbacks);
 
     await expect(run()).rejects.toBe(failure);
-    expect(callbacks.onFailure).toHaveBeenCalledWith('Missing or insufficient permissions.');
+    expect(callbacks.onFailure).toHaveBeenCalledWith('Missing or insufficient permissions.', 0);
 
     await expect(run()).resolves.toBe(1);
     expect(process).toHaveBeenCalledTimes(2);
     expect(callbacks.onSuccess).toHaveBeenCalledTimes(1);
     expect(callbacks.onSettled).toHaveBeenCalledTimes(2);
+  });
+
+  it('passes partial-success counts to the failure callback', async () => {
+    const failure = Object.assign(new Error('已成功補記 2 筆；仍有 1 筆訂閱未能入帳'), {created: 2});
+    const callbacks = {
+      onFailure: vi.fn(),
+      onSettled: vi.fn(),
+      onStart: vi.fn(),
+      onSuccess: vi.fn(),
+    };
+    const run = createSubscriptionProcessor(vi.fn().mockRejectedValue(failure), callbacks);
+
+    await expect(run()).rejects.toBe(failure);
+    expect(callbacks.onFailure).toHaveBeenCalledWith(failure.message, 2);
+    expect(getSubscriptionCreatedCount(failure)).toBe(2);
   });
 
   it('provides a safe fallback for errors without a readable reason', () => {

@@ -148,8 +148,8 @@ export function DashboardScreen() {
       {subscriptionProcessingError ? (
         <div className={styles.subscriptionError} role="alert" aria-live="polite">
           <div>
-            <p className={styles.subscriptionErrorTitle}>部分訂閱未能自動入帳</p>
-            <p className={styles.subscriptionErrorReason}>原因：{subscriptionProcessingError}</p>
+            <p className={styles.subscriptionErrorTitle}>有訂閱未能自動入帳</p>
+            <p className={styles.subscriptionErrorReason}>詳情：{subscriptionProcessingError}</p>
           </div>
           <button
             className={styles.retryButton}
