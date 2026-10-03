@@ -17,6 +17,7 @@
 | src/constants/ | 收支分類清單、付款方式（歷史資料掛在這些字串上，改動要問 James——R-P3-d） |
 | src/contexts/ | `AuthContext` 管登入；`SubscriptionProcessingContext` 管自動入帳與重試；`TransactionWorkspaceProvider` 管交易篩選、位置及共用編輯視窗 |
 | scripts/test-firebase-integration.sh | 以 Java 21 啟動本機 Firebase Emulator 並跑整合測試 |
+| scripts/check-hosting-env.mjs＋hosting-env.mjs | Hosting production env fail-closed guard；只檢查必要 `VITE_` 名稱是否有值，並拒絕 Emulator／App Check debug 模式，不輸出 secret 值 |
 | vitest.integration.config.ts | 整合測試專用 Vitest 設定；固定使用 `demo-personal-finance-manager`，禁止指向 production |
 | functions/src/index.ts | OCR Cloud Function（ID token、Gemini、每日 quota、App Check observe／enforce） |
 | functions/src/ocrContract.ts | OCR schema v3、香港付款 evidence、prompt、runtime validation |
@@ -90,6 +91,7 @@
 6. ~~Goal 的 `savedAmount`／`deposits[]`／帳戶餘額三重真相~~ 2026-08-07 已收斂 canonical resolver。殘餘相容限制：欄位 `savedAmount` 仍存在供舊版 app 使用，但新版讀取永遠由 deposits 或 Account/Transfer 重算；改 Goal 時不得重新把 cache 當輸入。
 7. `clearSensitiveCache()` 是 no-op（storage.ts:509），別依賴它清資料。
 8. PWA 更新要使用者手動按橫幅（00-risks 次要風險）。
+9. Hosting deploy 不可只靠一般 `npm run build`；`firebase.json` predeploy 必須走 `npm run build:hosting`，先由 env guard 驗證 production Firebase 設定。全新 clone/worktree 沒 private env 時應 fail-closed。
 
 ## Backlog（依價值排序，上限 8 條；動手前仍要走專案 CLAUDE.md 硬規則）
 
@@ -106,6 +108,7 @@
 - ✅ Goal canonical source：standalone deposits ledger、linked Account/Transfer ledger；savedAmount 僅 derived cache（2026-08-07）。
 
 - ✅ 三頁收支與預算一致性：monthlySpending 分離實際／未來／待扣、外幣隔離、已預填訂閱去重；共用預算 helpers 取代 inline 計算，保留 Dashboard 已知支出 75% 警示門檻。未採用語意不同且截斷 ratio 的舊 calculateBudgetUsage（2026-09-12）。
+- ✅ Hosting deployment env guard：缺必要 Firebase `VITE_`、Emulator mode 或 App Check debug token 時 fail-closed，防止無效 Firebase config 被成功 build／deploy（2026-10-03）。
 
 待辦（依價值排序）：
 1. OCR endpoint／App Check 實際 token 尚須 deployment 驗證；Gemini 準確度改由私有香港收據 baseline 評估，不在 CI 讀取真實圖片或 secret。
@@ -130,3 +133,4 @@
 - 2026-09-12 收支一致性：monthlySpending／MonthlyCommitments／useLocalToday、按幣別待發生收支、HKD 實際預算使用率、初次載入錯誤及重試；更新資料流與已完成 backlog。
 - 2026-10-03 訂閱 partial failure 傳遞補強：保留成功筆數、回報失敗 subscription／due date／原因，Dashboard refresh 後仍顯示安全重試警示。
 - 2026-10-03 CSV export 補幣別欄：Profile 匯出改用 transactionExport 純函式，明確輸出 currency、保留 subscription 名稱與 CSV escaping。
+- 2026-10-03 Hosting deployment safety：新增 production env fail-closed guard，Hosting predeploy 改走 `build:hosting`，並要求 fresh-session runtime smoke。

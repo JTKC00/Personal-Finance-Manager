@@ -13,7 +13,9 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:integration": "sh scripts/test-firebase-integration.sh",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:hosting-env": "node scripts/check-hosting-env.mjs",
+    "build:hosting": "npm run check:hosting-env && vite build"
   },
   "dependencies": {
     "firebase": "^12.19.0",

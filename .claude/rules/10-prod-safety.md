@@ -8,24 +8,26 @@
 1. `npm run verify` 全綠（貼輸出尾段）；CI 的 Verify 也綠。
 2. 這次改動如果動到 storage.ts／functions／firestore.rules／資料格式 → §4 的人工驗證已做完並有紀錄。
 3. 部署前先確認狀態：`git status` 乾淨、在 main、已 pull——因為 predeploy 會自動 build「當下工作目錄」的碼（firebase.json 的 hosting.predeploy 與 functions.predeploy）。
-4. 選最小部署範圍：
+4. **若部署包含 Hosting，production env guard 必須 PASS**：`npm run check:hosting-env`。`firebase.json` 的 Hosting predeploy 會再自動執行 `npm run build:hosting`；必要 `VITE_FIREBASE_*` 缺失、`VITE_USE_FIREBASE_EMULATORS=true` 或 App Check debug token 存在時必須 fail-closed。檢查只可輸出變數名稱／狀態，不可輸出值。全新 clone/worktree 沒有 private env 時，禁止直接 deploy。
+5. 選最小部署範圍：
    - 只改前端 → `firebase deploy --only hosting`
    - 只改 Functions → `firebase deploy --only functions`
    - 只改 rules → `firebase deploy --only firestore`
    - 不帶 `--only` 會三樣全部部署——除非三樣都改了，否則不要用。
-5. James 本人執行指令，或由他當回合明確授權（專案 CLAUDE.md 硬規則 4）。模型把指令準備好貼給他，一次一條，附「怎樣算成功」。
-6. deploy 完成後照 §2 smoke 一輪。
-7. 通知另一位使用者：app 頂部會出現「App 有新版本」橫幅，請按「立即更新」。兩人都更新前，假設新舊版並行（00-risks 風險 1）。
+6. James 本人執行指令，或由他當回合明確授權（專案 CLAUDE.md 硬規則 4）。模型把指令準備好貼給他，一次一條，附「怎樣算成功」。
+7. deploy 完成後照 §2 smoke 一輪。
+8. 通知另一位使用者：app 頂部會出現「App 有新版本」橫幅，請按「立即更新」。兩人都更新前，假設新舊版並行（00-risks 風險 1）。
 
 ## §2 deploy 後 smoke 清單（約 3 分鐘，在正式網址上做；網址見 DOC/ 手冊）
 
 改動前先記下 Dashboard 的本月收入／支出／餘額三個數字。按順序，任何一步不對→立刻跳 §6：
-1. 開 app → 重新整理 → 出現更新橫幅就按「立即更新」。
-2. 登入成功，Dashboard 三個數字與改動前一致。
-3. 新增一筆測試支出：分類「其他」、備註 `TEST-煙霧測試`、金額 1 → 交易列表看得到、Dashboard 支出 +1。
-4. 刪掉這筆測試交易 → 數字復原。
-5. 訂閱頁、分析頁、目標頁各開一次，能渲染、無錯誤畫面。
-6. 若這次改了 OCR／functions：上傳一張收據試掃（注意 quota：預設每人每日 20 次）。
+1. **先做無登入 fresh-session smoke**：新瀏覽器 profile／無既有 PWA cache 開正式站，React root 必須有內容，console 不得出現 `auth/invalid-api-key`、`Uncaught FirebaseError` 等初始化錯誤。這一步不讀取或修改財務資料。
+2. 開 app → 重新整理 → 出現更新橫幅就按「立即更新」。
+3. 登入成功，Dashboard 三個數字與改動前一致。
+4. 新增一筆測試支出：分類「其他」、備註 `TEST-煙霧測試`、金額 1 → 交易列表看得到、Dashboard 支出 +1。
+5. 刪掉這筆測試交易 → 數字復原。
+6. 訂閱頁、分析頁、目標頁各開一次，能渲染、無錯誤畫面。
+7. 若這次改了 OCR／functions：上傳一張收據試掃（注意 quota：預設每人每日 20 次）。
 
 ## §3 schema／資料格式變更協議
 
@@ -75,3 +77,4 @@
 
 ## Changelog
 - 2026-07-05 建檔（Fable 5 建置 session，James 授權）。
+- 2026-10-03 Hosting env fail-closed gate：predeploy 必須先驗必要 Firebase `VITE_`，拒絕 Emulator／App Check debug 模式；deploy 後先做無登入 fresh-session runtime smoke。
