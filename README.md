@@ -307,6 +307,16 @@ Dependabot（`.github/dependabot.yml`）每週為根目錄 npm、`functions` npm
 
 ## 部署
 
+Hosting 部署設有 production env 硬閘。`firebase.json` 的 Hosting predeploy 會先執行 `npm run build:hosting`；這個流程會驗證必要的 Firebase `VITE_` 設定全部存在，並拒絕 Emulator mode 或 App Check debug token。檢查只會顯示變數名稱及 PASS／FAIL，不會輸出任何值。
+
+全新 clone / worktree 只有 `.env.example`，**不可直接拿來 deploy**。先確保本機未提交的 private env 已準備好，再可手動預檢：
+
+```powershell
+npm run check:hosting-env
+```
+
+一般 `npm run build` 仍供 CI／非正式 build 使用，因此它可以在沒有 production env 時完成；真正 Hosting deploy 必須經 `build:hosting` 硬閘。
+
 完整部署 Firestore rules、Functions 和 Hosting：
 
 ```powershell
@@ -413,16 +423,17 @@ OCR Cloud Function 需要 Firebase ID token。請確認使用者已登入，前�
 
 ### 本機 build 可以，但 deploy 失敗
 
-先分開測試：
+先分開測試。Hosting 要用與 deploy 相同的 env guard，而不是只跑一般 `npm run build`：
 
 ```powershell
-npm run build
+npm run check:hosting-env
+npm run build:hosting
 npm --prefix functions run build
 firebase deploy --only hosting
 firebase deploy --only functions
 ```
 
-這樣較容易分辨是前端、Functions、Firebase 權限，還是公司電腦環境問題。
+如果 `check:hosting-env` 報缺少 `VITE_FIREBASE_*`，代表目前 checkout 沒有完整 private production env；不要繞過 guard 或用空值 build。這樣較容易分辨是前端 env、Functions、Firebase 權限，還是電腦環境問題。
 
 ---
 
