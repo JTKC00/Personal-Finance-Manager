@@ -27,6 +27,8 @@ import {
   getDoc,
   getDocs,
   query,
+  orderBy,
+  limit,
   runTransaction,
   setDoc,
   where,
@@ -36,6 +38,9 @@ import type {DocumentData, DocumentReference} from 'firebase/firestore';
 import {Account, AnalyticsEvent, Budget, Goal, Merchant, PaymentInstrument, Receipt, Subscription, Transaction, Transfer} from '../types/finance';
 import {mergeMerchantRecords} from './merchantIdentity';
 import {clean, db, getUid} from './firebase';
+import {isValidDate} from './analysisPeriod';
+import {completeTransactionSave, sameTransaction, TransactionEditConflict, type TransactionSaveResult} from './transactionEditing';
+import {BudgetEditConflict, isBudgetMonth, sameBudgetRecord, validateBudgetRecord, type BudgetMonthSnapshot, type BudgetRecord} from './budgetEditing';
 
 // ── Firestore path helpers ────────────────────────────────────────────────────
 
@@ -74,9 +79,28 @@ export async function loadTransactions(): Promise<Transaction[]> {
   return loadCollection<Transaction>(getUid(), 'transactions');
 }
 
+export async function getEarliestTransactionDate(): Promise<string | null> {
+  const snap = await getDocs(query(col(getUid(), 'transactions'), orderBy('date'), limit(1)));
+  return snap.docs[0]?.data().date || null;
+}
+
 export async function getEarliestTransactionMonth(): Promise<string | null> {
-  const dates = (await loadTransactions()).map(item => item.date).filter(Boolean).sort();
-  return dates[0] ? dates[0].slice(0, 7) : null;
+  return (await getEarliestTransactionDate())?.slice(0, 7) ?? null;
+}
+
+/** Inclusive calendar-date bounds. Firestore rules continue to enforce the user boundary. */
+export async function getTransactionsByDateRange(start: string, end: string): Promise<Transaction[]> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) {
+    throw new Error('無效的分析日期範圍。');
+  }
+  const snap = await getDocs(query(col(getUid(), 'transactions'),
+    where('date', '>=', start), where('date', '<=', end)));
+  return snap.docs.map(d => d.data() as Transaction);
+}
+
+export async function getTransactionById(id: string): Promise<Transaction | null> {
+  const snap = await getDoc(docRef(getUid(), 'transactions', id));
+  return snap.exists() ? snap.data() as Transaction : null;
 }
 
 export async function saveTransactions(transactions: Transaction[]): Promise<void> {
@@ -116,15 +140,35 @@ function assertAccountCurrency(transaction: Transaction, account: Account | unde
 }
 
 export async function saveTransactionWithGoalLink(
-  transaction: Transaction,
-  previous?: Transaction,
-  confirmedReceipt?: Receipt,
+  transaction: Transaction, previous?: Transaction, confirmedReceipt?: Receipt,
 ): Promise<Transaction> {
+  return (await commitTransactionWithGoalLink(transaction, previous, confirmedReceipt)).transaction;
+}
+
+/** Editing an existing record requires an unchanged snapshot, checked atomically with ledger writes. */
+export async function saveTransactionEdit(previous: Transaction, transaction: Transaction, merchant?: Merchant): Promise<TransactionSaveResult> {
+  if (transaction.id !== previous.id) throw new Error('交易識別碼不一致。');
+  if (!Number.isFinite(transaction.amount) || transaction.amount <= 0) throw new Error('請輸入有效金額。');
+  if (!isValidDate(transaction.date)) throw new Error('請選擇有效的交易日期。');
+  return commitTransactionWithGoalLink(transaction, previous, undefined, true, merchant);
+}
+
+async function commitTransactionWithGoalLink(
+  transaction: Transaction, previous?: Transaction, confirmedReceipt?: Receipt, guardEdit = false, merchant?: Merchant,
+): Promise<TransactionSaveResult> {
   const uid = getUid();
   let savedTransaction: Transaction = {...transaction};
   const accountGoalIdsToSync = new Set<string>();
 
   await runTransaction(db, async firestoreTransaction => {
+    accountGoalIdsToSync.clear(); // Firestore may retry this callback.
+    if (guardEdit) {
+      const current = await firestoreTransaction.get(docRef(uid, 'transactions', transaction.id));
+      const latest = current.exists() ? current.data() as Transaction : null;
+      if (!latest || !previous || !sameTransaction(previous, latest)) throw new TransactionEditConflict(latest);
+    }
+    const merchantRef = merchant ? docRef(uid, 'merchants', merchant.id) : null;
+    const merchantSnap = merchantRef ? await firestoreTransaction.get(merchantRef) : null;
     let nextTransaction: Transaction = {...transaction};
     let goalAfterPreviousRemoval: Goal | undefined;
     const previousGoalRef = previous?.goalId ? docRef(uid, 'goals', previous.goalId) : null;
@@ -140,6 +184,10 @@ export async function saveTransactionWithGoalLink(
     const accountSnap = accountRef ? await firestoreTransaction.get(accountRef) : null;
 
     const persistTransactionAndReceipt = () => {
+      if (merchantRef && merchant) {
+        const latestMerchant = merchantSnap?.exists() ? merchantSnap.data() as Merchant : merchant;
+        firestoreTransaction.set(merchantRef, clean({...latestMerchant, aliases: [...new Set([...latestMerchant.aliases, ...merchant.aliases])]}));
+      }
       if (confirmedReceipt) {
         nextTransaction.receiptId = confirmedReceipt.id;
         firestoreTransaction.set(docRef(uid, 'receipts', confirmedReceipt.id), clean({
@@ -177,6 +225,10 @@ export async function saveTransactionWithGoalLink(
       firestoreTransaction.set(docRef(uid, 'transfers', transferId), clean(transfer));
     };
 
+    if (previous?.linkedTransferId && !targetAccountId) {
+      firestoreTransaction.delete(docRef(uid, 'transfers', previous.linkedTransferId));
+      nextTransaction.linkedTransferId = undefined;
+    }
     if (previousGoalRef && previousGoal && previous?.linkedGoalEntryId) {
       if (previousGoal.accountId) {
         const previousTransferId = previous.linkedTransferId || previous.linkedGoalEntryId;
@@ -220,6 +272,7 @@ export async function saveTransactionWithGoalLink(
     if (!appliedAmount) {
       nextTransaction.goalId = undefined;
       nextTransaction.linkedGoalEntryId = undefined;
+      if (targetAccountId) setAccountTransfer();
       persistTransactionAndReceipt();
       return;
     }
@@ -242,9 +295,13 @@ export async function saveTransactionWithGoalLink(
     persistTransactionAndReceipt();
   });
 
-  for (const goalId of accountGoalIdsToSync) await syncGoalSavedAmount(goalId);
-
-  return savedTransaction;
+  return completeTransactionSave(savedTransaction, [...accountGoalIdsToSync].map(goalId => ({
+    label: '儲蓄目標餘額未能重新整理',
+    run: async () => {
+      if (getUid() !== uid) throw new Error('登入狀態已改變');
+      return syncGoalSavedAmount(goalId);
+    },
+  })));
 }
 
 export async function deleteTransactionWithGoalLink(transaction: Transaction): Promise<void> {
@@ -361,11 +418,44 @@ const BUDGET_MONTHS = 'budgetMonths';
  * budgetMonths/{month} snapshot, or null if none was ever saved.
  */
 export async function loadBudgetMonth(month: string): Promise<Record<string, number> | null> {
+  return (await loadBudgetMonthSnapshot(month)).budgets;
+}
+
+export async function loadBudgetMonthSnapshot(month: string): Promise<BudgetMonthSnapshot> {
+  if (!isBudgetMonth(month)) throw new Error('請選擇有效月份。');
   const uid = getUid();
-  const snap = await getDoc(docRef(uid, BUDGET_MONTHS, month));
-  const monthDoc = snap.exists() ? (snap.data() as Record<string, number>) : null;
-  const legacy = await loadBudgets();
-  return resolveBudgetMonth(monthDoc, legacy, month, getCurrentMonthKey());
+  const currentMonth = getCurrentMonthKey();
+  const [snap, legacy] = await Promise.all([
+    getDoc(docRef(uid, BUDGET_MONTHS, month)),
+    month === currentMonth ? getDoc(metaRef(uid, 'budgets')) : Promise.resolve(null),
+  ]);
+  const monthRecord = snap.exists() ? snap.data() as BudgetRecord : null;
+  const legacyRecord = legacy?.exists() ? legacy.data() as BudgetRecord : null;
+  return {uid, month, currentMonth, monthRecord, legacyRecord, budgets: resolveBudgetMonth(monthRecord, legacyRecord || {}, month, currentMonth)};
+}
+
+/** Editing past months never changes today's legacy budget; current edits retain atomic dual writes. */
+export async function saveBudgetMonth(original: BudgetMonthSnapshot, data: BudgetRecord): Promise<{month: string; budgets: BudgetRecord}> {
+  const uid = getUid();
+  const currentMonth = getCurrentMonthKey();
+  if (uid !== original.uid) throw new Error('登入帳戶已改變，請重新開啟預算。');
+  if (!isBudgetMonth(original.month) || original.month > currentMonth) throw new Error('請選擇本月或歷史月份。');
+  if (currentMonth !== original.currentMonth) throw new BudgetEditConflict('月份已改變，草稿已保留。請重新載入預算再編輯。');
+  validateBudgetRecord(data);
+  const saved = clean(data);
+  await runTransaction(db, async transaction => {
+    const monthRef = docRef(uid, BUDGET_MONTHS, original.month);
+    const legacyRef = metaRef(uid, 'budgets');
+    const monthSnapshot = await transaction.get(monthRef);
+    const legacySnapshot = original.month === currentMonth ? await transaction.get(legacyRef) : null;
+    const monthRecord = monthSnapshot.exists() ? monthSnapshot.data() as BudgetRecord : null;
+    const legacyRecord = legacySnapshot?.exists() ? legacySnapshot.data() as BudgetRecord : null;
+    if (!sameBudgetRecord(monthRecord, original.monthRecord) || !sameBudgetRecord(legacyRecord, original.legacyRecord)) throw new BudgetEditConflict();
+    if (getCurrentMonthKey() !== currentMonth) throw new BudgetEditConflict('月份已改變，草稿已保留。請重新載入預算再編輯。');
+    transaction.set(monthRef, saved);
+    if (original.month === currentMonth) transaction.set(legacyRef, saved);
+  });
+  return {month: original.month, budgets: saved};
 }
 
 /**

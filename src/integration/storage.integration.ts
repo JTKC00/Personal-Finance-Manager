@@ -5,6 +5,9 @@ import {auth, db} from '../services/firebase';
 import {financeBackupDataFingerprint, type FinanceBackup} from '../services/financeBackup';
 import {
   createFinanceBackup,
+  getTransactionsByDateRange,
+  getEarliestTransactionDate,
+  getEarliestTransactionMonth,
   appendGoalEntry,
   deleteTransactionWithGoalLink,
   getAccountBalance,
@@ -68,6 +71,25 @@ afterAll(async () => {
 });
 
 describe('Firestore storage integration', () => {
+  it('queries inclusive analysis dates and earliest history, isolated by user', async () => {
+    expect(await getEarliestTransactionDate()).toBeNull();
+    await Promise.all([
+      upsertTransaction(makeTransaction({id: 'before', date: '2026-08-31'})),
+      upsertTransaction(makeTransaction({id: 'start', date: '2026-09-01'})),
+      upsertTransaction(makeTransaction({id: 'end', date: '2026-09-12'})),
+      upsertTransaction(makeTransaction({id: 'after', date: '2026-09-13'})),
+    ]);
+    expect((await getTransactionsByDateRange('2026-09-01', '2026-09-12')).map(t => t.id).sort()).toEqual(['end', 'start']);
+    expect(await getEarliestTransactionDate()).toBe('2026-08-31');
+    expect(await getEarliestTransactionMonth()).toBe('2026-08');
+    const oldUid = auth.currentUser!.uid;
+    await signOut(auth);
+    await signInAnonymously(auth);
+    expect(await getTransactionsByDateRange('2026-08-01', '2026-09-30')).toEqual([]);
+    expect(await getEarliestTransactionDate()).toBeNull();
+    await expect(getDoc(doc(db, 'users', oldUid, 'transactions', 'start'))).rejects.toThrow();
+  });
+
   it('persists a new account transaction and its linked transfer', async () => {
     const account: Account = {
       id: 'account-1',

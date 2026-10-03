@@ -17,6 +17,9 @@ const points = (ratio: number) => `${Math.abs(ratio * 100).toFixed(1)} 個百分
 
 export function buildAnalysisInsights(options: {
   mode: ComparisonMode;
+  comparisonLabel?: string;
+  periodLabel?: string;
+  budgetAvailable?: boolean;
   hasComparisonData: boolean;
   coverageLabel?: string;
   expense: KpiComparison;
@@ -26,12 +29,12 @@ export function buildAnalysisInsights(options: {
   transactionCount: number;
 }): AnalysisInsight[] {
   const insights: AnalysisInsight[] = [];
-  const vsLabel = COMPARISON_MODE_LABELS[options.mode];
+  const vsLabel = options.comparisonLabel ?? COMPARISON_MODE_LABELS[options.mode];
 
   if (options.transactionCount === 0) {
     return [{
       id: 'empty-month',
-      title: '這個月還沒有交易',
+      title: `${options.periodLabel ?? '這個月'}還沒有交易`,
       detail: '累積記錄後，這裡會顯示支出變化與主要來源。',
       tone: 'info',
       rank: 100,
@@ -67,7 +70,7 @@ export function buildAnalysisInsights(options: {
         ? `較${vsLabel}${increased ? '增加' : '減少'} ${money(expense.absoluteDelta || 0)}。比較期支出為 0，因此不計算百分比。`
         : `較${vsLabel}${increased ? '增加' : '減少'} ${money(expense.absoluteDelta || 0)}（${increased ? '+' : '-'}${pct(expense.percentageDelta)}）。`,
       tone: increased ? 'warning' : 'safe',
-      rank: Math.abs(expense.percentageDelta || 1) >= 0.1 ? 1 : 4,
+      rank: Math.abs(expense.percentageDelta ?? 1) >= 0.1 ? 1 : 4,
     });
   }
 
@@ -77,7 +80,7 @@ export function buildAnalysisInsights(options: {
     insights.push({
       id: 'top-contribution',
       title: `${Math.round(share * 100)}% 的${expense.absoluteDelta > 0 ? '增幅' : '減幅'}來自${topDriver.category}`,
-      detail: `${topDriver.category} ${topDriver.delta >= 0 ? '增加' : '減少'} ${money(topDriver.delta)}，是總支出變化的主要來源。`,
+      detail: `${topDriver.category} ${topDriver.delta >= 0 ? '增加' : '減少'} ${money(topDriver.delta)}，是總支出變化的主要來源。${share > 1 ? '其他分類抵銷了部分變化，因此貢獻可超過 100%。' : ''}`,
       tone: expense.absoluteDelta > 0 ? 'warning' : 'info',
       rank: 2,
     });
@@ -136,7 +139,7 @@ export function buildAnalysisInsights(options: {
     });
   }
 
-  if (!options.budgetPaces.length) {
+  if (options.budgetAvailable !== false && !options.budgetPaces.length) {
     insights.push({
       id: 'no-budget',
       title: '這個月沒有預算資料',
@@ -156,7 +159,10 @@ export function buildAnalysisInsights(options: {
     });
   }
 
-  return insights
+  return insights.map(item => ({...item,
+    title: options.periodLabel ? item.title.split('本月').join(options.periodLabel).split('這個月').join(options.periodLabel) : item.title,
+    detail: options.periodLabel ? item.detail.split('本月').join(options.periodLabel) : item.detail,
+  }))
     .sort((left, right) => left.rank - right.rank)
     .slice(0, 5);
 }

@@ -1,38 +1,28 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useRef, useState} from 'react';
 import {Plus, ChartNoAxesCombined} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
+import {BudgetEditor} from '../components/BudgetEditor';
+import {MonthlyCommitments} from '../components/MonthlyCommitments';
 import {Screen} from '../components/Screen';
+import {useLocalToday} from '../hooks/useLocalToday';
 import {useSubscriptionProcessing} from '../contexts/SubscriptionProcessingContext';
 import {
-  getCurrentMonthKey,
-  getMonthlySummary,
-  getSubscriptionChargesForMonth,
   getTransactionsByMonth,
-  loadBudgetRows,
+  loadBudgetRowsForMonth,
   loadGoals,
   loadSubscriptions,
 } from '../services/storage';
 import {
-  formatDateKey,
+  buildBudgetRows,
   normalizeCurrency,
-  sumExpensesByCategory,
-  sumSubscriptionChargesByCategory,
-  summarizeTransactionsByCurrency,
 } from '../services/financeLogic';
+import {buildMonthlyBudgetRows, buildMonthlyBudgetTotal, buildMonthlySpending} from '../services/monthlySpending';
 import {getLastBackupAt, isBackupOverdue} from '../services/backupReminder';
 import {roundMoney, sumMoney} from '../services/money';
 import {Budget, Goal, Subscription, Transaction} from '../types/finance';
 import styles from './DashboardScreen.module.css';
 
-type Summary = {
-  income: number;
-  expense: number;
-  balance: number;
-  count: number;
-};
-
-const emptySummary: Summary = {income: 0, expense: 0, balance: 0, count: 0};
 const dashboardBaseCurrency = 'HKD';
 const formatMoney = (value: number, currency = dashboardBaseCurrency) =>
   `${currency} ${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
@@ -42,58 +32,56 @@ const clampPercent = (value: number) => Math.min(Math.max(value, 0), 1);
 export function DashboardScreen() {
   const navigate = useNavigate();
   const {error: subscriptionProcessingError, processing: subscriptionsProcessing, retry, revision} = useSubscriptionProcessing();
-  const [summary, setSummary] = useState<Summary>(emptySummary);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+  const [loadedMonth, setLoadedMonth] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [budgetMonth, setBudgetMonth] = useState<string | null>(null);
+  const [budgetNotice, setBudgetNotice] = useState('');
+  const budgetRevision = useRef(0);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const month = getCurrentMonthKey();
+  const today = useLocalToday();
+  const month = today.slice(0, 7);
 
   useEffect(() => {
     let active = true;
+    const budgetVersion = budgetRevision.current;
+    setLoading(true);
+    setLoadError('');
     async function load() {
-      const [nextSummary, nextTransactions, nextBudgets, nextGoals, nextSubscriptions] = await Promise.all([
-        getMonthlySummary(month, dashboardBaseCurrency),
+      const [nextTransactions, nextBudgets, nextGoals, nextSubscriptions] = await Promise.all([
         getTransactionsByMonth(month),
-        loadBudgetRows(),
+        loadBudgetRowsForMonth(month),
         loadGoals(),
         loadSubscriptions()
       ]);
       if (!active) return;
-      setSummary(nextSummary);
       setTransactions(nextTransactions);
-      setBudgets(nextBudgets);
+      if (budgetVersion === budgetRevision.current) setBudgets(nextBudgets || []);
       setGoals(nextGoals);
       setSubscriptions(nextSubscriptions);
-      setRecentTransactions(
-        [...nextTransactions]
-          .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
-          .slice(0, 3)
-      );
+      setLoadedMonth(month);
     }
-    load();
+    void load().catch(() => { if (active) setLoadError('本月收支未能更新，請重試。已有資料會保留。'); })
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [month, revision]);
+  }, [month, revision, loadAttempt]);
 
-  const currencySummaries = summarizeTransactionsByCurrency(transactions);
+  const spending = useMemo(() => buildMonthlySpending({month, today, transactions, subscriptions}), [month, today, transactions, subscriptions]);
+  const summary = spending.base.actual;
+  const recentTransactions = [...spending.actualTransactions].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
+  const currencySummaries = spending.byCurrency.map(c => c.actual).filter(c => c.count > 0);
   const foreignCurrencySummaries = currencySummaries.filter(item => item.currency !== dashboardBaseCurrency);
-  const monthlyBudget = sumMoney(budgets.map(item => item.amount));
-  const baseTransactions = transactions.filter(item => normalizeCurrency(item.currency) === dashboardBaseCurrency);
+  const totalBudget = buildMonthlyBudgetTotal(budgets, spending);
+  const categoryBudgets = buildMonthlyBudgetRows(budgets, spending);
+  const monthlyBudget = totalBudget.budgetAmount;
+  const baseTransactions = spending.actualTransactions.filter(item => normalizeCurrency(item.currency) === dashboardBaseCurrency);
   const expenseTransactions = baseTransactions.filter(item => item.type === 'expense');
-  const upcomingSubscriptionCharges = getSubscriptionChargesForMonth(
-    subscriptions,
-    month,
-    transactions,
-    formatDateKey(new Date()),
-    true
-  ).filter(item => normalizeCurrency(item.subscription.currency) === dashboardBaseCurrency);
-  const reservedSubscriptionTotal = sumMoney(upcomingSubscriptionCharges.map(item => item.amount));
-  const projectedExpense = roundMoney(summary.expense + reservedSubscriptionTotal);
-  const budgetProgress = monthlyBudget > 0 ? summary.expense / monthlyBudget : 0;
-  const projectedBudgetProgress = monthlyBudget > 0 ? projectedExpense / monthlyBudget : 0;
-  const budgetRemaining = roundMoney(monthlyBudget - summary.expense);
-  const projectedBudgetRemaining = roundMoney(monthlyBudget - projectedExpense);
+  const budgetProgress = totalBudget.usedRatio;
+  const budgetRemaining = totalBudget.remaining;
   const averageExpense = expenseTransactions.length ? roundMoney(summary.expense / expenseTransactions.length) : 0;
   const unusualTransactions = expenseTransactions
     .filter(item => averageExpense > 0 && item.amount >= averageExpense * 1.8)
@@ -106,21 +94,13 @@ export function DashboardScreen() {
     .filter(item => item.targetAmount > 0)
     .sort((a, b) => (b.savedAmount / b.targetAmount) - (a.savedAmount / a.targetAmount))[0];
 
-  const categorySpending = sumExpensesByCategory(baseTransactions);
-  const categoryReserved = sumSubscriptionChargesByCategory(upcomingSubscriptionCharges);
-
-  const categoryAlerts = budgets
-    .filter(b => b.amount > 0)
-    .map(b => {
-      const spent = categorySpending[b.category] || 0;
-      const reserved = categoryReserved[b.category] || 0;
-      return {...b, spent, reserved, ratio: roundMoney(spent + reserved) / b.amount};
-    })
+  const categoryAlerts = categoryBudgets
+    .map(b => ({...b, ratio: (b.knownExpense ?? b.spent) / b.budgetAmount}))
     .filter(alert => alert.ratio >= 0.75)
     .sort((a, b) => b.ratio - a.ratio);
 
   const alertLabel = (ratio: number) =>
-    ratio >= 1 ? '⚠️ 已超出預算' : ratio >= 0.9 ? '⚠️ 已達 90%' : '⚠️ 已達 75%';
+    ratio >= 1 ? '⚠️ 已知支出達到或超出預算' : ratio >= 0.9 ? '⚠️ 已知支出達 90%' : '⚠️ 已知支出達 75%';
 
   const pillClass = (p: number) =>
     p >= 0.9 ? styles.dangerPill : p >= 0.7 ? styles.warningPill : styles.safePill;
@@ -129,14 +109,20 @@ export function DashboardScreen() {
 
   const backupOverdue = isBackupOverdue(getLastBackupAt());
 
+  if (loadedMonth !== month) return <Screen title="總覽" subtitle={`${month} · 本月收支`}>
+    <p role={loadError ? 'alert' : 'status'}>{loadError || '正在載入本月收支…'}</p>
+    {loadError && <button className={styles.retryButton} onClick={() => setLoadAttempt(n => n + 1)}>重試載入</button>}
+  </Screen>;
+
   return (
     <Screen wide title="總覽" subtitle={`${month.replace('-', ' 年 ')} 月 · 你的收支近況`}>
       <div className={styles.desktopGrid}>
       <div className={styles.summaryArea}>
+      {loadError && <div className={styles.subscriptionError} role="alert">{loadError}<button className={styles.retryButton} disabled={loading} onClick={() => setLoadAttempt(n => n + 1)}>重試載入</button></div>}
       <section className={styles.balanceCard} aria-label="本月收支摘要">
         <span className={styles.balanceLabel}>本月結餘 <span className={styles.currencyTag}>{dashboardBaseCurrency}</span></span>
         <strong className={styles.balanceValue}>{summary.balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
-        <p className={styles.balanceHint}>本月收入減支出 · {summary.count} 筆交易</p>
+        <p className={styles.balanceHint}>截至 {today} 的實際收入減支出 · {summary.count} 筆交易</p>
         <div className={styles.cashFlow}>
           <div><span>收入</span><strong>{formatMoney(summary.income)}</strong></div>
           <div><span>支出</span><strong>{formatMoney(summary.expense)}</strong></div>
@@ -178,7 +164,8 @@ export function DashboardScreen() {
 
       </div>
       <div className={styles.budgetArea}>
-      <Card title="月預算進度" action={{label: monthlyBudget > 0 ? '調整預算' : '設定預算', onClick: () => navigate('/profile')}}>
+      {budgetNotice && <p className={styles.helperText} role="status">{budgetNotice}</p>}
+      <Card title="月預算進度" action={{label: monthlyBudget > 0 ? '調整預算' : '設定預算', onClick: () => setBudgetMonth(month)}}>
         {monthlyBudget > 0 ? (
           <>
             <div className={styles.cardHeaderRow}>
@@ -193,48 +180,28 @@ export function DashboardScreen() {
             </div>
             <p className={styles.helperText}>
               本月預算 {formatMoney(monthlyBudget)}，
-              {budgetRemaining >= 0 ? `剩餘 ${formatMoney(budgetRemaining)}` : `已超支 ${formatMoney(Math.abs(budgetRemaining))}`}
+              已花費 {formatMoney(summary.expense)}，{budgetRemaining >= 0 ? `剩餘 ${formatMoney(budgetRemaining)}` : `已超支 ${formatMoney(Math.abs(budgetRemaining))}`}
             </p>
-            {reservedSubscriptionTotal > 0 ? (
-              <div className={styles.reserveBox}>
-                <div className={styles.cardHeaderRow}>
-                  <span className={styles.reserveTitle}>本月固定開支預留</span>
-                  <span className={[styles.statusPill, pillClass(projectedBudgetProgress)].join(' ')}>
-                    {formatPercent(clampPercent(projectedBudgetProgress))}
-                  </span>
-                </div>
-                <p className={styles.helperText}>
-                  尚未扣款訂閱 {formatMoney(reservedSubscriptionTotal)}，
-                  預計本月支出 {formatMoney(projectedExpense)}，
-                  {projectedBudgetRemaining >= 0
-                    ? `預計剩餘 ${formatMoney(projectedBudgetRemaining)}`
-                    : `預計超支 ${formatMoney(Math.abs(projectedBudgetRemaining))}`}
-                </p>
-              </div>
-            ) : null}
-            {budgets.length > 0 && (
+            {categoryBudgets.length > 0 && (
               <details className={styles.categoryBudgetList}>
-                <summary>查看 {budgets.length} 個分類預算</summary>
-                {budgets.map(b => {
-                  const spent = categorySpending[b.category] || 0;
-                  const reserved = categoryReserved[b.category] || 0;
-                  const projected = roundMoney(spent + reserved);
-                  const ratio = b.amount > 0 ? projected / b.amount : 0;
+                <summary>查看 {categoryBudgets.length} 個分類預算</summary>
+                {categoryBudgets.map(b => {
                   return (
                     <div key={b.category} className={styles.categoryBudgetRow}>
                       <div className={styles.categoryBudgetHeader}>
                         <span className={styles.categoryBudgetName}>{b.category}</span>
                         <span className={styles.categoryBudgetMeta}>
-                          {formatMoney(spent)}{reserved ? ` + ${formatMoney(reserved)}` : ''} / {formatMoney(b.amount)}
+                          已花費 {formatMoney(b.spent)} / {formatMoney(b.budgetAmount)}
                         </span>
-                        <span className={[styles.statusPill, pillClass(ratio)].join(' ')}>
-                          {formatPercent(clampPercent(ratio))}
+                        <span className={[styles.statusPill, pillClass(b.usedRatio)].join(' ')}>
+                          已用 {b.usedPercentage}%
                         </span>
                       </div>
-                      <div className={styles.progressTrackThin}>
-                        <div className={[styles.progressFill, fillClass(ratio)].join(' ')}
-                          style={{width: `${clampPercent(ratio) * 100}%`}} />
+                      <div className={styles.progressTrackThin} role="progressbar" aria-label={`${b.category}預算使用率 ${b.usedPercentage}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(b.usedPercentage, 100)}>
+                        <div className={[styles.progressFill, fillClass(b.usedRatio)].join(' ')}
+                          style={{width: `${clampPercent(b.usedRatio) * 100}%`}} />
                       </div>
+                      <p className={styles.helperText}>未來交易 {formatMoney(b.future)} · 待扣訂閱 {formatMoney(b.pending ?? 0)} · {b.projectedRemaining !== null && (b.projectedRemaining >= 0 ? `預計剩餘 ${formatMoney(b.projectedRemaining)}` : `預計超支 ${formatMoney(Math.abs(b.projectedRemaining))}`)}</p>
                     </div>
                   );
                 })}
@@ -247,8 +214,9 @@ export function DashboardScreen() {
       </Card>
 
       </div>
+      <div className={styles.commitmentsArea}><MonthlyCommitments spending={spending} budgets={budgets} /></div>
       <div className={styles.recentArea}>
-      <Card title="最近 3 筆交易" action={{label: '全部 ›', onClick: () => navigate('/transactions')}}>
+      <Card title="最近 3 筆已發生交易" action={{label: '全部 ›', onClick: () => navigate('/transactions')}}>
         {recentTransactions.length ? recentTransactions.map(t => (
           <div key={t.id} className={styles.row}>
             <div className={styles.rowText}>
@@ -271,12 +239,13 @@ export function DashboardScreen() {
             <div className={styles.rowText}>
               <span className={styles.rowTitle}>{alert.category}</span>
               <span className={styles.rowMeta}>
-                {alertLabel(alert.ratio)}&ensp;{formatMoney(alert.spent)}
-                {alert.reserved ? ` + 預留 ${formatMoney(alert.reserved)}` : ''} / {formatMoney(alert.amount)}
+                {alertLabel(alert.ratio)} · 已花費 {formatMoney(alert.spent)}
+                {alert.future ? ` + 未來交易 ${formatMoney(alert.future)}` : ''}
+                {alert.pending ? ` + 待扣訂閱 ${formatMoney(alert.pending)}` : ''} / {formatMoney(alert.budgetAmount)}
               </span>
             </div>
             <span className={[styles.statusPill, pillClass(alert.ratio)].join(' ')}>
-              {formatPercent(clampPercent(alert.ratio))}
+              {formatPercent(alert.ratio)}
             </span>
           </div>
         )) : (
@@ -338,6 +307,11 @@ export function DashboardScreen() {
         </div>
       ) : null}
       </div>
+      {budgetMonth && <BudgetEditor initialMonth={budgetMonth} onClose={() => setBudgetMonth(null)} onSaved={result => {
+        budgetRevision.current++;
+        if (result.month === month) setBudgets(buildBudgetRows(result.budgets, result.month));
+        setBudgetNotice(`${result.month} 預算已儲存。`);
+      }} />}
     </Screen>
   );
 }

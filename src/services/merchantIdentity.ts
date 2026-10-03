@@ -171,7 +171,7 @@ export function resolveTransactionMerchantDisplay(transaction: Transaction, merc
   return transaction.merchantText || transaction.merchant || '';
 }
 
-function resolveMerchantGroup(transaction: Transaction, merchants: Merchant[]) {
+export function resolveMerchantGroup(transaction: Transaction, merchants: Merchant[]) {
   if (transaction.merchantId) {
     const linked = merchants.find(item => item.id === transaction.merchantId);
     return {

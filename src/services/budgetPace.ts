@@ -61,7 +61,7 @@ export function buildBudgetPace(options: {
     budgetAmount,
     spent,
     usedRatio: roundRatio(usedRatio),
-    usedPercentage: Math.round(Math.min(usedRatio, 9.99) * 100),
+    usedPercentage: Math.round(usedRatio * 100),
     monthProgressRatio: roundRatio(monthProgressRatio),
     monthProgressPercentage: Math.round(monthProgressRatio * 100),
     remainingBudget,
