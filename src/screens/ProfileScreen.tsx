@@ -8,6 +8,7 @@ import {BudgetEditor} from '../components/BudgetEditor';
 import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authErrors';
 import {ThemeMode, applyThemeMode, getStoredThemeMode} from '../services/appearance';
 import {getCurrentMonthKey, loadReceipts, loadSubscriptions, loadTransactions} from '../services/storage';
+import {buildTransactionsCsv} from '../services/transactionExport';
 import {Receipt} from '../types/finance';
 import styles from './ProfileScreen.module.css';
 
@@ -70,22 +71,7 @@ export function ProfileScreen() {
 
   async function exportCsv() {
     const [all, subscriptions] = await Promise.all([loadTransactions(), loadSubscriptions()]);
-    const subscriptionMap = Object.fromEntries(subscriptions.map(item => [item.id, item.name]));
-    all.sort((a, b) => a.date.localeCompare(b.date));
-    const header = ['日期', '類型', '金額', '分類', '商戶', '備註', '付款方式', '訂閱'];
-    const rows = all.map(t => [
-      t.date,
-      t.type === 'income' ? '收入' : '支出',
-      t.amount,
-      t.category,
-      t.merchantText || t.merchant || '',
-      t.note || '',
-      t.paymentMethod || '',
-      t.subscriptionId ? (subscriptionMap[t.subscriptionId] || t.subscriptionId) : '',
-    ]);
-    const csv = [header, ...rows]
-      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
+    const csv = buildTransactionsCsv(all, subscriptions);
     const blob = new Blob(['\uFEFF' + csv], {type: 'text/csv;charset=utf-8'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
