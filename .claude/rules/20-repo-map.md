@@ -41,7 +41,7 @@
 | analysisPeriod.ts／analysisLoader.ts／analysisReport.ts | 期間解析、合併查詢及快取、KPI／趨勢／分組明細；本月讀至月底以取得未來交易，但實際分析仍截止今天 |
 | budgetPace.ts | 按已花費計算預算進度、安全日額及月底速度推估；使用率文字可超過 100%，只有進度條寬度截斷 |
 | analysisInsights.ts | Analysis 洞察：由 KPI／貢獻／預算進度產生 3–5 條 deterministic 文字 |
-| subscriptionProcessing.ts | 包裝自動入帳的錯誤保存與重試狀態；React context 使用這個狀態機 |
+| subscriptionProcessing.ts | 包裝自動入帳的錯誤保存、partial-success 成功筆數與重試狀態；React context 使用這個狀態機 |
 | ocr.ts | 前端打 `/api/ocr`（正式＝hosting rewrite→Cloud Run；本機＝vite proxy 或 VITE_OCR_PROXY_URL） |
 | appearance.ts | localStorage 主題 `pfm-theme-mode` |
 | backupReminder.ts | localStorage 備份提醒 `pfm-last-backup-at`（>30 天沒匯出完整 JSON 備份 → Dashboard 提醒卡＋Profile 狀態行；純邏輯含測試） |
@@ -65,7 +65,7 @@
 
 1. **寫入**：TransactionScreen → `saveTransactionWithGoalLink()`。standalone goal 在 runTransaction 內寫 `deposits[]`；account-linked goal 則把目標扣款寫成 `txn-*` Transfer，Goal 餘額由帳戶 ledger 推導。一般帳戶交易仍可經 `syncTransactionTransfer()` 建立對應 Transfer。
 2. **讀取**：Dashboard／Subscriptions 用 `getTransactionsByMonth()` 讀整月；Analysis 用 analysisLoader 讀分析範圍，本月額外讀至月底。三頁經 `buildMonthlySpending()` 分離已發生與未來日期交易、扣除已記錄訂閱後計待扣，各 currency 分開加總；預算以 HKD 已花費計使用率。Analysis 的 KPI／比較／趨勢仍依實際期間，不包含未來交易。舊 `getMonthlySummary()` 保留整月語意供相容介面使用，Dashboard 已不呼叫。
-3. **自動寫入**：登入後 `SubscriptionProcessingProvider` 觸發 `processDueSubscriptions()`——把到期訂閱寫成真交易、推進 nextBillingDate；失敗不阻斷登入，但 Dashboard 顯示警示、保留原因並提供重試。
+3. **自動寫入**：登入後 `SubscriptionProcessingProvider` 觸發 `processDueSubscriptions()`——把到期訂閱寫成真交易、推進 nextBillingDate；個別失敗會累積原因後回報，已成功筆數仍觸發 Dashboard refresh，失敗不阻斷登入並可安全重試。
 4. **帳戶餘額**：不存欄位，每次由 `initialBalance + 轉帳流入 − 轉帳流出` 重算（`getAccountBalance`）。
 
 ## 慣例（寫碼前先讀）
@@ -81,7 +81,7 @@
 
 ## 已知地雷（動到附近先看這裡）
 
-1. `processDueSubscriptions` 登入即跑且會寫帳；錯誤已有 Dashboard 警示與安全重試，但修改時仍須維持 deterministic id 去重（00-risks 風險 2）。
+1. `processDueSubscriptions` 登入即跑且會寫帳；個別失敗會回報 subscription／due date／原因，partial success 會保留成功筆數供 Dashboard refresh；修改時仍須維持 deterministic id 去重（00-risks 風險 2）。
 2. ~~`getCategoryBreakdown` 與 screens 分類 map 的裸浮點加總~~ 已全數改用 financeLogic 聚合 helpers（storage 修於 75cf3f9；screens 修於 2026-07-11）。
 3. ~~ocr.ts:55 `today` 用 UTC 日期~~ 已改用 `formatDateKey(new Date())`（已併 main 5c1bac2）。
 4. ~~Analysis／Subscriptions 聚合混加幣別~~ 已按 currency 隔離；2026-09-12 三頁共用 monthlySpending，實際收支、未來交易及待扣不得混為同一個使用率。
@@ -98,7 +98,7 @@
 - ✅ ocr.ts `today` 改用 `formatDateKey`（main 5c1bac2）。
 - ✅ screens 分類 map 改用聚合 helpers、警示／預估加總過 roundMoney（分支 fix/screens-money-rounding，2026-07-11）。
 - ✅ Dashboard／Subscriptions 的 today 統一改用本地時區 `formatDateKey(new Date())`（2026-08-07）。
-- ✅ 訂閱自動入帳失敗不阻斷登入；Dashboard 顯示原因並可安全重試（2026-08-07）。
+- ✅ 訂閱自動入帳失敗不阻斷登入；Dashboard 顯示原因並可安全重試（2026-08-07）；partial failure 成功筆數／失敗原因傳遞及 retry 去重補強（2026-10-03）。
 - ✅ 完整 Backup Restore：schema 驗證、日期／項目數、差異預覽、自動下載現況備份後完整取代（2026-08-07）。
 - ✅ Auth／Firestore Emulator 整合測試：交易＋Account/Transfer、訂閱自動入帳、月度 Budget、Backup Restore 與跨使用者 rules（2026-08-07）。
 - ✅ Dashboard 第一階段基準幣別：HKD 聚合，其他 currency 分列且不作 FX（2026-08-07）。
@@ -127,3 +127,4 @@
 
 - 2026-09-12 每月預算管理：共用 BudgetEditor、歷史月份編輯、上月預覽複製、Dashboard／Analysis 原頁更新、快照衝突保護及 Emulator 覆蓋。
 - 2026-09-12 收支一致性：monthlySpending／MonthlyCommitments／useLocalToday、按幣別待發生收支、HKD 實際預算使用率、初次載入錯誤及重試；更新資料流與已完成 backlog。
+- 2026-10-03 訂閱 partial failure 傳遞補強：保留成功筆數、回報失敗 subscription／due date／原因，Dashboard refresh 後仍顯示安全重試警示。

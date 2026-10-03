@@ -344,6 +344,37 @@ export async function deleteSubscription(id: string): Promise<void> {
   await deleteDoc(docRef(uid, 'subscriptions', id));
 }
 
+export type SubscriptionPostFailure = {
+  subscriptionId: string;
+  subscriptionName: string;
+  dueDate: string;
+  reason: string;
+};
+
+export class SubscriptionProcessingError extends Error {
+  readonly created: number;
+  readonly failures: SubscriptionPostFailure[];
+
+  constructor(created: number, failures: SubscriptionPostFailure[]) {
+    const details = failures
+      .map(failure => `${failure.subscriptionName}（${failure.dueDate}）：${failure.reason}`)
+      .join('；');
+    const summary = created > 0
+      ? `已成功補記 ${created} 筆；仍有 ${failures.length} 筆訂閱未能入帳`
+      : `${failures.length} 筆訂閱未能入帳`;
+    super(`${summary}：${details}`);
+    this.name = 'SubscriptionProcessingError';
+    this.created = created;
+    this.failures = failures;
+  }
+}
+
+function getSubscriptionPostFailureReason(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  const reason = String(error).trim();
+  return reason && reason !== '[object Object]' ? reason : '未知錯誤';
+}
+
 export async function processDueSubscriptions(today = formatDateKey(new Date())): Promise<number> {
   const [subscriptions, transactions, instruments] = await Promise.all([
     loadSubscriptions(),
@@ -356,6 +387,7 @@ export async function processDueSubscriptions(today = formatDateKey(new Date()))
       .map(item => `${item.subscriptionId}:${item.date}`)
   );
   let created = 0;
+  const failures: SubscriptionPostFailure[] = [];
 
   for (const subscription of subscriptions.filter(item => item.active && item.nextBillingDate)) {
     let dueDate = subscription.nextBillingDate;
@@ -382,7 +414,13 @@ export async function processDueSubscriptions(today = formatDateKey(new Date()))
         };
         try {
           await saveTransactionWithGoalLink(transaction);
-        } catch {
+        } catch (error: unknown) {
+          failures.push({
+            subscriptionId: subscription.id,
+            subscriptionName: subscription.name,
+            dueDate,
+            reason: getSubscriptionPostFailureReason(error),
+          });
           break;
         }
         postedKeys.add(key);
@@ -394,12 +432,25 @@ export async function processDueSubscriptions(today = formatDateKey(new Date()))
     }
 
     if (dueDate !== subscription.nextBillingDate || lastPostedDate !== subscription.lastPostedDate) {
-      await upsertSubscription({
-        ...subscription,
-        nextBillingDate: dueDate,
-        lastPostedDate
-      });
+      try {
+        await upsertSubscription({
+          ...subscription,
+          nextBillingDate: dueDate,
+          lastPostedDate
+        });
+      } catch (error: unknown) {
+        failures.push({
+          subscriptionId: subscription.id,
+          subscriptionName: subscription.name,
+          dueDate,
+          reason: '更新扣款狀態失敗：' + getSubscriptionPostFailureReason(error),
+        });
+      }
     }
+  }
+
+  if (failures.length > 0) {
+    throw new SubscriptionProcessingError(created, failures);
   }
 
   return created;

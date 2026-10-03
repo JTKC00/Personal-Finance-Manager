@@ -353,7 +353,9 @@ describe('Firestore storage integration', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
     });
 
-    await expect(processDueSubscriptions('2026-02-01')).resolves.toBe(0);
+    await expect(processDueSubscriptions('2026-02-01')).rejects.toThrow(
+      '1 筆訂閱未能入帳：US App（2026-02-01）：交易幣別 USD 與帳戶基準幣別 HKD 不一致。'
+    );
     const [transaction, transfer, subscription, balance] = await Promise.all([
       getDoc(userDoc('transactions', 'sub-usd-sub-2026-02-01')),
       getDoc(userDoc('transfers', 'txn-sub-usd-sub-2026-02-01')),
@@ -365,6 +367,67 @@ describe('Firestore storage integration', () => {
     expect(subscription[0].nextBillingDate).toBe('2026-02-01');
     expect(subscription[0].lastPostedDate).toBeUndefined();
     expect(balance).toBe(200);
+  });
+
+  it('reports partial subscription failures and retries without duplicating successful posts', async () => {
+    await upsertAccount({
+      id: 'hkd-account', name: 'HKD 卡', type: 'credit', initialBalance: 500,
+      currency: 'HKD', createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    await upsertPaymentInstrument({
+      id: 'usd-card', name: 'USD Card', type: 'credit_card', accountId: 'hkd-account',
+      active: true, createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    await upsertSubscription({
+      id: 'good-sub', name: 'HK App', amount: 20, currency: 'HKD', category: '工具',
+      paymentMethod: '現金', frequency: 'monthly', nextBillingDate: '2026-02-01',
+      reminderDays: 7, active: true, createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    await upsertSubscription({
+      id: 'bad-sub', name: 'US App', amount: 10, currency: 'USD', category: '工具',
+      paymentMethod: '信用卡', paymentInstrumentId: 'usd-card', frequency: 'monthly',
+      nextBillingDate: '2026-02-01', reminderDays: 7, active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await expect(processDueSubscriptions('2026-02-01')).rejects.toMatchObject({
+      name: 'SubscriptionProcessingError',
+      created: 1,
+      failures: [expect.objectContaining({
+        subscriptionId: 'bad-sub',
+        dueDate: '2026-02-01',
+        reason: expect.stringMatching(/幣別 USD 與帳戶基準幣別 HKD 不一致/),
+      })],
+    });
+
+    let transactions = await loadTransactions();
+    let subscriptions = await loadSubscriptions();
+    expect(transactions.map(item => item.id)).toEqual(['sub-good-sub-2026-02-01']);
+    expect(subscriptions.find(item => item.id === 'good-sub')).toMatchObject({
+      nextBillingDate: '2026-03-01', lastPostedDate: '2026-02-01',
+    });
+    expect(subscriptions.find(item => item.id === 'bad-sub')).toMatchObject({nextBillingDate: '2026-02-01'});
+
+    await upsertAccount({
+      id: 'usd-account', name: 'USD 卡', type: 'credit', initialBalance: 100,
+      currency: 'USD', createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    await upsertPaymentInstrument({
+      id: 'usd-card', name: 'USD Card', type: 'credit_card', accountId: 'usd-account',
+      active: true, createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await expect(processDueSubscriptions('2026-02-01')).resolves.toBe(1);
+    transactions = await loadTransactions();
+    subscriptions = await loadSubscriptions();
+    expect(transactions.map(item => item.id).sort()).toEqual([
+      'sub-bad-sub-2026-02-01',
+      'sub-good-sub-2026-02-01',
+    ]);
+    expect(transactions.filter(item => item.id === 'sub-good-sub-2026-02-01')).toHaveLength(1);
+    expect(subscriptions.find(item => item.id === 'bad-sub')).toMatchObject({
+      nextBillingDate: '2026-03-01', lastPostedDate: '2026-02-01',
+    });
   });
 
   it('falls back to the legacy payment method when the instrument is missing', async () => {
