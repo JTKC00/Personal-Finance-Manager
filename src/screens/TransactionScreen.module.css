@@ -568,3 +568,15 @@
   .desktopTable th, .desktopTable td { padding-left: 8px; padding-right: 8px; }
   .tableActions .iconBtn, .tableActions .iconBtnDanger { width: 36px; }
 }
+
+.managementFilters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.managementFilters label { color: var(--color-text-muted); font-size: 13px; min-width: 0; }
+.managementFilters .input { margin: 6px 0 0; }
+.cleanupPanel { padding: 16px; margin: 16px 0; border: 1px solid var(--color-border); border-radius: 12px; }
+.cleanupPanel > summary { cursor: pointer; min-height: 28px; color: var(--color-text); }
+.currencyTotals { padding: 8px 0; color: var(--color-text-muted); font-size: 13px; line-height: 1.7; }
+.currencyTotals p { margin: 4px 0; }
+.currencyTotals strong { color: var(--color-text); margin-right: 8px; }
+.futureBadge { display: block; margin-top: 4px; font-size: 11px; color: var(--color-text-muted); }
+.managementNotice { padding: 12px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface-muted); color: var(--color-text); }
+@media (max-width: 600px) { .managementFilters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }

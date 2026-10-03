@@ -305,3 +305,48 @@
   color: var(--color-text-muted);
   line-height: 1.5;
 }
+
+/* Native disclosure controls preserve keyboard activation and return focus. */
+.secondary { margin: 0 0 var(--spacing-md); }
+.secondary > summary { cursor: pointer; padding: 12px 0; font-size: 13px; font-weight: 600; }
+.notice { padding: 12px; margin-bottom: var(--spacing-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.notice p { margin: 4px 0; }
+.notice button { margin: 8px; }
+.dateInputs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.periodBlock { min-width: 0; }
+.select { min-width: 0; }
+.tab[aria-pressed='true'] { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.safe { color: var(--color-success); }
+.warning, .danger { color: var(--color-danger); }
+.info { color: var(--color-text-muted); }
+.groupDetail { border-bottom: 1px solid var(--color-border); }
+.groupSummary { cursor: pointer; padding: 12px 0; display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.groupSummary::before { content: '›'; flex: 0 0 10px; }
+.groupDetail[open] > .groupSummary::before { content: '⌄'; }
+.groupSummary .changeMain { flex: 1; overflow-wrap: anywhere; }
+.groupAction { display: flex; flex-direction: column; text-align: right; justify-content: center; flex-shrink: 0; gap: 4px; }
+.detailBody { padding: 12px; background: var(--color-surface-muted); border-radius: var(--radius-md); }
+.detailTotal { font-size: 13px; font-weight: 600; line-height: 1.6; }
+.transactionList { padding: 0; margin: 0; list-style: none; }
+.transactionRow { display: flex; justify-content: space-between; align-items: start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--color-border); font-size: 13px; overflow-wrap: anywhere; }
+.transactionRow > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.transactionRow > strong { flex-shrink: 0; }
+.progress { width: 100%; height: 8px; accent-color: var(--color-primary); }
+.metricValue { overflow-wrap: anywhere; }
+.navBtn, .tab { min-height: 40px; }
+.navBtn:focus-visible, .tab:focus-visible, .select:focus-visible, .secondary > summary:focus-visible, .groupSummary:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 3px; }
+@media (min-width: 720px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 380px) {
+  .monthNav { flex-wrap: wrap; gap: 8px; }
+  .monthNav .periodBlock { order: -1; flex-basis: 100%; }
+  .dateInputs { grid-template-columns: minmax(0, 1fr); }
+  .groupSummary { flex-wrap: wrap; }
+  .groupAction { flex-basis: 100%; text-align: left; padding-left: 22px; }
+  .changeRow { flex-wrap: wrap; }
+}
+.chartLegend { display: flex; gap: 16px; font-size: 12px; color: var(--color-text-muted); }
+.chartLegend span { display: inline-flex; align-items: center; gap: 6px; }
+.chartLegend i { width: 10px; height: 10px; border-radius: 2px; }
+:global(:root[data-theme='dark']) .select { color-scheme: dark; }
+.transactionActions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+@media (max-width: 600px) { .transactionActions { flex-direction: column; align-items: flex-end; gap: 0; } }

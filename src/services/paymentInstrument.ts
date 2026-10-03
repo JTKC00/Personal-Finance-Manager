@@ -141,13 +141,13 @@ export function resolveTransactionPaymentType(
   return paymentTypeFromMethod(transaction.paymentMethod);
 }
 
-function resolvePaymentTypeGroup(transaction: Transaction, instruments: PaymentInstrument[]) {
+export function resolvePaymentTypeGroup(transaction: Transaction, instruments: PaymentInstrument[]) {
   const type = resolveTransactionPaymentType(transaction, instruments);
   if (!type) return {key: 'unspecified', label: '未指定', linked: false};
   return {key: type, label: PAYMENT_INSTRUMENT_TYPE_LABELS[type], linked: true};
 }
 
-function resolvePaymentInstrumentGroup(transaction: Transaction, instruments: PaymentInstrument[]) {
+export function resolvePaymentInstrumentGroup(transaction: Transaction, instruments: PaymentInstrument[]) {
   const linked = resolveTransactionInstrument(transaction, instruments);
   if (linked) {
     return {key: `id:${linked.id}`, label: formatInstrumentLabel(linked), linked: true};
@@ -216,7 +216,7 @@ export function comparePaymentInstrumentsAcrossMonths(
   ));
 }
 
-function resolveAccountGroup(transaction: Transaction, accounts: Account[]) {
+export function resolveAccountGroup(transaction: Transaction, accounts: Account[]) {
   if (!transaction.accountId) return {key: 'unspecified', label: '未指定帳戶', linked: false};
   const account = accounts.find(item => item.id === transaction.accountId);
   return {
@@ -250,7 +250,7 @@ export function compareAccountsAcrossMonths(
   );
 }
 
-function resolveSubscriptionGroup(transaction: Transaction, names: Record<string, string>) {
+export function resolveSubscriptionGroup(transaction: Transaction, names: Record<string, string>) {
   if (!transaction.subscriptionId) return null;
   return {
     key: `id:${transaction.subscriptionId}`,

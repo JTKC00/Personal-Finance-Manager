@@ -1,13 +1,13 @@
-﻿import {useCallback, useEffect, useRef, useState} from 'react';
+﻿import {useEffect, useRef, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {Card} from '../components/Card';
 import {BackupRestoreCard} from '../components/BackupRestoreCard';
 import {Screen} from '../components/Screen';
 import {useAuth} from '../contexts/AuthContext';
-import {expenseCategories} from '../constants/categories';
+import {BudgetEditor} from '../components/BudgetEditor';
 import {isAuthFlowCancelled, translateFirebaseAuthError} from '../services/authErrors';
 import {ThemeMode, applyThemeMode, getStoredThemeMode} from '../services/appearance';
-import {getCurrentMonthKey, loadBudgetMonth, loadReceipts, loadSubscriptions, loadTransactions, saveCurrentMonthBudgets} from '../services/storage';
+import {getCurrentMonthKey, loadReceipts, loadSubscriptions, loadTransactions} from '../services/storage';
 import {Receipt} from '../types/finance';
 import styles from './ProfileScreen.module.css';
 
@@ -23,10 +23,7 @@ export function ProfileScreen() {
   const navigate = useNavigate();
   const {user, signOut, linkGoogle, changePassword, authError, clearAuthError} = useAuth();
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredThemeMode());
-  const [budgetEdits, setBudgetEdits] = useState<Record<string, string>>(() =>
-    Object.fromEntries(expenseCategories.map(c => [c, '']))
-  );
-  const [budgetSaving, setBudgetSaving] = useState(false);
+  const [budgetMonth, setBudgetMonth] = useState<string | null>(null);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [receiptsOpen, setReceiptsOpen] = useState(false);
   const [linkingGoogle, setLinkingGoogle] = useState(false);
@@ -42,15 +39,6 @@ export function ProfileScreen() {
     setToast(msg);
     setTimeout(() => setToast(''), 2500);
   }
-
-  const refreshBudgets = useCallback(async () => {
-    const data = (await loadBudgetMonth(getCurrentMonthKey())) ?? {};
-    setBudgetEdits(Object.fromEntries(
-      expenseCategories.map(c => [c, data[c] ? String(data[c]) : ''])
-    ));
-  }, []);
-
-  useEffect(() => { refreshBudgets(); }, [refreshBudgets]);
 
   useEffect(() => {
     if (!authError || authError === handledAuthErrorRef.current) return;
@@ -78,23 +66,6 @@ export function ProfileScreen() {
     applyThemeMode(mode);
     setThemeMode(mode);
     showToast(mode === 'dark' ? '已切換至黑色模式。' : '已切換至白色模式。');
-  }
-
-  async function saveBudgets() {
-    setBudgetSaving(true);
-    try {
-      const data: Record<string, number> = {};
-      for (const cat of expenseCategories) {
-        const val = Number(budgetEdits[cat]);
-        if (val > 0) data[cat] = val;
-      }
-      await saveCurrentMonthBudgets(data);
-      showToast('月預算已儲存。');
-    } catch {
-      showToast('儲存失敗，請檢查網路後再試一次。');
-    } finally {
-      setBudgetSaving(false);
-    }
   }
 
   async function exportCsv() {
@@ -131,7 +102,6 @@ export function ProfileScreen() {
   const isEmailUser = user?.providerData.some(p => p.providerId === 'password') ?? false;
 
   async function refreshAfterRestore() {
-    await refreshBudgets();
     if (receiptsOpen) await loadReceiptHistory();
   }
 
@@ -294,29 +264,11 @@ export function ProfileScreen() {
         </Card>
       )}
 
-      <Card title="月預算設定">
-        <p className={styles.body}>設定每月各分類的預算，Dashboard 會顯示實際支出與預算的對比進度。</p>
-        <div className={styles.budgetGrid}>
-          {expenseCategories.map(cat => (
-            <div key={cat} className={styles.budgetRow}>
-              <label className={styles.budgetLabel}>{cat}</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                placeholder="不限制"
-                className={styles.budgetInput}
-                value={budgetEdits[cat] ?? ''}
-                onChange={e => setBudgetEdits(prev => ({...prev, [cat]: e.target.value}))}
-              />
-            </div>
-          ))}
-        </div>
-        <button
-          className={[styles.primaryBtn, budgetSaving ? styles.disabledBtn : ''].join(' ')}
-          disabled={budgetSaving}
-          onClick={saveBudgets}
-        >{budgetSaving ? '儲存中…' : '儲存預算'}</button>
+      <Card title="每月預算管理">
+        <p className={styles.body}>設定本月或歷史月份的分類預算，可先預覽並複製上月設定。所有金額以 HKD 計算。</p>
+        <button className={styles.primaryBtn} onClick={() => setBudgetMonth(getCurrentMonthKey())}>管理每月預算</button>
       </Card>
+      {budgetMonth && <BudgetEditor initialMonth={budgetMonth} onClose={() => setBudgetMonth(null)} onSaved={result => showToast(`${result.month} 預算已儲存。`)} />}
 
       <Card title="掃描收據記錄">
         <p className={styles.body}>所有 OCR 掃描收據的記錄，包含成功與失敗。</p>

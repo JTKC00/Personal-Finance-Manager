@@ -307,10 +307,11 @@
   .desktopGrid > div { min-width: 0; }
   .summaryArea { grid-column: 1; grid-row: 1; }
   .budgetArea { grid-column: 2; grid-row: 1; }
-  .recentArea { grid-column: 1; grid-row: 2; }
-  .spendingArea { grid-column: 2; grid-row: 2; }
-  .goalsArea { grid-column: 1; grid-row: 3; }
-  .backupArea { grid-column: 2; grid-row: 3; }
+  .commitmentsArea { grid-column: 1 / -1; grid-row: 2; }
+  .recentArea { grid-column: 1; grid-row: 3; }
+  .spendingArea { grid-column: 2; grid-row: 3; }
+  .goalsArea { grid-column: 1; grid-row: 4; }
+  .backupArea { grid-column: 2; grid-row: 4; }
   .alertArea { grid-column: 1 / -1; }
   .balanceCard { padding: 28px; }
   .balanceValue { font-size: 46px; }

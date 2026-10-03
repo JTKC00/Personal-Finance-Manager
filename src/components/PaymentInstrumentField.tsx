@@ -58,7 +58,7 @@ export function PaymentInstrumentField({instruments, accounts, type, instrumentI
       active: true,
       createdAt: new Date().toISOString(),
     };
-    await onCreate(instrument);
+    try { await onCreate(instrument); } catch { setError('付款工具未能儲存，請重試。'); return; }
     onChange({type: selectedType, instrumentId: instrument.id});
     setCreating(false);
     setName('');

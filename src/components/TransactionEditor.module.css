@@ -1,0 +1,12 @@
+.dialog { margin: auto; max-width: calc(100% - 24px); width: min(640px, calc(100% - 24px)); max-height: calc(100dvh - 32px); box-sizing: border-box; padding: 24px; border: 1px solid var(--color-border); border-radius: 20px; background: var(--color-surface); color: var(--color-text); overflow-y: auto; box-shadow: var(--shadow-lg); }
+.dialog::backdrop { background: rgb(0 0 0 / .5); }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.heading h2 { margin: 0; font-size: 21px; }
+.fields { padding: 0; margin: 0; border: 0; min-width: 0; }
+.notice, .discard { padding: 12px; margin: 12px 0; border: 1px solid var(--color-border); background: var(--color-surface-muted); border-radius: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.discard { position: sticky; bottom: 0; box-shadow: var(--shadow-md); }
+.dialog button:focus-visible, .dialog summary:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 2px; }
+@media (max-width: 600px) { .dialog { padding: 16px; border-radius: 16px; } }
+:global(.transactionWorkspaceNotice) { position: fixed; z-index: 220; bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + 12px); left: 50%; transform: translateX(-50%); width: min(620px, calc(100% - 32px)); box-sizing: border-box; padding: 16px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-md); display: flex; align-items: center; gap: 12px; font-size: 14px; }
+:global(.transactionWorkspaceNotice button) { margin-left: auto; min-width: 44px; min-height: 44px; color: var(--color-text); background: transparent; border: 0; cursor: pointer; }
+@media (min-width: 1024px) { :global(.transactionWorkspaceNotice) { bottom: 24px; } }

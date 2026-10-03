@@ -1,26 +1,26 @@
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Pencil, Trash2, Pause, Play} from 'lucide-react';
 import {Card} from '../components/Card';
 import {Screen} from '../components/Screen';
 import {PaymentInstrumentField} from '../components/PaymentInstrumentField';
+import {MonthlyCommitments} from '../components/MonthlyCommitments';
+import {useLocalToday} from '../hooks/useLocalToday';
 import {expenseCategories} from '../constants/categories';
 import {useSubscriptionProcessing} from '../contexts/SubscriptionProcessingContext';
 import {paymentTypeFromMethod, subscriptionPaymentFromDraft, subscriptionPaymentLabel} from '../services/paymentInstrument';
 import {
   deleteSubscription,
-  getCurrentMonthKey,
-  getSubscriptionChargesForMonth,
   getTransactionsByMonth,
   loadAccounts,
-  loadBudgetRows,
+  loadBudgetRowsForMonth,
   loadPaymentInstruments,
   loadSubscriptions,
   trackEvent,
   upsertPaymentInstrument,
   upsertSubscription,
 } from '../services/storage';
-import {formatDateKey, sumExpensesByCategory, sumSubscriptionChargesByCategory} from '../services/financeLogic';
-import {roundMoney, sumMoney} from '../services/money';
+import {formatDateKey, normalizeCurrency} from '../services/financeLogic';
+import {buildMonthlyBudgetRows, buildMonthlySpending} from '../services/monthlySpending';
 import {
   Account, Budget, PaymentInstrument, PaymentInstrumentType, Subscription, SubscriptionFrequency, Transaction,
 } from '../types/finance';
@@ -46,8 +46,7 @@ const frequencyLabels: Record<SubscriptionFrequency, string> = {
   yearly: '每年',
 };
 
-const formatMoney = (value: number) => `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-const today = () => formatDateKey(new Date());
+const formatMoney = (value: number, currency = 'HKD') => `${normalizeCurrency(currency)} ${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
 function emptyDraft(): Draft {
   return {
@@ -57,21 +56,22 @@ function emptyDraft(): Draft {
     paymentType: 'credit_card',
     paymentInstrumentId: undefined,
     frequency: 'monthly',
-    nextBillingDate: today(),
+    nextBillingDate: formatDateKey(new Date()),
     trialEndDate: '',
     reminderDays: '7',
     note: '',
   };
 }
 
-function getDaysUntil(dateKey: string): number {
-  const start = new Date(today());
+function getDaysUntil(dateKey: string, today: string): number {
+  const start = new Date(today);
   const end = new Date(dateKey);
   return Math.ceil((end.getTime() - start.getTime()) / 86400000);
 }
 
 export function SubscriptionsScreen() {
-  const month = getCurrentMonthKey();
+  const today = useLocalToday();
+  const month = today.slice(0, 7);
   const {retry: processSubscriptions} = useSubscriptionProcessing();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -82,25 +82,38 @@ export function SubscriptionsScreen() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [instruments, setInstruments] = useState<PaymentInstrument[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loadedMonth, setLoadedMonth] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const request = useRef(0);
+  const nameInput = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
-    const created = await processSubscriptions().catch(() => 0);
-    const [nextSubscriptions, nextTransactions, nextBudgets, nextInstruments, nextAccounts] = await Promise.all([
-      loadSubscriptions(),
-      getTransactionsByMonth(month),
-      loadBudgetRows(),
-      loadPaymentInstruments(),
-      loadAccounts(),
-    ]);
-    setSubscriptions(nextSubscriptions.sort((a, b) => a.nextBillingDate.localeCompare(b.nextBillingDate)));
-    setTransactions(nextTransactions);
-    setBudgets(nextBudgets);
-    setInstruments(nextInstruments);
-    setAccounts(nextAccounts);
-    if (created > 0) showToast(`已自動補記 ${created} 筆訂閱支出。`);
+    const version = ++request.current;
+    setLoading(true);
+    setLoadError('');
+    try {
+      const created = await processSubscriptions().catch(() => 0);
+      const [nextSubscriptions, nextTransactions, nextBudgets, nextInstruments, nextAccounts] = await Promise.all([
+        loadSubscriptions(), getTransactionsByMonth(month), loadBudgetRowsForMonth(month), loadPaymentInstruments(), loadAccounts(),
+      ]);
+      if (request.current !== version) return;
+      setSubscriptions(nextSubscriptions.sort((a, b) => a.nextBillingDate.localeCompare(b.nextBillingDate)));
+      setTransactions(nextTransactions);
+      setBudgets(nextBudgets || []);
+      setInstruments(nextInstruments);
+      setAccounts(nextAccounts);
+      setLoadedMonth(month);
+      if (created > 0) showToast(`已自動補記 ${created} 筆訂閱支出。`);
+    } catch {
+      if (request.current === version) setLoadError('訂閱及預算未能更新，請重試。已有資料會保留。');
+    } finally {
+      if (request.current === version) setLoading(false);
+    }
   }, [month, processSubscriptions]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { void refresh(); return () => { request.current++; }; }, [refresh]);
+  useEffect(() => { if (editingId) nameInput.current?.focus(); }, [editingId]);
 
   const canSave = useMemo(
     () => Boolean(draft.name.trim()) && Number(draft.amount) > 0 && Boolean(draft.nextBillingDate) && Boolean(draft.paymentType),
@@ -108,27 +121,13 @@ export function SubscriptionsScreen() {
   );
 
   const activeSubscriptions = subscriptions.filter(item => item.active);
-  const postedSubscriptionTotal = sumMoney(
-    transactions
-      .filter(item => item.subscriptionId && item.type === 'expense')
-      .map(item => item.amount)
-  );
-  const upcomingCharges = getSubscriptionChargesForMonth(
-    subscriptions,
-    month,
-    transactions,
-    today(),
-    true
-  );
-  const monthlySubscriptionTotal = roundMoney(postedSubscriptionTotal + sumMoney(upcomingCharges.map(item => item.amount)));
+  const spending = useMemo(() => buildMonthlySpending({month, today, transactions, subscriptions}), [month, today, transactions, subscriptions]);
+  const categoryBudgets = buildMonthlyBudgetRows(budgets, spending);
   const trialAlerts = activeSubscriptions
     .filter(item => item.trialEndDate)
-    .map(item => ({subscription: item, days: getDaysUntil(item.trialEndDate as string)}))
+    .map(item => ({subscription: item, days: getDaysUntil(item.trialEndDate as string, today)}))
     .filter(item => item.days >= 0 && item.days <= item.subscription.reminderDays)
     .sort((a, b) => a.days - b.days);
-
-  const categoryReserved = sumSubscriptionChargesByCategory(upcomingCharges);
-  const categorySpent = sumExpensesByCategory(transactions);
 
   function showToast(message: string) {
     setToast(message);
@@ -222,22 +221,29 @@ export function SubscriptionsScreen() {
     showToast('訂閱已刪除。');
   }
 
+  if (loadedMonth !== month) return <Screen title="訂閱" subtitle={`${month} · 訂閱與預算`}>
+    <p role={loadError ? 'alert' : 'status'}>{loadError || '正在載入訂閱與本月收支…'}</p>
+    {loadError && <button className={styles.secondaryBtn} onClick={() => void refresh()}>重試載入</button>}
+  </Screen>;
+
   return (
-    <Screen title="訂閱" subtitle="定期支出、試用提醒與本月預留">
-      <div className={styles.summaryGrid}>
-        <div className={styles.summaryBox}>
-          <span className={styles.summaryLabel}>本月訂閱</span>
-          <span className={styles.summaryValue}>{formatMoney(monthlySubscriptionTotal)}</span>
+    <Screen title="訂閱" subtitle={`${month} · 實際支出截至 ${today}`}>
+      {loadError && <div role="alert"><p className={styles.warningText}>{loadError}</p><button className={styles.secondaryBtn} disabled={loading} onClick={() => void refresh()}>重試載入</button></div>}
+      <p className={styles.hint}>啟用 {activeSubscriptions.length} 個訂閱。各幣別分開統計，不作匯率換算。</p>
+      {spending.byCurrency.map(row => <Card key={row.currency} title={`本月訂閱 · ${row.currency}`}>
+        <div className={styles.summaryGrid}>
+          <div className={styles.summaryBox}><span className={styles.summaryLabel}>已花費</span><span className={styles.summaryValue}>{formatMoney(row.actualSubscriptionExpense, row.currency)}</span></div>
+          <div className={styles.summaryBox}><span className={styles.summaryLabel}>已預填未來訂閱</span><span className={styles.summaryValue}>{formatMoney(row.futureSubscriptionExpense, row.currency)}</span></div>
+          <div className={styles.summaryBox}><span className={styles.summaryLabel}>待扣訂閱</span><span className={styles.summaryValue}>{formatMoney(row.pendingSubscriptionExpense ?? 0, row.currency)}</span></div>
+          <div className={styles.summaryBox}><span className={styles.summaryLabel}>已知訂閱支出合計</span><span className={styles.summaryValue}>{formatMoney(row.knownSubscriptionExpense ?? 0, row.currency)}</span></div>
         </div>
-        <div className={styles.summaryBox}>
-          <span className={styles.summaryLabel}>啟用項目</span>
-          <span className={styles.summaryValue}>{activeSubscriptions.length}</span>
-        </div>
-      </div>
+      </Card>)}
+      <MonthlyCommitments spending={spending} budgets={budgets} />
 
       <Card title={editingId ? '編輯訂閱' : '新增訂閱'}>
+        <p className={styles.hint}>金額幣別：{normalizeCurrency(subscriptions.find(s => s.id === editingId)?.currency || 'HKD')}</p>
         <input
-          autoFocus
+          ref={nameInput}
           type="text"
           placeholder="訂閱名稱（如 Netflix）"
           className={styles.input}
@@ -336,20 +342,6 @@ export function SubscriptionsScreen() {
         </div>
       </Card>
 
-      <Card title="即將扣款">
-        {upcomingCharges.length ? upcomingCharges.slice(0, 6).map(item => (
-          <div key={`${item.subscription.id}-${item.date}`} className={styles.txRow}>
-            <div className={styles.txMain}>
-              <span className={styles.txTitle}>{item.subscription.name}</span>
-              <span className={styles.txMeta}>{item.date} · {item.subscription.category} · {subscriptionPaymentLabel(item.subscription, instruments)}</span>
-            </div>
-            <span className={styles.expenseText}>-{formatMoney(item.amount)}</span>
-          </div>
-        )) : (
-          <p className={styles.hint}>本月沒有尚未扣款的訂閱。</p>
-        )}
-      </Card>
-
       <Card title="試用提醒">
         {trialAlerts.length ? trialAlerts.map(item => (
           <div key={item.subscription.id} className={styles.txRow}>
@@ -366,23 +358,21 @@ export function SubscriptionsScreen() {
         )}
       </Card>
 
-      <Card title="分類預算佔用">
-        {budgets.length ? budgets.map(budget => {
-          const spent = categorySpent[budget.category] || 0;
-          const reserved = categoryReserved[budget.category] || 0;
-          const projected = roundMoney(spent + reserved);
-          const ratio = budget.amount > 0 ? Math.min(projected / budget.amount, 1) : 0;
+      <Card title="分類預算 · HKD">
+        <p className={styles.hint}>已花費包含本月截至今天的全部港幣支出，與總覽及月度分析一致。</p>
+        {categoryBudgets.length ? categoryBudgets.map(budget => {
           return (
             <div key={budget.category} className={styles.budgetRow}>
               <div className={styles.budgetHeader}>
                 <span className={styles.txTitle}>{budget.category}</span>
                 <span className={styles.txMeta}>
-                  已用 {formatMoney(spent)} · 預留 {formatMoney(reserved)} / {formatMoney(budget.amount)}
+                  已花費 {formatMoney(budget.spent)} / {formatMoney(budget.budgetAmount)} · 已用 {budget.usedPercentage}%
                 </span>
               </div>
-              <div className={styles.progressTrackThin}>
-                <div className={styles.progressFill} style={{width: `${ratio * 100}%`}} />
+              <div className={styles.progressTrackThin} role="progressbar" aria-label={`${budget.category}預算使用率 ${budget.usedPercentage}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(budget.usedPercentage, 100)}>
+                <div className={styles.progressFill} style={{width: `${Math.min(budget.usedRatio, 1) * 100}%`}} />
               </div>
+              <p className={styles.hint}>未來交易 {formatMoney(budget.future)} · 待扣訂閱 {formatMoney(budget.pending ?? 0)} · {budget.projectedRemaining !== null && (budget.projectedRemaining >= 0 ? `預計剩餘 ${formatMoney(budget.projectedRemaining)}` : `預計超支 ${formatMoney(Math.abs(budget.projectedRemaining))}`)}</p>
             </div>
           );
         }) : (
@@ -403,7 +393,7 @@ export function SubscriptionsScreen() {
               {subscription.note ? <span className={styles.goalMeta}>{subscription.note}</span> : null}
             </div>
               <div className={styles.txActions}>
-              <span className={styles.expenseText}>-{formatMoney(subscription.amount)}</span>
+              <span className={styles.expenseText}>-{formatMoney(subscription.amount, subscription.currency)}</span>
               {confirmDeleteId === subscription.id ? (
                 <div className={styles.confirmRow}>
                   <span className={styles.confirmText}>確定刪除？</span>

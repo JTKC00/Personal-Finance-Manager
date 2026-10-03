@@ -3,6 +3,7 @@ import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
 import {useRegisterSW} from 'virtual:pwa-register/react';
 import {AuthProvider, useAuth} from './src/contexts/AuthContext';
 import {SubscriptionProcessingProvider} from './src/contexts/SubscriptionProcessingContext';
+import {TransactionWorkspaceProvider} from './src/contexts/TransactionWorkspaceProvider';
 import {BottomNav} from './src/components/BottomNav';
 
 const DashboardScreen = lazy(() => import('./src/screens/DashboardScreen').then(module => ({default: module.DashboardScreen})));
@@ -66,6 +67,7 @@ function AppShell() {
 
   return (
     <SubscriptionProcessingProvider key={user.uid}>
+      <TransactionWorkspaceProvider>
       <div className="appShell" style={{minHeight: '100vh', overflowY: 'auto', background: 'var(--color-bg)'}}>
         <Suspense fallback={<LoadingScreen />}>
           <Routes>
@@ -83,6 +85,7 @@ function AppShell() {
         </Suspense>
         <BottomNav />
       </div>
+    </TransactionWorkspaceProvider>
     </SubscriptionProcessingProvider>
   );
 }
