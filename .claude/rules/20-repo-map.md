@@ -42,6 +42,7 @@
 | budgetPace.ts | 按已花費計算預算進度、安全日額及月底速度推估；使用率文字可超過 100%，只有進度條寬度截斷 |
 | analysisInsights.ts | Analysis 洞察：由 KPI／貢獻／預算進度產生 3–5 條 deterministic 文字 |
 | subscriptionProcessing.ts | 包裝自動入帳的錯誤保存、partial-success 成功筆數與重試狀態；React context 使用這個狀態機 |
+| transactionExport.ts | Profile CSV 匯出的純函式：日期排序、CSV escaping、subscription 名稱映射及顯式 currency 欄；空白 currency fallback HKD |
 | ocr.ts | 前端打 `/api/ocr`（正式＝hosting rewrite→Cloud Run；本機＝vite proxy 或 VITE_OCR_PROXY_URL） |
 | appearance.ts | localStorage 主題 `pfm-theme-mode` |
 | backupReminder.ts | localStorage 備份提醒 `pfm-last-backup-at`（>30 天沒匯出完整 JSON 備份 → Dashboard 提醒卡＋Profile 狀態行；純邏輯含測試） |
@@ -93,7 +94,7 @@
 ## Backlog（依價值排序，上限 8 條；動手前仍要走專案 CLAUDE.md 硬規則）
 
 已完成：
-- ✅ 資料備份／export：ProfileScreen `exportJsonBackup`/`exportCsv`，並補上 accounts＋transfers（main f174ea2）。
+- ✅ 資料備份／export：ProfileScreen `exportJsonBackup`/`exportCsv`，並補上 accounts＋transfers（main f174ea2）；CSV 2026-10-03 起顯式輸出 currency 欄，空白 currency fallback HKD。
 - ✅ getCategoryBreakdown 改用 sumMoney（financeLogic `sumExpensesByCategory`＋測試；main 75cf3f9）。
 - ✅ ocr.ts `today` 改用 `formatDateKey`（main 5c1bac2）。
 - ✅ screens 分類 map 改用聚合 helpers、警示／預估加總過 roundMoney（分支 fix/screens-money-rounding，2026-07-11）。
@@ -128,3 +129,4 @@
 - 2026-09-12 每月預算管理：共用 BudgetEditor、歷史月份編輯、上月預覽複製、Dashboard／Analysis 原頁更新、快照衝突保護及 Emulator 覆蓋。
 - 2026-09-12 收支一致性：monthlySpending／MonthlyCommitments／useLocalToday、按幣別待發生收支、HKD 實際預算使用率、初次載入錯誤及重試；更新資料流與已完成 backlog。
 - 2026-10-03 訂閱 partial failure 傳遞補強：保留成功筆數、回報失敗 subscription／due date／原因，Dashboard refresh 後仍顯示安全重試警示。
+- 2026-10-03 CSV export 補幣別欄：Profile 匯出改用 transactionExport 純函式，明確輸出 currency、保留 subscription 名稱與 CSV escaping。
